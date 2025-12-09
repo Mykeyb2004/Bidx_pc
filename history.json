@@ -20,5 +20,71 @@
     "actual_words": 3473,
     "output_file": "output/7.1.1_保密工作领导小组.md",
     "status": "success"
+  },
+  {
+    "id": "20251209145210241832",
+    "timestamp": "2025-12-09T14:52:10.241849",
+    "heading_title": "7.1.2 全员保密责任书签署",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.1 保密管理体系 > 7.1.2 全员保密责任书签署",
+    "additional_requirements": "",
+    "min_words": 4000,
+    "actual_words": 5244,
+    "output_file": "output/7.1.2_全员保密责任书签署.md",
+    "status": "success"
+  },
+  {
+    "id": "20251209152928992381",
+    "timestamp": "2025-12-09T15:29:28.992427",
+    "heading_title": "7.2.1 数据采集端的隐私保护（脱敏处理）",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.2 数据全生命周期安全管理 > 7.2.1 数据采集端的隐私保护（脱敏处理）",
+    "additional_requirements": "",
+    "min_words": 2000,
+    "actual_words": 3092,
+    "output_file": "output/7.2.1_数据采集端的隐私保护（脱敏处理）.md",
+    "status": "success"
+  },
+  {
+    "id": "20251209153113957957",
+    "timestamp": "2025-12-09T15:31:13.957991",
+    "heading_title": "7.2.2 数据传输与存储的加密措施",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.2 数据全生命周期安全管理 > 7.2.2 数据传输与存储的加密措施",
+    "additional_requirements": "3000",
+    "min_words": 3500,
+    "actual_words": 3721,
+    "output_file": "output/7.2.2_数据传输与存储的加密措施.md",
+    "status": "success"
+  },
+  {
+    "id": "20251209153242725047",
+    "timestamp": "2025-12-09T15:32:42.725081",
+    "heading_title": "7.2.3 数据使用的权限分级管理",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.2 数据全生命周期安全管理 > 7.2.3 数据使用的权限分级管理",
+    "additional_requirements": "3000",
+    "min_words": 3500,
+    "actual_words": 3897,
+    "output_file": "output/7.2.3_数据使用的权限分级管理.md",
+    "status": "success"
+  },
+  {
+    "id": "20251209153344092310",
+    "timestamp": "2025-12-09T15:33:44.092350",
+    "heading_title": "7.3.1 内部违规处罚标准",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.3 违规泄密责任追究 > 7.3.1 内部违规处罚标准",
+    "additional_requirements": "3000",
+    "min_words": 3500,
+    "actual_words": 3293,
+    "output_file": "output/7.3.1_内部违规处罚标准.md",
+    "status": "success"
+  },
+  {
+    "id": "20251209153544453694",
+    "timestamp": "2025-12-09T15:35:44.453710",
+    "heading_title": "7.3.2 法律责任追究机制",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.3 违规泄密责任追究 > 7.3.2 法律责任追究机制",
+    "additional_requirements": "3000",
+    "min_words": 3500,
+    "actual_words": 3254,
+    "output_file": "output/7.3.2_法律责任追究机制.md",
+    "status": "success"
   }
 ]

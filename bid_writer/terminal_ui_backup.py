@@ -86,55 +86,9 @@ class TerminalUI:
                     if clean_title:
                         self._generated_titles.add(clean_title)
 
-    def get_heading_generation_status(self, heading: HeadingNode) -> tuple:
-        """
-        检查标题及所有子标题的生成状态
-
-        返回: (状态图标, 已生成数量, 总数量)
-        - 状态图标: ✅ (全部完成) / 📝 (部分完成) / ❌ (未开始)
-        """
-        if not self.output_directory:
-            return "❌", 0, 0
-
-        # 获取所有可生成的叶子节点（四级标题）
-        leaf_nodes = []
-
-        def collect_leaves(node):
-            if not node.children:
-                leaf_nodes.append(node)
-            else:
-                for child in node.children:
-                    collect_leaves(child)
-
-        for child in heading.children:
-            collect_leaves(child)
-
-        if not leaf_nodes:
-            # 没有可生成的子标题
-            return "❌", 0, 0
-
-        total = len(leaf_nodes)
-        generated = 0
-
-        # 统计已生成的数量
-        for node in leaf_nodes:
-            filename = self._sanitize_for_comparison(node.title)
-            if filename in self._generated_titles:
-                generated += 1
-
-        # 确定状态图标
-        if generated == total and total > 0:
-            icon = "✅"  # 全部完成
-        elif generated > 0:
-            icon = "📝"  # 部分完成
-        else:
-            icon = "❌"  # 未开始
-
-        return icon, generated, total
-
     def is_heading_generated(self, heading: HeadingNode) -> bool:
         """
-        检查标题是否已生成（兼容性方法，任一子标题已生成即返回True）
+        检查标题是否已生成
 
         Args:
             heading: 标题节点
@@ -142,8 +96,19 @@ class TerminalUI:
         Returns:
             是否已生成
         """
-        icon, generated, total = self.get_heading_generation_status(heading)
-        return generated > 0
+        if not self.output_directory:
+            return False
+
+        # 清理标题生成文件名（与 _sanitize_for_comparison 一致）
+        filename = self._sanitize_for_comparison(heading.title)
+
+        return filename in self._generated_titles
+        invalid_chars = r'[\\/:*?"<>|\n\r\t]'
+        filename = re.sub(invalid_chars, '_', heading.title)
+        filename = filename.strip(' .')
+        filename = re.sub(r'[_\s]+', '_', filename)
+        
+        return filename in self._generated_titles
     
     
     def show_welcome(self) -> None:
@@ -264,19 +229,21 @@ class TerminalUI:
     
     def select_heading_hierarchical(
         self,
-        parser: OutlineParser
+        parser: OutlineParser,
+        page_size: int = 10
     ) -> List[HeadingNode]:
         """
         层级导航选择标题
-
+        
         通过三层导航逐步深入选择：
         1. 选择1级标题（章节）
         2. 选择2级标题（子章节）
         3. 选择叶子节点（可扩写的标题，支持多选）
-
+        
         Args:
             parser: 大纲解析器实例
-
+            page_size: 每页显示的条目数
+            
         Returns:
             用户选择的标题列表
         """
@@ -301,13 +268,14 @@ class TerminalUI:
                 return []
             
             self.console.print("\n[bold cyan]📁 第一步：选择章节[/bold cyan]")
-
-            # 构建选项（移除翻页功能）
+            
+            # 构建选项（带分页）
             level1_result = self._select_with_pagination(
                 headings=level1_headings,
                 prompt="选择章节：",
                 icon="📁",
                 style=custom_style,
+                page_size=page_size,
                 allow_back=False
             )
             
@@ -328,12 +296,13 @@ class TerminalUI:
                 
                 self.console.print(f"\n[bold green]📂 第二步：选择子章节[/bold green]")
                 self.console.print(f"[dim]当前位置：{selected_level1.title}[/dim]")
-
+                
                 level2_result = self._select_with_pagination(
                     headings=level2_headings,
                     prompt="选择子章节：",
                     icon="📂",
                     style=custom_style,
+                    page_size=page_size,
                     allow_back=True
                 )
                 
@@ -362,7 +331,8 @@ class TerminalUI:
                         headings=leaf_headings,
                         prompt="选择标题：",
                         icon="📝",
-                        style=custom_style
+                        style=custom_style,
+                        page_size=page_size
                     )
                     
                     if leaf_result == "BACK":  # 返回上一级
@@ -394,101 +364,94 @@ class TerminalUI:
         prompt: str,
         icon: str,
         style,
+        page_size: int,
         allow_back: bool = False
     ) -> Optional[HeadingNode]:
         """
-        单选（移除翻页功能，page_size参数不再需要）
-
+        带分页的单选
+        
         Returns:
             选中的HeadingNode，"BACK"表示返回上一级，None表示取消
         """
-        # 构建选项
-        choices = []
-        for h in headings:
-            # 获取生成状态
-            status_icon, generated, total = self.get_heading_generation_status(h)
-
-            # 对于一、二、三级标题（有子节点的），使用固定的图标
-            if h.children:
-                # 有子节点的标题，使用文件夹图标
-                if status_icon == "✅":
-                    folder_icon = "📁"  # 全部完成
-                elif status_icon == "📝":
-                    folder_icon = "📂"  # 部分完成，显示进度
-                else:
-                    folder_icon = "📁"  # 未开始
-
-                if status_icon == "📝":
-                    choice_text = f"{folder_icon} {h.title} ({generated}/{total})"
-                else:
-                    choice_text = f"{folder_icon} {h.title}"
+        current_page = 0
+        total_pages = (len(headings) + page_size - 1) // page_size
+        
+        while True:
+            # 计算当前页的内容
+            start_idx = current_page * page_size
+            end_idx = min(start_idx + page_size, len(headings))
+            page_headings = headings[start_idx:end_idx]
+            
+            # 构建选项
+            choices = []
+            for h in page_headings:
+                choices.append(f"{icon} {h.title}")
+            
+            # 添加导航选项
+            choices.append(questionary.Separator())
+            if current_page > 0:
+                choices.append("⬆️  上一页")
+            if current_page < total_pages - 1:
+                choices.append("⬇️  下一页")
+            if allow_back:
+                choices.append("↩️  返回上一级")
+            choices.append("❌ 取消")
+            
+            # 显示页码信息
+            if total_pages > 1:
+                self.console.print(f"[dim]第 {current_page + 1}/{total_pages} 页[/dim]")
+            
+            selected = questionary.select(
+                prompt,
+                choices=choices,
+                style=style
+            ).ask()
+            
+            if selected is None or selected == "❌ 取消":
+                return None
+            elif selected == "⬆️  上一页":
+                current_page -= 1
+            elif selected == "⬇️  下一页":
+                current_page += 1
+            elif selected == "↩️  返回上一级":
+                return "BACK"
             else:
-                # 叶子节点（四级标题），使用状态图标
-                if status_icon == "📝":
-                    choice_text = f"{status_icon} {h.title} ({generated}/{total})"
-                else:
-                    choice_text = f"{status_icon} {h.title}"
-            choices.append(choice_text)
-
-        # 添加导航选项
-        choices.append(questionary.Separator())
-        if allow_back:
-            choices.append("↩️  返回上一级")
-        choices.append("❌ 取消")
-
-        selected = questionary.select(
-            prompt,
-            choices=choices,
-            style=style
-        ).ask()
-
-        if selected is None or selected == "❌ 取消":
-            return None
-        elif selected == "↩️  返回上一级":
-            return "BACK"
-        else:
-            # 找到对应的HeadingNode
-            # 移除状态图标前缀（✅/📝/❌）和进度信息
-            title = selected
-
-            # 移除进度信息 (格式: "标题 (X/Y)") - 先处理，因为包含空格
-            if '(' in title and title.endswith(')'):
-                title = title.rsplit(' (', 1)[0]
-
-            # 移除状态图标（分割第一个空格后的部分）
-            if ' ' in title:
-                title = title.split(' ', 1)[1]
-
-            # 移除首尾空格
-            title = title.strip()
-
-            for h in headings:
-                if h.title == title:
-                    return h
+                # 找到对应的HeadingNode
+                title = selected.replace(f"{icon} ", "")
+                for h in page_headings:
+                    if h.title == title:
+                        return h
     
     def _select_leaves_with_pagination(
         self,
         headings: List[HeadingNode],
         prompt: str,
         icon: str,
-        style
+        style,
+        page_size: int
     ):
         """
-        多选（用于选择叶子节点，移除翻页功能）
-
+        带分页的多选（用于选择叶子节点）
+        
         Returns:
             选中的HeadingNode列表，"BACK"表示返回上一级，None表示取消
         """
+        current_page = 0
+        total_pages = (len(headings) + page_size - 1) // page_size
         all_selected = set()  # 记录所有已选中的标题
-
+        
         while True:
+            # 计算当前页的内容
+            start_idx = current_page * page_size
+            end_idx = min(start_idx + page_size, len(headings))
+            page_headings = headings[start_idx:end_idx]
+            
             # 构建选项
             choices = []
-            for h in headings:
-                # 对于四级标题，直接检查是否已生成（叶子节点）
-                filename = self._sanitize_for_comparison(h.title)
-                is_generated = filename in self._generated_titles
-                status_icon = "✅" if is_generated else "❌"
+            for h in page_headings:
+                # 检查是否已生成
+                is_generated = self.is_heading_generated(h)
+                status_icon = "✅" if is_generated else icon
                 choice_name = f"{status_icon} {h.title}"
 
                 # 标记已选中的项
@@ -497,6 +460,11 @@ class TerminalUI:
                     checked=h.title in all_selected
                 ))
             
+            # 显示页码和已选数量
+            status_msg = f"第 {current_page + 1}/{total_pages} 页"
+            if all_selected:
+                status_msg += f" | 已选 {len(all_selected)} 项"
+            self.console.print(f"[dim]{status_msg}[/dim]")
             
             selected = questionary.checkbox(
                 prompt,
@@ -508,21 +476,20 @@ class TerminalUI:
                 # 用户按Ctrl+C取消
                 return None
             
-            # 更新已选集合
-            for h in headings:
-                # 重建选择名称（与实际显示一致）
-                filename = self._sanitize_for_comparison(h.title)
-                is_generated = filename in self._generated_titles
-                status_icon = "✅" if is_generated else "❌"
-                choice_name = f"{status_icon} {h.title}"
-
+            # 更新已选集合（当前页）
+            for h in page_headings:
+                choice_name = f"{icon} {h.title}"
                 if choice_name in selected:
                     all_selected.add(h.title)
                 else:
                     all_selected.discard(h.title)
-
+            
             # 显示操作菜单
             nav_choices = []
+            if current_page > 0:
+                nav_choices.append("⬆️  上一页")
+            if current_page < total_pages - 1:
+                nav_choices.append("⬇️  下一页")
             nav_choices.append("↩️  返回上一级")
             if all_selected:
                 nav_choices.append(f"✅ 确认选择（{len(all_selected)}项）")

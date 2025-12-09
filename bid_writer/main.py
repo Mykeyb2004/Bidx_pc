@@ -21,6 +21,8 @@ class BidWriter:
     def __init__(self, config_path: str = "config.yaml"):
         self.config = Config(config_path)
         self.ui = TerminalUI()
+        # 设置输出目录以启用已生成文件检查
+        self.ui.set_output_directory(self.config.output_directory)
         self.ai_writer = AIWriter(self.config)
         self.file_saver = FileSaver(
             self.config.output_directory,
