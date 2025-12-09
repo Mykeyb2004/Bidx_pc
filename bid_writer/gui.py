@@ -31,9 +31,6 @@ class MainWindow(tk.Tk):
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
 
-        # 配置按钮样式
-        self._configure_button_style()
-
         # 窗口配置
         self.title("自动标书撰写系统 - GUI版")
         self.geometry("1000x800")
@@ -61,27 +58,6 @@ class MainWindow(tk.Tk):
 
         # 加载大纲
         self.load_outline()
-
-    def _configure_button_style(self):
-        """配置按钮样式以增加高度"""
-        style = ttk.Style()
-
-        # 创建自定义工具栏按钮样式
-        style.configure('Toolbar.TButton',
-                       padding=(10, 10),  # 内边距
-                       font=('TkDefaultFont', 10))
-
-        # 创建自定义对话框按钮样式
-        style.configure('Dialog.TButton',
-                       padding=(15, 10),  # 内边距
-                       font=('TkDefaultFont', 10))
-
-        # 尝试调整按钮的最小高度（某些主题支持）
-        try:
-            style.configure('Toolbar.TButton', minheight=40)
-            style.configure('Dialog.TButton', minheight=36)
-        except:
-            pass  # 某些主题不支持minheight
 
     def center_window(self):
         """居中窗口"""
@@ -128,12 +104,12 @@ class MainWindow(tk.Tk):
         # 文件管理区
         btn_reload = ttk.Button(toolbar, text="🔄 重新加载",
                                command=self.reload_outline,
-                               style='Toolbar.TButton')
+                               padding=(10, 8))
         btn_reload.pack(side=tk.LEFT, padx=5)
 
         btn_refresh = ttk.Button(toolbar, text="🔄 刷新状态",
                                 command=self.refresh_status,
-                                style='Toolbar.TButton')
+                                padding=(10, 8))
         btn_refresh.pack(side=tk.LEFT, padx=5)
 
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT,
@@ -143,7 +119,7 @@ class MainWindow(tk.Tk):
         # 树操作区
         self.btn_tree_expand = ttk.Button(toolbar, text="📂 展开/收缩",
                                           command=self.show_expand_menu,
-                                          style='Toolbar.TButton')
+                                          padding=(10, 8))
         self.btn_tree_expand.pack(side=tk.LEFT, padx=5)
 
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT,
@@ -153,12 +129,12 @@ class MainWindow(tk.Tk):
         # 内容生成区
         btn_generate = ttk.Button(toolbar, text="⚡ 批量生成",
                                  command=self.batch_generate,
-                                 style='Toolbar.TButton')
+                                 padding=(10, 8))
         btn_generate.pack(side=tk.LEFT, padx=5)
 
         btn_preview = ttk.Button(toolbar, text="👁️ 预览",
                                 command=self.preview_selected,
-                                style='Toolbar.TButton')
+                                padding=(10, 8))
         btn_preview.pack(side=tk.LEFT, padx=5)
 
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT,
@@ -168,7 +144,7 @@ class MainWindow(tk.Tk):
         # 其他区
         btn_output = ttk.Button(toolbar, text="📂 输出目录",
                                command=self.open_output_dir,
-                               style='Toolbar.TButton')
+                               padding=(10, 8))
         btn_output.pack(side=tk.LEFT, padx=5)
 
     def create_main_panes(self):
@@ -213,8 +189,6 @@ class MainWindow(tk.Tk):
 
         # 绑定选择事件
         self.outline_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
-        # 绑定双击事件 - 叶子节点双击触发预览
-        self.outline_tree.bind("<Double-Button-1>", self.on_tree_double_click)
 
     def create_status_bar(self):
         """创建状态栏"""
@@ -364,31 +338,6 @@ class MainWindow(tk.Tk):
     def on_title_select(self, event):
         """当选择标题时（已废弃，保留兼容性）"""
         pass
-
-    def on_tree_double_click(self, event):
-        """处理树节点的双击事件 - 叶子节点双击触发预览"""
-        # 获取点击位置的节点
-        item_id = self.outline_tree.identify('item', event.x, event.y)
-        if not item_id:
-            return
-
-        # 获取对应的HeadingNode
-        heading = self.tree_node_map.get(item_id)
-        if not heading:
-            return
-
-        # 只有叶子节点（四级标题）才能预览
-        if heading.children:
-            # 如果是非叶子节点，展开/收缩它
-            is_open = self.outline_tree.item(item_id, 'open')
-            self.outline_tree.item(item_id, open=not is_open)
-            return
-
-        # 叶子节点 - 触发预览
-        # 先选中该节点
-        self.outline_tree.selection_set(item_id)
-        # 调用预览功能
-        self.preview_selected()
 
     def reload_outline(self):
         """重新加载大纲"""
@@ -658,38 +607,36 @@ class MainWindow(tk.Tk):
         ttk.Label(words_frame, text="最低字数：",
                  font=('TkDefaultFont', 10)).pack(side=tk.LEFT)
 
-        words_var = tk.IntVar(value=3000)
-        words_spinbox = ttk.Spinbox(words_frame,
-                                    textvariable=words_var,
-                                    from_=0,
-                                    to=20000,
-                                    increment=100,
-                                    width=10)
-        words_spinbox.pack(side=tk.LEFT, padx=10)
+        words_var = tk.StringVar(value="500")
+        words_entry = ttk.Entry(words_frame, textvariable=words_var, width=10)
+        words_entry.pack(side=tk.LEFT, padx=10)
 
         # 按钮
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=10)
 
         def on_ok():
-            min_words = words_var.get()
-            if min_words < 0:
-                messagebox.showwarning("警告", "字数不能为负数")
-                return
+            try:
+                min_words = int(words_var.get())
+                if min_words < 0:
+                    messagebox.showwarning("警告", "字数不能为负数")
+                    return
 
-            additional_req = req_text.get('1.0', tk.END).strip()
-            result["cancelled"] = False
-            result["requirements"] = additional_req
-            result["min_words"] = min_words
-            dialog.destroy()
+                additional_req = req_text.get('1.0', tk.END).strip()
+                result["cancelled"] = False
+                result["requirements"] = additional_req
+                result["min_words"] = min_words
+                dialog.destroy()
+            except ValueError:
+                messagebox.showwarning("警告", "请输入有效的字数")
 
         def on_cancel():
             dialog.destroy()
 
         ttk.Button(button_frame, text="确定", command=on_ok,
-                  width=10, style='Dialog.TButton').pack(side=tk.LEFT, padx=5)
+                  width=10, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="取消", command=on_cancel,
-                  width=10, style='Dialog.TButton').pack(side=tk.LEFT, padx=5)
+                  width=10, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
 
         # 等待对话框关闭
         self.wait_window(dialog)
@@ -960,7 +907,7 @@ class MainWindow(tk.Tk):
                 dialog.destroy()
 
             ttk.Button(mod_dialog, text="确定", command=submit_modification,
-                      style='Dialog.TButton').pack(pady=10)
+                      padding=(15, 8)).pack(pady=10)
 
             self.wait_window(mod_dialog)
 
@@ -969,11 +916,11 @@ class MainWindow(tk.Tk):
             dialog.destroy()
 
         ttk.Button(button_frame, text="✅ 保存", command=on_save,
-                  width=15, style='Dialog.TButton').pack(side=tk.LEFT, padx=5)
+                  width=15, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="✏️ 修改后重新生成", command=on_modify,
-                  width=20, style='Dialog.TButton').pack(side=tk.LEFT, padx=5)
+                  width=20, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="⏭️ 跳过", command=on_skip,
-                  width=15, style='Dialog.TButton').pack(side=tk.LEFT, padx=5)
+                  width=15, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
 
         # 等待对话框关闭
         self.wait_window(dialog)
