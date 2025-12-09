@@ -89,14 +89,23 @@ class OutlineParser:
     def get_level_headings(self, level: int) -> List[HeadingNode]:
         """
         获取指定级别的所有标题
-        
+
         Args:
             level: 标题级别 (1, 2, 或 3)
-            
+
         Returns:
             指定级别的标题列表
         """
         return [h for h in self.headings if h.level == level]
+
+    def get_all_headings(self) -> List[HeadingNode]:
+        """
+        获取所有标题节点
+
+        Returns:
+            所有标题节点的列表
+        """
+        return self.headings
     
     def get_third_level_headings(self) -> List[HeadingNode]:
         """获取所有3级标题"""

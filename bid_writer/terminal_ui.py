@@ -347,29 +347,53 @@ class TerminalUI:
                 # 第三层：选择叶子节点（多选）
                 while True:
                     # 获取该节点下的所有叶子节点
-                    leaf_headings = self._get_leaf_nodes(selected_level2)
-                    
-                    if not leaf_headings:
+                    # 获取三级标题作为分类（不是直接获取叶子节点）
+                    level3_headings = selected_level2.children
+
+                    if not level3_headings:
                         # 该节点本身就是叶子节点
                         self.console.print(f"[yellow]「{selected_level2.title}」没有子标题，已选中该标题[/yellow]")
                         return [selected_level2]
-                    
-                    self.console.print(f"\n[bold yellow]📝 第三步：选择要扩写的标题（可多选）[/bold yellow]")
-                    self.console.print(f"[dim]当前位置：{selected_level1.title} > {selected_level2.title}[/dim]")
-                    self.console.print("[dim]使用空格选择，回车确认[/dim]\n")
-                    
+
+                    self.console.print(f"\n[bold yellow]📝 第三步：选择三级分类[/bold yellow]")
+                    self.console.print(f"[dim]当前位置：{selected_level1.title} > {selected_level2.title}[/dim]\n")
+
+                    # 选择三级标题（作为分类）
+                    level3_selected = self._select_with_pagination(
+                        headings=level3_headings,
+                        prompt="选择三级分类（显示该分类下的所有四级标题）：",
+                        icon="📁",
+                        style=custom_style,
+                        allow_back=True
+                    )
+
+                    if level3_selected == "BACK":
+                        continue  # 返回重新选择二级标题
+                    if level3_selected is None:
+                        continue  # 取消选择
+
+                    # 获取选中的三级标题下的所有叶子节点（四级标题）
+                    leaf_headings = self._get_leaf_nodes(level3_selected)
+
+                    if not leaf_headings:
+                        # 该三级标题没有子节点，本身就是四级标题
+                        return [level3_selected]
+
+                    self.console.print(f"\n[bold cyan]📝 第四步：选择要扩写的标题（可多选）[/bold cyan]")
+                    self.console.print(f"[dim]当前位置：{selected_level1.title} > {selected_level2.title} > {level3_selected.title}[/dim]")
+
                     leaf_result = self._select_leaves_with_pagination(
                         headings=leaf_headings,
-                        prompt="选择标题：",
-                        icon="📝",
+                        parent_title=f"{selected_level1.title} > {selected_level2.title} > {level3_selected.title}",
+                        prompt="选择四级标题（空格选择，回车确认）：",
                         style=custom_style
                     )
-                    
-                    if leaf_result == "BACK":  # 返回上一级
-                        break
+
+                    if leaf_result == "BACK":
+                        continue  # 返回重新选择三级分类
                     if leaf_result is None or len(leaf_result) == 0:
-                        continue  # 未选择任何标题，继续
-                    
+                        continue  # 未选择任何标题
+
                     return leaf_result
     
     def _get_leaf_nodes(self, heading: HeadingNode) -> List[HeadingNode]:
@@ -442,7 +466,13 @@ class TerminalUI:
             style=style
         ).ask()
 
-        if selected is None or selected == "❌ 取消":
+        # Esc键返回None，等同于返回上一级（如果允许）
+        if selected is None:
+            if allow_back:
+                return "BACK"
+            else:
+                return None
+        elif selected == "❌ 取消":
             return None
         elif selected == "↩️  返回上一级":
             return "BACK"
@@ -469,24 +499,40 @@ class TerminalUI:
     def _select_leaves_with_pagination(
         self,
         headings: List[HeadingNode],
+        parent_title: str,
         prompt: str,
-        icon: str,
         style
     ):
         """
         多选（用于选择叶子节点，移除翻页功能）
+
+        Args:
+            headings: 叶子节点列表
+            parent_title: 父节点路径（如：一级标题 > 二级标题）
+            prompt: 提示文本
+            style: 样式
 
         Returns:
             选中的HeadingNode列表，"BACK"表示返回上一级，None表示取消
         """
         all_selected = set()  # 记录所有已选中的标题
 
+        # 显示上级节点信息（只显示一次）
+        self.console.print(f"\n[dim]上级节点：{parent_title}[/dim]")
+
         while True:
             # 构建选项
             choices = []
             for h in headings:
-                # 对于四级标题，直接检查是否已生成（叶子节点）
-                filename = self._sanitize_for_comparison(h.title)
+                # 对于四级标题，需要从完整标题中提取纯文本（移除编号）
+                title_match = re.match(r'^\d+([.]\d+)*[_\s]+(.+)$', h.title)
+                if title_match:
+                    title_text = title_match.group(2)  # 提取纯标题文本
+                else:
+                    title_text = h.title
+
+                # 检查是否已生成
+                filename = self._sanitize_for_comparison(title_text)
                 is_generated = filename in self._generated_titles
                 status_icon = "✅" if is_generated else "❌"
                 choice_name = f"{status_icon} {h.title}"
@@ -496,8 +542,7 @@ class TerminalUI:
                     title=choice_name,
                     checked=h.title in all_selected
                 ))
-            
-            
+
             selected = questionary.checkbox(
                 prompt,
                 choices=choices,
@@ -511,7 +556,14 @@ class TerminalUI:
             # 更新已选集合
             for h in headings:
                 # 重建选择名称（与实际显示一致）
-                filename = self._sanitize_for_comparison(h.title)
+                # 需要从完整标题中提取纯文本
+                title_match = re.match(r'^\d+([.]\d+)*[_\s]+(.+)$', h.title)
+                if title_match:
+                    title_text = title_match.group(2)
+                else:
+                    title_text = h.title
+
+                filename = self._sanitize_for_comparison(title_text)
                 is_generated = filename in self._generated_titles
                 status_icon = "✅" if is_generated else "❌"
                 choice_name = f"{status_icon} {h.title}"

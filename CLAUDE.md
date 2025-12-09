@@ -131,3 +131,4 @@ No automated test suite currently exists. When testing:
 - Verify output file naming and conflict resolution
 - Check history recording and statistics calculation
 - 使用uv作为包管理器，使用uv run 的形式运行和测试代码
+- 使用uv run运行和测试代码
