@@ -96,6 +96,16 @@ class TerminalUI:
         if not self.output_directory:
             return "❌", 0, 0
 
+        # 如果heading本身是叶子节点，直接检查它
+        if not heading.children:
+            # 提取纯标题部分（移除编号）
+            title_match = re.match(r'^\d+([.]\d+)*[_\s]+(.+)$', heading.title)
+            title_part = title_match.group(2) if title_match else heading.title
+            filename = self._sanitize_for_comparison(title_part)
+            is_generated = filename in self._generated_titles
+            icon = "✅" if is_generated else "❌"
+            return icon, (1 if is_generated else 0), 1
+
         # 获取所有可生成的叶子节点（四级标题）
         leaf_nodes = []
 
@@ -118,7 +128,10 @@ class TerminalUI:
 
         # 统计已生成的数量
         for node in leaf_nodes:
-            filename = self._sanitize_for_comparison(node.title)
+            # 先提取纯标题部分（移除编号前缀），与 _refresh_generated_titles 保持一致
+            title_match = re.match(r'^\d+([.]\d+)*[_\s]+(.+)$', node.title)
+            title_part = title_match.group(2) if title_match else node.title
+            filename = self._sanitize_for_comparison(title_part)
             if filename in self._generated_titles:
                 generated += 1
 

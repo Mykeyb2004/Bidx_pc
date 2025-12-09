@@ -392,7 +392,7 @@ class MainWindow(tk.Tk):
 
         # 查找文件
         output_dir = Path(self.bid_writer.config.output_directory)
-        sanitized = FileSaver(str(output_dir))._sanitize_filename(title_text)
+        sanitized = FileSaver(str(output_dir)).sanitize_filename(title_text)
         filepath = output_dir / f"{sanitized}.md"
 
         if filepath.exists():
