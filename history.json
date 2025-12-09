@@ -1,0 +1,24 @@
+[
+  {
+    "id": "20251209135019444776",
+    "timestamp": "2025-12-09T13:50:19.444856",
+    "heading_title": "6.1 劳动纠纷应急方案",
+    "heading_path": "投标文件技术部分大纲 > 6. 应急处理方案（对应评分标准：应急处理方案 7分） > 6.1 劳动纠纷应急方案",
+    "additional_requirements": "字数不少于5000字\n\n用户修改要求：第一行加入:6.1 劳动纠纷应急方案",
+    "min_words": 5000,
+    "actual_words": 5372,
+    "output_file": "output/6.1_劳动纠纷应急方案.md",
+    "status": "success"
+  },
+  {
+    "id": "20251209141224143320",
+    "timestamp": "2025-12-09T14:12:24.143362",
+    "heading_title": "7.1.1 保密工作领导小组",
+    "heading_path": "投标文件技术部分大纲 > 7. 重点专项：数据安全与保密管理（针对招标文件重点要求） > 7.1 保密管理体系 > 7.1.1 保密工作领导小组",
+    "additional_requirements": "",
+    "min_words": 4000,
+    "actual_words": 3473,
+    "output_file": "output/7.1.1_保密工作领导小组.md",
+    "status": "success"
+  }
+]
