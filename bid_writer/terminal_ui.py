@@ -91,10 +91,10 @@ class TerminalUI:
         检查标题及所有子标题的生成状态
 
         返回: (状态图标, 已生成数量, 总数量)
-        - 状态图标: ✅ (全部完成) / 📝 (部分完成) / ❌ (未开始)
+        - 状态图标: ✅ (全部完成) / 📝 (部分完成) / 🔴 (未开始)
         """
         if not self.output_directory:
-            return "❌", 0, 0
+            return "🔴", 0, 0
 
         # 如果heading本身是叶子节点，直接检查它
         if not heading.children:
@@ -103,7 +103,7 @@ class TerminalUI:
             title_part = title_match.group(2) if title_match else heading.title
             filename = self._sanitize_for_comparison(title_part)
             is_generated = filename in self._generated_titles
-            icon = "✅" if is_generated else "❌"
+            icon = "✅" if is_generated else "🔴"
             return icon, (1 if is_generated else 0), 1
 
         # 获取所有可生成的叶子节点（四级标题）
@@ -121,7 +121,7 @@ class TerminalUI:
 
         if not leaf_nodes:
             # 没有可生成的子标题
-            return "❌", 0, 0
+            return "🔴", 0, 0
 
         total = len(leaf_nodes)
         generated = 0
@@ -141,7 +141,7 @@ class TerminalUI:
         elif generated > 0:
             icon = "📝"  # 部分完成
         else:
-            icon = "❌"  # 未开始
+            icon = "🔴"  # 未开始
 
         return icon, generated, total
 
@@ -491,7 +491,7 @@ class TerminalUI:
             return "BACK"
         else:
             # 找到对应的HeadingNode
-            # 移除状态图标前缀（✅/📝/❌）和进度信息
+            # 移除状态图标前缀（✅/📝/🔴）和进度信息
             title = selected
 
             # 移除进度信息 (格式: "标题 (X/Y)") - 先处理，因为包含空格
@@ -547,7 +547,7 @@ class TerminalUI:
                 # 检查是否已生成
                 filename = self._sanitize_for_comparison(title_text)
                 is_generated = filename in self._generated_titles
-                status_icon = "✅" if is_generated else "❌"
+                status_icon = "✅" if is_generated else "🔴"
                 choice_name = f"{status_icon} {h.title}"
 
                 # 标记已选中的项
@@ -578,7 +578,7 @@ class TerminalUI:
 
                 filename = self._sanitize_for_comparison(title_text)
                 is_generated = filename in self._generated_titles
-                status_icon = "✅" if is_generated else "❌"
+                status_icon = "✅" if is_generated else "🔴"
                 choice_name = f"{status_icon} {h.title}"
 
                 if choice_name in selected:

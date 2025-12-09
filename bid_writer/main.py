@@ -113,8 +113,8 @@ class BidWriter:
                 # 用户确认保存
                 break
         
-        # 保存文件
-        filepath = self.file_saver.save(heading.title, content)
+        # 保存文件（覆盖模式）
+        filepath = self.file_saver.save(heading.title, content, overwrite=True)
         self.ui.show_generation_complete(word_count, str(filepath))
         
         # 记录历史

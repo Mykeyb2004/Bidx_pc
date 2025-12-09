@@ -443,38 +443,18 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("警告", "请选择四级标题（叶子节点）")
             return
 
-        # 查找文件 - 支持多种文件名格式
+        # 查找文件（使用sanitize_filename清理后的文件名）
         from .file_saver import FileSaver
         output_dir = Path(self.bid_writer.config.output_directory)
 
-        # 尝试多种可能的文件名格式
-        possible_filenames = []
+        sanitized_filename = FileSaver(str(output_dir)).sanitize_filename(heading.title)
+        filepath = output_dir / f"{sanitized_filename}.md"
 
-        # 1. 使用完整标题（含编号）+ 下划线格式（当前sanitize_filename的输出）
-        sanitized_underscore = FileSaver(str(output_dir)).sanitize_filename(heading.title)
-        possible_filenames.append(sanitized_underscore)
-
-        # 2. 使用完整标题 + 空格格式（保留原始空格）
-        sanitized_space = heading.title.strip()
-        possible_filenames.append(sanitized_space)
-
-        # 3. 尝试带序号的版本（_1, _2, _3）
-        for i in range(1, 10):
-            possible_filenames.append(f"{sanitized_underscore}_{i}")
-
-        # 查找匹配的文件
-        filepath = None
-        for filename in possible_filenames:
-            test_path = output_dir / f"{filename}.md"
-            if test_path.exists():
-                filepath = test_path
-                break
-
-        if filepath and filepath.exists():
+        if filepath.exists():
             # 读取并预览
             content = filepath.read_text(encoding='utf-8')
             preview_window = tk.Toplevel(self)
-            preview_window.title(f"预览 - {heading.title}")
+            preview_window.title(f"预览 - {filepath.name}")
             preview_window.geometry("800x600")
 
             text_widget = tk.Text(preview_window, wrap=tk.WORD, font=('Consolas', 10))
@@ -607,9 +587,11 @@ class MainWindow(tk.Tk):
         ttk.Label(words_frame, text="最低字数：",
                  font=('TkDefaultFont', 10)).pack(side=tk.LEFT)
 
-        words_var = tk.StringVar(value="500")
-        words_entry = ttk.Entry(words_frame, textvariable=words_var, width=10)
-        words_entry.pack(side=tk.LEFT, padx=10)
+        words_var = tk.IntVar(value=3000)
+        words_spinbox = ttk.Spinbox(words_frame, from_=100, to=15000,
+                                    textvariable=words_var, width=10,
+                                    increment=100)
+        words_spinbox.pack(side=tk.LEFT, padx=10)
 
         # 按钮
         button_frame = ttk.Frame(dialog)
@@ -617,9 +599,9 @@ class MainWindow(tk.Tk):
 
         def on_ok():
             try:
-                min_words = int(words_var.get())
-                if min_words < 0:
-                    messagebox.showwarning("警告", "字数不能为负数")
+                min_words = words_var.get()
+                if min_words < 100 or min_words > 15000:
+                    messagebox.showwarning("警告", "字数必须在100-15000之间")
                     return
 
                 additional_req = req_text.get('1.0', tk.END).strip()
@@ -627,7 +609,7 @@ class MainWindow(tk.Tk):
                 result["requirements"] = additional_req
                 result["min_words"] = min_words
                 dialog.destroy()
-            except ValueError:
+            except tk.TclError:
                 messagebox.showwarning("警告", "请输入有效的字数")
 
         def on_cancel():
@@ -823,8 +805,11 @@ class MainWindow(tk.Tk):
             action, modification = self._show_preview_dialog(heading, content, word_count)
 
             if action == "save":
-                # 保存文件
-                filepath = self.bid_writer.file_saver.save(heading.title, content)
+                # 保存文件（覆盖模式）
+                filepath = self.bid_writer.file_saver.save(heading.title, content, overwrite=True)
+                # 显示保存成功的消息，包含文件路径
+                messagebox.showinfo("保存成功",
+                                  f"文件已保存：\n{filepath.name}\n\n完整路径：\n{filepath}")
                 return "success"
 
             elif action == "modify":

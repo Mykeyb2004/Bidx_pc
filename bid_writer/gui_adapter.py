@@ -34,7 +34,7 @@ class GUIAdapter:
         """
         获取状态图标
         - 有子节点：显示进度 📁/📂
-        - 叶子节点：显示 ✅/❌
+        - 叶子节点：显示 ✅/🔴
         """
         icon, generated, total = self.bid_writer.ui.get_heading_generation_status(heading)
 
@@ -107,9 +107,9 @@ class GUIAdapter:
                 self.bid_writer.run_expansion(heading, "", 500)
 
             if success:
-                # 保存文件
+                # 保存文件（覆盖模式）
                 filepath = self.bid_writer.file_saver.save(
-                    heading.title, content
+                    heading.title, content, overwrite=True
                 )
 
                 # 刷新缓存
