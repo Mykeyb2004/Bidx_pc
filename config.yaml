@@ -4,10 +4,11 @@
 api:
   base_url: "https://api.ssopen.top/v1"
   api_key: "sk-QcPphVJHWas4ra2OUiVkc77G2MnsEQBdXJV0DLCOqaMFf67X"
-  model: "gemini-2.5-pro"
+  # model: "gemini-2.5-pro"
+  model: "gemini-3-pro-preview"
   # 可选参数
   temperature: 0.7
-  max_tokens: 8000
+  max_tokens: 20000
 
 # 角色设定
 role: |
@@ -78,9 +79,10 @@ role: |
 
   **收到这些信息后，我将严格按照您的目录结构，为您生成一份高质量、高匹配度的投标方案。**
 
-  特别注意：
-  1. 不要输出除标书文本以外的任何内容，输出结果只能是标书正文的markdown格式代码。
-  2. 不要加入分割线。
+  ## Constraints
+  1. 不要输出除标书文本以外的任何内容，输出结果只能是标书正文的markdown格式代码
+  2. 不要加入分割线
+  3. 投标文件中的投标方为：杭州菲尔德经济信息咨询有限公司（简称：菲尔德咨询）
 
 # 招标需求（在此填写或指定文件路径）
 bid_requirements: |
