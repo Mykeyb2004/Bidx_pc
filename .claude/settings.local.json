@@ -6,7 +6,8 @@
       "Bash(uv run python -c \"\nfrom bid_writer.main import BidWriter\napp = BidWriter()\nprint(f''Output directory: {app.config.output_directory}'')\nprint(f''Has output directory: {app.ui.output_directory is not None}'')\nprint(f''Generated titles count: {len(app.ui._generated_titles)}'')\nprint(''Generated titles:'')\nfor title in sorted(app.ui._generated_titles):\n    print(f''  - {title}'')\n\")",
       "Bash(uv run python test_ui_check.py)",
       "Bash(uv run python:*)",
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "Bash(uv run:*)"
     ]
   }
 }

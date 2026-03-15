@@ -383,11 +383,11 @@ class MainWindow(tk.Tk):
             f"最低字数：{min_words}"):
             return
 
-        # 在主线程执行生成（避免线程安全问题）
-        self._do_batch_generate(selected_headings, additional_requirements, min_words)
+        # 在主线程执行生成（避免线程安全问题），批量生成模式自动保存
+        self._do_batch_generate(selected_headings, additional_requirements, min_words, auto_save=True)
 
     def _do_batch_generate(self, headings: List[HeadingNode],
-                           additional_requirements: str, min_words: int):
+                           additional_requirements: str, min_words: int, auto_save: bool = False):
         """执行批量生成（主线程）"""
         # 开始进度条
         self.progress_bar.start()
@@ -401,8 +401,8 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"[{i}/{total}] 正在生成: {heading.title}")
             self.update_idletasks()  # 保持界面响应
 
-            # 生成内容（可能需要多次修改）
-            result = self._generate_with_preview(heading, additional_requirements, min_words)
+            # 生成内容（批量生成时自动保存，单个生成时需要预览确认）
+            result = self._generate_with_preview(heading, additional_requirements, min_words, auto_save=auto_save)
 
             if result == "success":
                 success_count += 1
@@ -414,14 +414,7 @@ class MainWindow(tk.Tk):
         # 停止进度条
         self.progress_bar.stop()
 
-        # 显示结果
-        result_msg = f"批量生成完成\n\n成功: {success_count}\n跳过: {skip_count}\n失败: {fail_count}"
-        if success_count > 0:
-            messagebox.showinfo("完成", result_msg)
-        else:
-            messagebox.showwarning("完成", result_msg)
-
-        # 刷新状态
+        # 只在状态栏显示批量生成结果，不弹窗
         self.refresh_status()
         self.status_text.set(f"批量生成完成 - 成功: {success_count}, 跳过: {skip_count}, 失败: {fail_count}")
 
@@ -769,9 +762,12 @@ class MainWindow(tk.Tk):
 
     def _generate_with_preview(self, heading: HeadingNode,
                                additional_requirements: str,
-                               min_words: int) -> str:
+                               min_words: int, auto_save: bool = False) -> str:
         """
         生成内容并预览确认（支持修改重新生成）- 完全异步
+
+        Args:
+            auto_save: 是否自动保存，跳过后续确认步骤（批量生成时使用）
 
         Returns:
             "success" / "skip" / "failed"
@@ -795,21 +791,29 @@ class MainWindow(tk.Tk):
                 content, word_count = gen_window.wait_completion()
             except Exception as e:
                 gen_window.close()
-                messagebox.showerror("错误", f"生成失败: {str(e)}")
+                # 在状态栏显示错误信息，不弹窗
+                self.status_text.set(f"❌ 生成失败: {str(e)[:50]}...")
                 return "failed"
 
             # 关闭生成窗口
             gen_window.close()
 
-            # 显示预览对话框并获取用户操作
+            # 批量生成时自动保存，跳过预览对话框
+            if auto_save:
+                # 保存文件（覆盖模式）
+                filepath = self.bid_writer.file_saver.save(heading.title, content, overwrite=True)
+                # 在状态栏显示保存成功信息
+                self.status_text.set(f"✓ 自动保存: {filepath.name}" )
+                return "success"
+
+            # 单个生成时显示预览对话框并获取用户操作
             action, modification = self._show_preview_dialog(heading, content, word_count)
 
             if action == "save":
                 # 保存文件（覆盖模式）
                 filepath = self.bid_writer.file_saver.save(heading.title, content, overwrite=True)
-                # 显示保存成功的消息，包含文件路径
-                messagebox.showinfo("保存成功",
-                                  f"文件已保存：\n{filepath.name}\n\n完整路径：\n{filepath}")
+                # 在状态栏显示保存成功信息
+                self.status_text.set(f"✓ 文件已保存: {filepath.name}")
                 return "success"
 
             elif action == "modify":

@@ -1,0 +1,4 @@
+启动命令
+
+
+uv run run.py --gui
