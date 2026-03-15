@@ -62,8 +62,8 @@ def main(config_path: Optional[str] = None):
         )
         parser.add_argument(
             "-c", "--config",
-            default="config.yaml",
-            help="配置文件路径 (默认: config.yaml)"
+            default=None,
+            help="配置文件路径（留空则启动后在界面中选择）"
         )
         parser.add_argument(
             "--version",

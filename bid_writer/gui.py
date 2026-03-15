@@ -4,10 +4,11 @@ Tkinter GUI 主界面
 自动标书撰写系统的桌面版界面
 """
 
+import os
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox
-from typing import List
+from tkinter import filedialog, messagebox
+from typing import List, Optional
 from pathlib import Path
 
 from .main import BidWriter
@@ -19,10 +20,339 @@ import queue
 import sys
 
 
+DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
+_TK_ENV_READY = False
+
+
+def _is_valid_tcl_dir(path: Path) -> bool:
+    """判断是否是有效的 Tcl 脚本目录"""
+    return path.is_dir() and (path / "init.tcl").exists()
+
+
+def _is_valid_tk_dir(path: Path) -> bool:
+    """判断是否是有效的 Tk 脚本目录"""
+    return path.is_dir() and (path / "tk.tcl").exists()
+
+
+def ensure_tk_runtime() -> None:
+    """为 uv 管理的 Python 自动补齐 Tcl/Tk 脚本目录"""
+    global _TK_ENV_READY
+
+    if _TK_ENV_READY:
+        return
+
+    current_tcl = os.environ.get("TCL_LIBRARY", "")
+    current_tk = os.environ.get("TK_LIBRARY", "")
+    if _is_valid_tcl_dir(Path(current_tcl)) and _is_valid_tk_dir(Path(current_tk)):
+        _TK_ENV_READY = True
+        return
+
+    candidate_lib_dirs: list[Path] = []
+    for prefix in (sys.base_prefix, sys.prefix):
+        if not prefix:
+            continue
+        lib_dir = Path(prefix).expanduser().resolve() / "lib"
+        if lib_dir not in candidate_lib_dirs:
+            candidate_lib_dirs.append(lib_dir)
+
+    for lib_dir in candidate_lib_dirs:
+        if not lib_dir.exists():
+            continue
+
+        tcl_dirs = {
+            path.name.removeprefix("tcl"): path
+            for path in lib_dir.glob("tcl*")
+            if _is_valid_tcl_dir(path)
+        }
+        tk_dirs = {
+            path.name.removeprefix("tk"): path
+            for path in lib_dir.glob("tk*")
+            if _is_valid_tk_dir(path)
+        }
+
+        common_versions = sorted(set(tcl_dirs) & set(tk_dirs), reverse=True)
+        for version in common_versions:
+            os.environ["TCL_LIBRARY"] = str(tcl_dirs[version])
+            os.environ["TK_LIBRARY"] = str(tk_dirs[version])
+            _TK_ENV_READY = True
+            return
+
+
+def _display_path(path: Path, base_dir: Path) -> str:
+    """返回适合界面展示的路径"""
+    try:
+        return str(path.relative_to(base_dir))
+    except ValueError:
+        return str(path)
+
+
+def discover_config_files(base_dir: Optional[Path] = None) -> list[Path]:
+    """发现当前工作目录中的配置文件"""
+    search_dir = (base_dir or Path.cwd()).resolve()
+    config_paths: list[Path] = []
+    seen: set[Path] = set()
+
+    for pattern in ("config*.yaml", "config*.yml"):
+        for path in search_dir.glob(pattern):
+            if not path.is_file():
+                continue
+            if "example" in path.name.lower():
+                continue
+
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+
+            seen.add(resolved)
+            config_paths.append(resolved)
+
+    config_paths.sort(
+        key=lambda path: (
+            0 if path.name.lower() in DEFAULT_CONFIG_FILES else 1,
+            path.name.lower()
+        )
+    )
+    return config_paths
+
+
+class ConfigSelectionDialog(tk.Toplevel):
+    """配置文件选择对话框"""
+
+    def __init__(self, parent, initial_path: Optional[str] = None):
+        super().__init__(parent)
+
+        self.base_dir = Path.cwd().resolve()
+        self.result: Optional[str] = None
+        self._config_map: dict[str, Path] = {}
+
+        self.title("选择配置文件")
+        self.geometry("620x230")
+        self.resizable(False, False)
+        self._has_visible_parent = bool(
+            parent is not None
+            and parent.winfo_exists()
+            and parent.state() != "withdrawn"
+        )
+
+        if self._has_visible_parent:
+            self.transient(parent)
+
+        self.grab_set()
+
+        self.config_var = tk.StringVar()
+        self.info_var = tk.StringVar()
+
+        self._create_widgets()
+        self._load_config_choices(initial_path)
+        self._center_window()
+        self._show_dialog()
+
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        self.bind("<Return>", lambda event: self._on_confirm())
+        self.bind("<Escape>", lambda event: self._on_cancel())
+
+    def _create_widgets(self) -> None:
+        container = ttk.Frame(self, padding=20)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(
+            container,
+            text="请选择本次运行使用的配置文件",
+            font=("TkDefaultFont", 11, "bold")
+        ).pack(anchor=tk.W)
+
+        ttk.Label(
+            container,
+            text="默认列出当前目录下的 config*.yaml，可点击“浏览...”选择其它 YAML 文件。",
+        ).pack(anchor=tk.W, pady=(6, 16))
+
+        select_frame = ttk.Frame(container)
+        select_frame.pack(fill=tk.X)
+
+        self.config_combo = ttk.Combobox(
+            select_frame,
+            textvariable=self.config_var,
+            state="readonly",
+            width=58
+        )
+        self.config_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.config_combo.bind("<<ComboboxSelected>>", lambda event: self._update_info())
+
+        ttk.Button(
+            select_frame,
+            text="浏览...",
+            command=self._browse_config_file,
+            padding=(12, 6)
+        ).pack(side=tk.LEFT, padx=(10, 0))
+
+        ttk.Label(
+            container,
+            textvariable=self.info_var,
+            foreground="#555555",
+            wraplength=560,
+            justify=tk.LEFT
+        ).pack(anchor=tk.W, pady=(14, 20))
+
+        button_frame = ttk.Frame(container)
+        button_frame.pack(anchor=tk.E)
+
+        ttk.Button(
+            button_frame,
+            text="取消",
+            command=self._on_cancel,
+            width=10,
+            padding=(12, 6)
+        ).pack(side=tk.LEFT, padx=6)
+
+        ttk.Button(
+            button_frame,
+            text="确定",
+            command=self._on_confirm,
+            width=10,
+            padding=(12, 6)
+        ).pack(side=tk.LEFT)
+
+    def _load_config_choices(self, initial_path: Optional[str]) -> None:
+        config_paths = discover_config_files(self.base_dir)
+        initial_resolved = self._resolve_existing_path(initial_path)
+
+        if initial_resolved and initial_resolved not in config_paths:
+            config_paths.append(initial_resolved)
+
+        config_paths.sort(
+            key=lambda path: (
+                0 if path.name.lower() in DEFAULT_CONFIG_FILES else 1,
+                path.name.lower()
+            )
+        )
+
+        values: list[str] = []
+        self._config_map.clear()
+
+        for path in config_paths:
+            display_value = _display_path(path, self.base_dir)
+            values.append(display_value)
+            self._config_map[display_value] = path
+
+        self.config_combo["values"] = values
+
+        if initial_resolved:
+            self.config_var.set(_display_path(initial_resolved, self.base_dir))
+        elif values:
+            self.config_var.set(values[0])
+        else:
+            self.config_var.set("")
+
+        self._update_info()
+
+    def _resolve_existing_path(self, path_value: Optional[str]) -> Optional[Path]:
+        if not path_value:
+            return None
+
+        candidate = Path(path_value).expanduser()
+        if not candidate.is_absolute():
+            candidate = (self.base_dir / candidate).resolve()
+
+        if candidate.exists() and candidate.is_file():
+            return candidate
+        return None
+
+    def _browse_config_file(self) -> None:
+        initial_dir = self.base_dir
+        selected = filedialog.askopenfilename(
+            parent=self,
+            title="选择配置文件",
+            initialdir=str(initial_dir),
+            filetypes=[
+                ("YAML 配置文件", "*.yaml"),
+                ("YAML 配置文件", "*.yml"),
+                ("所有文件", "*.*"),
+            ],
+        )
+        if not selected:
+            return
+
+        selected_path = Path(selected).expanduser().resolve()
+        self._load_config_choices(str(selected_path))
+        self.config_var.set(_display_path(selected_path, self.base_dir))
+        self._update_info()
+
+    def _update_info(self) -> None:
+        selected_key = self.config_var.get().strip()
+        selected_path = self._config_map.get(selected_key)
+        if not selected_path:
+            self.info_var.set("未发现可用配置文件，请点击“浏览...”选择 YAML 配置。")
+            return
+
+        self.info_var.set(f"当前将使用：{selected_path}")
+
+    def _on_confirm(self) -> None:
+        selected_key = self.config_var.get().strip()
+        selected_path = self._config_map.get(selected_key)
+        if not selected_path:
+            messagebox.showwarning("提示", "请先选择配置文件。", parent=self)
+            return
+
+        self.result = str(selected_path)
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+    def _center_window(self) -> None:
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _show_dialog(self) -> None:
+        """确保对话框在 macOS 上可见并获得焦点"""
+        self.deiconify()
+        self.lift()
+        self.update_idletasks()
+
+        try:
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+        try:
+            self.attributes("-topmost", True)
+            self.after(200, lambda: self.attributes("-topmost", False))
+        except tk.TclError:
+            pass
+
+
+def choose_config_file(parent=None, initial_path: Optional[str] = None) -> Optional[str]:
+    """打开配置文件选择对话框"""
+    ensure_tk_runtime()
+
+    owns_root = False
+    dialog_parent = parent
+
+    if dialog_parent is None:
+        dialog_parent = tk.Tk()
+        dialog_parent.withdraw()
+        owns_root = True
+
+    dialog = ConfigSelectionDialog(dialog_parent, initial_path=initial_path)
+    dialog_parent.wait_window(dialog)
+    result = dialog.result
+
+    if owns_root:
+        dialog_parent.destroy()
+
+    return result
+
+
 class MainWindow(tk.Tk):
     """主窗口类"""
 
     def __init__(self, bid_writer: BidWriter):
+        ensure_tk_runtime()
         super().__init__()
 
         self.bid_writer = bid_writer
@@ -49,6 +379,7 @@ class MainWindow(tk.Tk):
         self.create_tool_bar()
         self.create_main_panes()
         self.create_status_bar()
+        self.update_window_context()
 
         # 创建展开/收缩菜单
         self.create_expand_menu()
@@ -74,6 +405,8 @@ class MainWindow(tk.Tk):
 
         # 文件菜单
         file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="选择配置文件...", command=self.select_and_switch_config)
+        file_menu.add_separator()
         file_menu.add_command(label="重新加载大纲", command=self.reload_outline)
         file_menu.add_command(label="刷新状态", command=self.refresh_status)
         file_menu.add_separator()
@@ -106,6 +439,11 @@ class MainWindow(tk.Tk):
                                command=self.reload_outline,
                                padding=(10, 8))
         btn_reload.pack(side=tk.LEFT, padx=5)
+
+        btn_config = ttk.Button(toolbar, text="⚙️ 配置",
+                                command=self.select_and_switch_config,
+                                padding=(10, 8))
+        btn_config.pack(side=tk.LEFT, padx=5)
 
         btn_refresh = ttk.Button(toolbar, text="🔄 刷新状态",
                                 command=self.refresh_status,
@@ -201,6 +539,11 @@ class MainWindow(tk.Tk):
         status_label = ttk.Label(status_frame, textvariable=self.status_text)
         status_label.pack(side=tk.LEFT, padx=5)
 
+        self.config_text = tk.StringVar()
+        self.config_text.set("配置: -")
+        config_label = ttk.Label(status_frame, textvariable=self.config_text)
+        config_label.pack(side=tk.LEFT, padx=10)
+
         # 进度条
         self.progress_bar = ttk.Progressbar(status_frame, mode='indeterminate')
         self.progress_bar.pack(side=tk.RIGHT, padx=5)
@@ -210,6 +553,12 @@ class MainWindow(tk.Tk):
         self.stats_text.set("已生成: 0 / 总计: 0")
         stats_label = ttk.Label(status_frame, textvariable=self.stats_text)
         stats_label.pack(side=tk.RIGHT, padx=10)
+
+    def update_window_context(self):
+        """更新窗口标题和当前配置显示"""
+        config_name = self.bid_writer.config.config_path.name
+        self.title(f"自动标书撰写系统 - GUI版 [{config_name}]")
+        self.config_text.set(f"配置: {config_name}")
 
     def create_expand_menu(self):
         """创建展开/收缩下拉菜单"""
@@ -251,28 +600,31 @@ class MainWindow(tk.Tk):
 
     def load_outline(self):
         """加载大纲到树形视图"""
-        # 清空现有内容
-        for item in self.outline_tree.get_children():
-            self.outline_tree.delete(item)
-
-        # 清空节点映射
-        self.tree_node_map.clear()
-
         # 加载大纲
         if not self.bid_writer.load_outline():
             messagebox.showerror(
                 "错误",
                 self.bid_writer.last_error_message or "加载大纲失败"
             )
-            return
+            return False
 
-        # 加载到树
+        self.adapter.refresh_generated_titles()
+        self._render_outline_tree()
+        self.select_all_var.set(False)
+        self.update_stats()
+        self.status_text.set("大纲加载完成")
+        return True
+
+    def _render_outline_tree(self):
+        """将已加载的大纲渲染到树形视图"""
+        for item in self.outline_tree.get_children():
+            self.outline_tree.delete(item)
+
+        self.tree_node_map.clear()
+
         root_headings = self.adapter.get_outline_tree()
         for heading in root_headings:
             self._add_tree_node("", heading)
-
-        self.update_stats()
-        self.status_text.set("大纲加载完成")
 
     def _add_tree_node(self, parent: str, heading: HeadingNode):
         """递归添加树节点"""
@@ -345,14 +697,56 @@ class MainWindow(tk.Tk):
     def reload_outline(self):
         """重新加载大纲"""
         self.status_text.set("正在重新加载大纲...")
-        self.load_outline()
+        if self.load_outline():
+            self.status_text.set("大纲重新加载完成")
 
     def refresh_status(self):
         """刷新状态"""
         self.status_text.set("正在刷新状态...")
-        self.adapter.refresh_generated_titles()
-        self.load_outline()
-        self.status_text.set("状态刷新完成")
+        if self.load_outline():
+            self.status_text.set("状态刷新完成")
+
+    def select_and_switch_config(self):
+        """选择并切换配置文件"""
+        selected_config = choose_config_file(
+            parent=self,
+            initial_path=str(self.bid_writer.config.config_path)
+        )
+        if not selected_config:
+            return
+
+        selected_path = Path(selected_config).expanduser().resolve()
+        current_path = self.bid_writer.config.config_path.resolve()
+
+        if selected_path == current_path:
+            self.status_text.set(f"当前已在使用配置: {selected_path.name}")
+            return
+
+        self.status_text.set(f"正在切换配置: {selected_path.name}")
+        self.update_idletasks()
+
+        try:
+            next_bid_writer = BidWriter(str(selected_path))
+        except Exception as e:
+            messagebox.showerror("错误", f"加载配置失败：\n{e}")
+            self.status_text.set("配置切换失败")
+            return
+
+        if not next_bid_writer.load_outline():
+            messagebox.showerror(
+                "错误",
+                next_bid_writer.last_error_message or "切换配置后加载大纲失败"
+            )
+            self.status_text.set("配置切换失败")
+            return
+
+        self.bid_writer = next_bid_writer
+        self.adapter = GUIAdapter(next_bid_writer)
+        self._render_outline_tree()
+        self.select_all_var.set(False)
+        self.update_window_context()
+        self.update_stats()
+        self.status_text.set(f"已切换配置: {selected_path.name}")
 
     def batch_generate(self):
         """批量生成选中的标题"""
@@ -990,8 +1384,15 @@ class MainWindow(tk.Tk):
         messagebox.showinfo("关于", about_text)
 
 
-def run_gui(config_path: str = "config.yaml"):
+def run_gui(config_path: Optional[str] = None):
     """运行GUI应用"""
+    ensure_tk_runtime()
+
+    if config_path is None:
+        config_path = choose_config_file(initial_path="config.yaml")
+        if not config_path:
+            return
+
     bid_writer = BidWriter(config_path)
     app = MainWindow(bid_writer)
     app.mainloop()
