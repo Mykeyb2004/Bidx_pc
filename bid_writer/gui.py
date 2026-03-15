@@ -6,8 +6,8 @@ Tkinter GUI 主界面
 
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox, filedialog
-from typing import List, Optional, Tuple
+from tkinter import messagebox
+from typing import List
 from pathlib import Path
 
 from .main import BidWriter
@@ -260,7 +260,10 @@ class MainWindow(tk.Tk):
 
         # 加载大纲
         if not self.bid_writer.load_outline():
-            messagebox.showerror("错误", "加载大纲失败")
+            messagebox.showerror(
+                "错误",
+                self.bid_writer.last_error_message or "加载大纲失败"
+            )
             return
 
         # 加载到树
@@ -336,7 +339,7 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已选择 {count} 个四级标题")
 
     def on_title_select(self, event):
-        """当选择标题时（已废弃，保留兼容性）"""
+        """保留空方法，避免旧绑定报错"""
         pass
 
     def reload_outline(self):
@@ -437,11 +440,10 @@ class MainWindow(tk.Tk):
             return
 
         # 查找文件（使用sanitize_filename清理后的文件名）
-        from .file_saver import FileSaver
-        output_dir = Path(self.bid_writer.config.output_directory)
-
-        sanitized_filename = FileSaver(str(output_dir)).sanitize_filename(heading.title)
-        filepath = output_dir / f"{sanitized_filename}.md"
+        file_saver = self.bid_writer.file_saver
+        output_dir = file_saver.output_directory
+        sanitized_filename = file_saver.sanitize_filename(heading.title)
+        filepath = output_dir / f"{file_saver.prefix}{sanitized_filename}.md"
 
         if filepath.exists():
             # 读取并预览
@@ -580,10 +582,15 @@ class MainWindow(tk.Tk):
         ttk.Label(words_frame, text="最低字数：",
                  font=('TkDefaultFont', 10)).pack(side=tk.LEFT)
 
-        words_var = tk.IntVar(value=3000)
-        words_spinbox = ttk.Spinbox(words_frame, from_=100, to=15000,
+        min_words_default = self.bid_writer.config.generation_default_min_words
+        min_words_min = self.bid_writer.config.generation_min_words_min
+        min_words_max = self.bid_writer.config.generation_min_words_max
+        min_words_step = self.bid_writer.config.generation_min_words_step
+
+        words_var = tk.IntVar(value=min_words_default)
+        words_spinbox = ttk.Spinbox(words_frame, from_=min_words_min, to=min_words_max,
                                     textvariable=words_var, width=10,
-                                    increment=100)
+                                    increment=min_words_step)
         words_spinbox.pack(side=tk.LEFT, padx=10)
 
         # 按钮
@@ -593,8 +600,8 @@ class MainWindow(tk.Tk):
         def on_ok():
             try:
                 min_words = words_var.get()
-                if min_words < 100 or min_words > 15000:
-                    messagebox.showwarning("警告", "字数必须在100-15000之间")
+                if min_words < min_words_min or min_words > min_words_max:
+                    messagebox.showwarning("警告", f"字数必须在{min_words_min}-{min_words_max}之间")
                     return
 
                 additional_req = req_text.get('1.0', tk.END).strip()
@@ -723,10 +730,20 @@ class MainWindow(tk.Tk):
                     self.text_queue.put(("status", "正在生成内容..."))
 
                     content_parts = []
-                    for chunk in ai_writer.expand(heading, requirements, min_words, stream=True):
-                        content_parts.append(chunk)
-                        # 将文本块放入队列
-                        self.text_queue.put(("text", chunk))
+                    result = ai_writer.expand(
+                        heading,
+                        requirements,
+                        min_words,
+                        stream=ai_writer.config.generation_stream
+                    )
+
+                    if isinstance(result, str):
+                        content_parts.append(result)
+                        self.text_queue.put(("text", result))
+                    else:
+                        for chunk in result:
+                            content_parts.append(chunk)
+                            self.text_queue.put(("text", chunk))
 
                     content = "".join(content_parts)
                     word_count = ai_writer.count_chinese_words(content)
@@ -800,8 +817,7 @@ class MainWindow(tk.Tk):
 
             # 批量生成时自动保存，跳过预览对话框
             if auto_save:
-                # 保存文件（覆盖模式）
-                filepath = self.bid_writer.file_saver.save(heading.title, content, overwrite=True)
+                filepath = self.bid_writer.file_saver.save(heading.title, content)
                 # 在状态栏显示保存成功信息
                 self.status_text.set(f"✓ 自动保存: {filepath.name}" )
                 return "success"
@@ -810,8 +826,7 @@ class MainWindow(tk.Tk):
             action, modification = self._show_preview_dialog(heading, content, word_count)
 
             if action == "save":
-                # 保存文件（覆盖模式）
-                filepath = self.bid_writer.file_saver.save(heading.title, content, overwrite=True)
+                filepath = self.bid_writer.file_saver.save(heading.title, content)
                 # 在状态栏显示保存成功信息
                 self.status_text.set(f"✓ 文件已保存: {filepath.name}")
                 return "success"
@@ -918,7 +933,7 @@ class MainWindow(tk.Tk):
 
     def open_output_dir(self):
         """打开输出目录"""
-        output_dir = Path(self.bid_writer.config.output_directory)
+        output_dir = self.bid_writer.file_saver.output_directory
         if output_dir.exists():
             import subprocess
             if sys.platform == "win32":
@@ -979,15 +994,7 @@ class MainWindow(tk.Tk):
 
 def run_gui(config_path: str = "config.yaml"):
     """运行GUI应用"""
-    # 创建BidWriter实例
     bid_writer = BidWriter(config_path)
-
-    # 检查大纲加载
-    if not bid_writer.load_outline():
-        print("加载大纲失败，请检查配置文件")
-        return
-
-    # 创建并运行GUI
     app = MainWindow(bid_writer)
     app.mainloop()
 

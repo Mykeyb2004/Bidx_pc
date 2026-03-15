@@ -1,11 +1,13 @@
 """
 GUI适配器
-桥接Tkinter GUI和核心业务逻辑
+桥接 Tkinter GUI 和核心业务逻辑
 """
 
-from typing import List, Callable, Optional
-from .outline_parser import HeadingNode
+import re
+from typing import List
+
 from .main import BidWriter
+from .outline_parser import HeadingNode
 
 
 class GUIAdapter:
@@ -13,142 +15,105 @@ class GUIAdapter:
 
     def __init__(self, bid_writer: BidWriter):
         self.bid_writer = bid_writer
+        self._generated_titles: set[str] = set()
+        self.refresh_generated_titles()
 
     def get_outline_tree(self) -> List[HeadingNode]:
         """获取大纲树"""
-        return self.bid_writer.parser.root_headings
+        return self.bid_writer.parser.root_headings if self.bid_writer.parser else []
 
     def get_all_headings(self) -> List[HeadingNode]:
         """获取所有标题节点"""
-        return self.bid_writer.parser.get_all_headings()
-
-    def get_generated_titles(self) -> set:
-        """获取已生成的标题集合"""
-        return self.bid_writer.ui._generated_titles
+        return self.bid_writer.parser.get_all_headings() if self.bid_writer.parser else []
 
     def refresh_generated_titles(self) -> None:
         """刷新已生成标题缓存"""
-        self.bid_writer.ui._refresh_generated_titles()
+        self._generated_titles.clear()
+        output_directory = self.bid_writer.file_saver.output_directory
+        if not output_directory.exists():
+            return
+
+        for md_file in output_directory.glob("*.md"):
+            stem = md_file.stem
+            prefix = self.bid_writer.file_saver.prefix
+            if prefix and stem.startswith(prefix):
+                stem = stem[len(prefix):]
+            stem = re.sub(r'_\d+$', '', stem)
+            match = re.match(r'^\d+(?:[.]\d+)*[_\s]+(.+)$', stem)
+            title_part = match.group(1) if match else stem
+            clean_title = self.bid_writer.file_saver.sanitize_filename(title_part)
+            if clean_title:
+                self._generated_titles.add(clean_title)
+
+    def get_heading_generation_status(self, heading: HeadingNode) -> tuple[str, int, int]:
+        """
+        检查标题及所有子标题的生成状态
+
+        Returns:
+            (状态图标, 已生成数量, 总数量)
+        """
+        if not self.bid_writer.file_saver.output_directory.exists():
+            return "🔴", 0, 0
+
+        if not heading.children:
+            filename = self._heading_filename_key(heading)
+            is_generated = filename in self._generated_titles
+            return ("✅" if is_generated else "🔴"), (1 if is_generated else 0), 1
+
+        leaf_nodes = self._get_leaf_nodes(heading)
+        if not leaf_nodes:
+            return "🔴", 0, 0
+
+        generated = sum(1 for node in leaf_nodes if self._heading_filename_key(node) in self._generated_titles)
+        total = len(leaf_nodes)
+
+        if generated == total:
+            return "✅", generated, total
+        if generated > 0:
+            return "📝", generated, total
+        return "🔴", generated, total
 
     def get_status_icon(self, heading: HeadingNode) -> str:
-        """
-        获取状态图标
-        - 有子节点：显示进度 📁/📂
-        - 叶子节点：显示 ✅/🔴
-        """
-        icon, generated, total = self.bid_writer.ui.get_heading_generation_status(heading)
-
+        """获取树上显示的状态图标"""
+        icon, _, _ = self.get_heading_generation_status(heading)
         if heading.children:
-            # 有子节点，使用文件夹图标表示进度
-            if icon == "✅":
-                return "📁"  # 全部完成
-            elif icon == "📝":
-                return "📂"  # 部分完成
-            else:
-                return "📁"  # 未开始
-        else:
-            # 叶子节点，直接显示状态
-            return icon
+            return "📂" if icon == "📝" else "📁"
+        return icon
 
     def is_heading_generated(self, heading: HeadingNode) -> bool:
         """检查标题是否已生成"""
         if not heading.children:
-            # 叶子节点，直接检查
-            title_match = self._extract_title(heading.title)
-            filename = self._sanitize(title_match)
-            return filename in self.get_generated_titles()
-        else:
-            # 有子节点，检查任一子节点是否生成
-            _, generated, _ = self.bid_writer.ui.get_heading_generation_status(heading)
-            return generated > 0
+            return self._heading_filename_key(heading) in self._generated_titles
+        _, generated, _ = self.get_heading_generation_status(heading)
+        return generated > 0
 
-    def get_progress(self, heading: HeadingNode) -> tuple:
+    def get_progress(self, heading: HeadingNode) -> tuple[int, int]:
         """获取进度 (已完成数, 总数)"""
-        _, generated, total = self.bid_writer.ui.get_heading_generation_status(heading)
+        _, generated, total = self.get_heading_generation_status(heading)
         return generated, total
+
+    def _heading_filename_key(self, heading: HeadingNode) -> str:
+        """获取标题对应的文件名比对键"""
+        return self.bid_writer.file_saver.sanitize_filename(self._extract_title(heading.title))
 
     def _extract_title(self, title: str) -> str:
         """从标题中提取纯文本（移除编号）"""
-        import re
-        match = re.match(r'^\d+([.]\d+)*[_\s]+(.+)$', title)
+        match = re.match(r'^\d+(?:[.]\d+)*[_\s]+(.+)$', title)
         if match:
-            return match.group(2)
+            return match.group(1)
         return title
 
-    def _sanitize(self, title: str) -> str:
-        """清理标题用于比对"""
-        import re
-        if not title:
-            return ""
-        invalid_chars = r'[\\/: *?"<>|\n\r\t]'
-        clean = re.sub(invalid_chars, '_', title)
-        clean = clean.strip(' .')
-        clean = re.sub(r'[_\s]+', '_', clean)
-        return clean
+    def _get_leaf_nodes(self, heading: HeadingNode) -> List[HeadingNode]:
+        """获取某节点下的所有叶子节点"""
+        leaves: List[HeadingNode] = []
 
-    def generate_single(self, heading: HeadingNode,
-                       progress_callback: Optional[Callable] = None) -> tuple:
-        """
-        生成单个标题
+        def collect(node: HeadingNode) -> None:
+            if not node.children:
+                leaves.append(node)
+                return
+            for child in node.children:
+                collect(child)
 
-        Args:
-            heading: 要生成的标题
-            progress_callback: 进度回调函数(message: str)
-
-        Returns:
-            (success: bool, filepath: str)
-        """
-        try:
-            if progress_callback:
-                progress_callback(f"开始生成：{heading.title}")
-
-            # 调用核心业务方法
-            success, content, word_count, _ = \
-                self.bid_writer.run_expansion(heading, "", 500)
-
-            if success:
-                # 保存文件（覆盖模式）
-                filepath = self.bid_writer.file_saver.save(
-                    heading.title, content, overwrite=True
-                )
-
-                # 刷新缓存
-                self.refresh_generated_titles()
-
-                if progress_callback:
-                    progress_callback(f"✅ 生成成功：{heading.title} ({word_count}字)")
-
-                return True, str(filepath)
-            else:
-                if progress_callback:
-                    progress_callback(f"❌ 生成失败：{heading.title}")
-                return False, ""
-
-        except Exception as e:
-            if progress_callback:
-                progress_callback(f"❌ 错误：{str(e)}")
-            return False, ""
-
-    def batch_generate(self, headings: List[HeadingNode],
-                      progress_callback: Optional[Callable] = None) -> List[tuple]:
-        """
-        批量生成多个标题
-
-        Args:
-            headings: 要生成的标题列表
-            progress_callback: 进度回调函数(message: str)
-
-        Returns:
-            [(success: bool, filepath: str), ...]
-        """
-        results = []
-        total = len(headings)
-
-        for i, heading in enumerate(headings, 1):
-            if progress_callback:
-                progress_callback(f"[{i}/{total}] 正在生成：{heading.title}")
-
-            success, filepath = self.generate_single(heading)
-            results.append((success, filepath))
-
-        return results
+        for child in heading.children:
+            collect(child)
+        return leaves

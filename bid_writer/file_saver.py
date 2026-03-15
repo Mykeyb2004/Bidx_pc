@@ -10,16 +10,28 @@ from typing import Optional
 
 class FileSaver:
     """文件保存器"""
-    
-    def __init__(self, output_directory: str = "./output", prefix: str = ""):
+
+    def __init__(
+        self,
+        output_directory: str = "./output",
+        prefix: str = "",
+        max_filename_length: int = 100,
+        empty_filename_fallback: str = "untitled",
+        include_title_header: bool = True,
+        overwrite_existing: bool = False
+    ):
         self.output_directory = Path(output_directory)
         self.prefix = prefix
+        self.max_filename_length = max_filename_length
+        self.empty_filename_fallback = empty_filename_fallback
+        self.include_title_header = include_title_header
+        self.overwrite_existing = overwrite_existing
         self._ensure_directory()
-    
+
     def _ensure_directory(self) -> None:
         """确保输出目录存在"""
         self.output_directory.mkdir(parents=True, exist_ok=True)
-    
+
     def sanitize_filename(self, title: str) -> str:
         """
         清理标题，生成合法的文件名
@@ -41,18 +53,17 @@ class FileSaver:
         
         # 替换连续的下划线和空格
         filename = re.sub(r'[_\s]+', '_', filename)
-        
+
         # 限制文件名长度（保留一些余量给扩展名和路径）
-        max_length = 100
-        if len(filename) > max_length:
-            filename = filename[:max_length]
-        
+        if len(filename) > self.max_filename_length:
+            filename = filename[:self.max_filename_length]
+
         # 如果标题为空，使用默认名称
         if not filename:
-            filename = "untitled"
-        
+            filename = self.empty_filename_fallback
+
         return filename
-    
+
     def get_unique_filepath(self, base_filename: str) -> Path:
         """
         获取唯一的文件路径（避免覆盖已存在的文件）
@@ -73,15 +84,15 @@ class FileSaver:
         while filepath.exists():
             filepath = self.output_directory / f"{base_filename}_{counter}.md"
             counter += 1
-        
+
         return filepath
-    
+
     def save(
         self,
         title: str,
         content: str,
-        include_title: bool = True,
-        overwrite: bool = False
+        include_title: Optional[bool] = None,
+        overwrite: Optional[bool] = None
     ) -> Path:
         """
         保存扩写内容到文件
@@ -96,23 +107,28 @@ class FileSaver:
             保存的文件路径
         """
         filename = self.sanitize_filename(title)
-        
+
+        if include_title is None:
+            include_title = self.include_title_header
+        if overwrite is None:
+            overwrite = self.overwrite_existing
+
         if overwrite:
             filepath = self.output_directory / f"{self.prefix}{filename}.md"
         else:
             filepath = self.get_unique_filepath(filename)
-        
+
         # 构建文件内容
         if include_title:
             full_content = f"# {title}\n\n{content}"
         else:
             full_content = content
-        
+
         # 写入文件
         filepath.write_text(full_content, encoding='utf-8')
-        
+
         return filepath
-    
+
     def save_with_metadata(
         self,
         title: str,
@@ -146,15 +162,15 @@ requirements: "{additional_requirements}"
 ---
 
 """
-        
+
         full_content = f"{metadata}# {title}\n\n{content}"
-        
+
         filename = self.sanitize_filename(title)
         filepath = self.get_unique_filepath(filename)
         filepath.write_text(full_content, encoding='utf-8')
-        
+
         return filepath
-    
+
     def list_saved_files(self) -> list:
         """列出所有已保存的文件"""
         return list(self.output_directory.glob("*.md"))

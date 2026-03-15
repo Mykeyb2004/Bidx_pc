@@ -1,0 +1,49 @@
+# 自动标书撰写系统示例配置
+
+api:
+  base_url: "https://api.openai.com/v1"
+  api_key: ""
+  model: "gpt-4"
+  temperature: 0.7
+  max_tokens: 8000
+  timeout_seconds: 120
+  max_retries: 3
+  # top_p: 0.95
+  # seed: 42
+
+role: |
+  你是一位专业的标书撰写专家。
+
+inputs:
+  outline_file: "./outline.md"
+  bid_requirements_file: "./项目要求/项目采购需求.md"
+  scoring_criteria_file: "./项目要求/评分标准.md"
+  # 也支持直接写长文本：
+  # bid_requirements: |
+  #   这里直接写招标需求全文
+  # scoring_criteria: |
+  #   这里直接写评分标准全文
+
+generation:
+  default_min_words: 3000
+  min_words_min: 100
+  min_words_max: 15000
+  min_words_step: 100
+  stream: true
+
+prompt:
+  output_format: "Markdown格式"
+  first_line_template: "#### {title}"
+  allow_english_terms: false
+  max_tables_per_section: 4
+  summary_title: "章节小结"
+  extra_rules:
+    - "内容要专业、严谨，符合标书撰写规范"
+
+output:
+  directory: "./output"
+  prefix: ""
+  include_title_header: true
+  overwrite_existing: true
+  filename_max_length: 100
+  empty_filename_fallback: "untitled"

@@ -105,9 +105,3 @@ output:
   directory: "./杭博满意度投标"
   # 文件名前缀（可选）
   prefix: ""
-
-# 历史记录配置
-history:
-  enabled: true
-  file: "./history.json"
-  max_records: 100
