@@ -19,8 +19,58 @@ class Config:
         self._config = {}
         self.load()
 
+    def _parse_dotenv_line(self, line: str) -> Optional[tuple[str, str]]:
+        """解析 `.env` 风格的单行配置。"""
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            return None
+
+        if stripped.startswith("export "):
+            stripped = stripped[len("export "):].strip()
+
+        if "=" not in stripped:
+            return None
+
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            return None
+
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+
+        return key, value
+
+    def _load_dotenv_file(self, dotenv_path: Path, protected_keys: set[str]) -> None:
+        """从 `.env` 文件加载环境变量，不覆盖外部已显式设置的值。"""
+        if not dotenv_path.exists() or not dotenv_path.is_file():
+            return
+
+        try:
+            lines = dotenv_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return
+
+        for line in lines:
+            parsed = self._parse_dotenv_line(line)
+            if not parsed:
+                continue
+            key, value = parsed
+            if key in protected_keys:
+                continue
+            os.environ[key] = value
+
+    def _load_local_env(self) -> None:
+        """按项目配置目录优先加载 `.env` / `.env.local`。"""
+        env_dir = self.config_path.parent.resolve()
+        protected_keys = set(os.environ)
+        for name in (".env", ".env.local"):
+            self._load_dotenv_file(env_dir / name, protected_keys)
+
     def load(self) -> None:
         """加载配置文件"""
+        self._load_local_env()
         if not self.config_path.exists():
             raise FileNotFoundError(f"配置文件不存在: {self.config_path}")
 

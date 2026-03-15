@@ -64,13 +64,24 @@ uv sync
 
 ```bash
 cp config.example.yaml config.yaml
+cp .env.example .env.local
+```
+
+然后把 API 参数写到 `.env.local`：
+
+```bash
+BID_WRITER_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_MODEL=gpt-4o-mini
+BID_WRITER_TEMPERATURE=0.7
+BID_WRITER_MAX_TOKENS=8000
+BID_WRITER_API_KEY=your-api-key
 ```
 
 至少需要配置：
 
-- `api.base_url`：模型服务地址
-- `api.api_key`：API Key
-- `api.model`：模型名称
+- `BID_WRITER_API_BASE_URL`：写入 `.env.local` 的模型服务地址
+- `BID_WRITER_API_KEY`：写入 `.env.local` 的 API Key
+- `BID_WRITER_MODEL`：写入 `.env.local` 的模型名称
 - `inputs.outline_file`：Markdown 大纲文件
 - `inputs.bid_requirements_file` 或 `inputs.bid_requirements`：招标需求
 - `inputs.scoring_criteria_file` 或 `inputs.scoring_criteria`：评分标准
@@ -119,15 +130,7 @@ uv run bid-writer --config config_chatgpt.yaml
 
 ```yaml
 api:
-  base_url: "https://api.openai.com/v1"
-  api_key: "your-api-key"
-  model: "gpt-4o-mini"
-  temperature: 0.7
-  max_tokens: 8000
-  timeout_seconds: 120
-  max_retries: 3
-  # top_p: 0.95
-  # seed: 42
+  # API 配置从 .env / .env.local 自动读取
 
 role: |
   你是一位专业的标书撰写专家。
@@ -170,6 +173,8 @@ output:
 ### 配置项补充说明
 
 - `api.base_url` 不限于 OpenAI 官方地址，只要接口兼容 OpenAI Chat Completions 即可
+- 程序会先读取配置文件同目录下的 `.env`，再读取 `.env.local`；`.env.local` 可覆盖 `.env`，但不会覆盖你外部 shell 已显式设置的环境变量
+- 最简单的用法是把整组 API 参数都写进 `.env.local`
 - `inputs.*_file` 路径会按“相对于配置文件所在目录”解析
 - `bid_requirements`、`scoring_criteria` 支持直接写长文本，也兼容“内容字段里只写一个文件路径”的旧配置
 - `prompt.first_line_template` 支持 `{title}` 和 `{full_path}` 占位符

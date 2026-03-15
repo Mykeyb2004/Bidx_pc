@@ -3,7 +3,8 @@
 # API配置
 api:
   base_url: "https://api.ssopen.top/v1"
-  api_key: "sk-z1RnEHE91JItk0xYYgzvcHjDv1Xj411jpzBa7uLUIBwuLtW2"
+  # API Key 从 .env.local 的 BID_WRITER_API_KEY 读取
+  api_key: ""
 #  model: "gpt-5.2"
   model: "gpt-5-nano"
   # 可选参数

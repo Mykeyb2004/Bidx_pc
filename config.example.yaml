@@ -1,15 +1,7 @@
 # 自动标书撰写系统示例配置
 
 api:
-  base_url: "https://api.openai.com/v1"
-  api_key: ""
-  model: "gpt-4"
-  temperature: 0.7
-  max_tokens: 8000
-  timeout_seconds: 120
-  max_retries: 3
-  # top_p: 0.95
-  # seed: 42
+  # API 配置推荐写入 .env / .env.local
 
 role: |
   你是一位专业的标书撰写专家。
