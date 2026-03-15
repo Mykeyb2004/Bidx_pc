@@ -65,11 +65,11 @@ prompt:
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范"
 
-# 招标需求（在此填写或指定文件路径）
+# 招标需求（指定文件路径）
 bid_requirements: |
   "/Users/zhangqijin/PycharmProjects/BidX_simple/项目要求/项目采购需求.md"
 
-# 评分标准（在此填写或指定文件路径）
+# 评分标准（指定文件路径）
 scoring_criteria: |
   "/Users/zhangqijin/PycharmProjects/BidX_simple/项目要求/评分标准.md"
 
