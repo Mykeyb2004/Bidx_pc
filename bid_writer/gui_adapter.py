@@ -89,6 +89,19 @@ class GUIAdapter:
             return "📂" if icon == "📝" else "📁"
         return icon
 
+    def get_status_text(self, heading: HeadingNode) -> str:
+        """获取树上显示的状态文本"""
+        _, generated, total = self.get_heading_generation_status(heading)
+
+        if not heading.children:
+            return "已完成" if generated else "未生成"
+
+        if total == 0 or generated == 0:
+            return "未生成"
+        if generated == total:
+            return "已完成"
+        return "部分完成"
+
     def is_heading_generated(self, heading: HeadingNode) -> bool:
         """检查标题是否已生成"""
         if not heading.children:

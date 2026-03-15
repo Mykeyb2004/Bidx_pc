@@ -397,6 +397,9 @@ class MainWindow(tk.Tk):
         self.adapter = GUIAdapter(bid_writer)
         self.tree_view_state = TreeViewState()
         self._suppress_tree_view_events = False
+        self.is_generating = False
+        self.stop_requested = False
+        self.visible_leaf_count = 0
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -434,6 +437,13 @@ class MainWindow(tk.Tk):
         else:
             self.load_outline(preserve_tree_view=False, reset_tree_view=True)
 
+    def _create_info_item(self, parent, label: str, textvariable: tk.StringVar, padx: tuple[int, int] = (0, 18)):
+        """创建顶部信息项"""
+        group = ttk.Frame(parent)
+        group.pack(side=tk.LEFT, padx=padx)
+        ttk.Label(group, text=f"{label}:", font=("TkDefaultFont", 9, "bold")).pack(side=tk.LEFT)
+        ttk.Label(group, textvariable=textvariable).pack(side=tk.LEFT, padx=(4, 0))
+
     def center_window(self):
         """居中窗口"""
         self.update_idletasks()
@@ -451,16 +461,16 @@ class MainWindow(tk.Tk):
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="选择配置文件...", command=self.select_and_switch_config)
         file_menu.add_separator()
-        file_menu.add_command(label="重新加载大纲", command=self.reload_outline)
-        file_menu.add_command(label="刷新状态", command=self.refresh_status)
+        file_menu.add_command(label="重载大纲", command=self.reload_outline)
+        file_menu.add_command(label="扫描输出状态", command=self.refresh_status)
         file_menu.add_separator()
         file_menu.add_command(label="退出", command=self.quit)
         menubar.add_cascade(label="文件", menu=file_menu)
 
         # 操作菜单
         action_menu = tk.Menu(menubar, tearoff=0)
-        action_menu.add_command(label="批量生成选中", command=self.batch_generate)
-        action_menu.add_command(label="预览", command=self.preview_selected)
+        action_menu.add_command(label="生成所选", command=self.batch_generate)
+        action_menu.add_command(label="预览所选", command=self.preview_selected)
         action_menu.add_separator()
         action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
         menubar.add_cascade(label="操作", menu=action_menu)
@@ -475,91 +485,168 @@ class MainWindow(tk.Tk):
 
     def create_tool_bar(self):
         """创建工具栏"""
-        toolbar = ttk.Frame(self)
-        toolbar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+        toolbar = ttk.Frame(self, padding=(8, 8, 8, 4))
+        toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        # 文件管理区
-        btn_reload = ttk.Button(toolbar, text="🔄 重新加载",
-                               command=self.reload_outline,
-                               padding=(10, 8))
-        btn_reload.pack(side=tk.LEFT, padx=5)
+        summary_bar = ttk.Frame(toolbar)
+        summary_bar.pack(fill=tk.X, pady=(0, 8))
 
-        btn_config = ttk.Button(toolbar, text="⚙️ 配置",
-                                command=self.select_and_switch_config,
-                                padding=(10, 8))
-        btn_config.pack(side=tk.LEFT, padx=5)
+        self.config_text = tk.StringVar(value="-")
+        self.output_text = tk.StringVar(value="-")
+        self.selection_text = tk.StringVar(value="0")
+        self.stats_text = tk.StringVar(value="0 / 0")
+        self.status_text = tk.StringVar(value="就绪")
 
-        btn_refresh = ttk.Button(toolbar, text="🔄 刷新状态",
-                                command=self.refresh_status,
-                                padding=(10, 8))
-        btn_refresh.pack(side=tk.LEFT, padx=5)
+        self._create_info_item(summary_bar, "配置", self.config_text)
+        self._create_info_item(summary_bar, "输出", self.output_text)
+        self._create_info_item(summary_bar, "已选", self.selection_text)
+        self._create_info_item(summary_bar, "已生成", self.stats_text)
+        self._create_info_item(summary_bar, "状态", self.status_text, padx=(0, 0))
 
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT,
-                                                       fill=tk.Y,
-                                                       padx=15)
+        action_bar = ttk.Frame(toolbar)
+        action_bar.pack(fill=tk.X)
 
-        # 树操作区
-        self.btn_tree_expand = ttk.Button(toolbar, text="📂 展开/收缩",
-                                          command=self.show_expand_menu,
-                                          padding=(10, 8))
-        self.btn_tree_expand.pack(side=tk.LEFT, padx=5)
+        utility_frame = ttk.Frame(action_bar)
+        utility_frame.pack(side=tk.LEFT)
 
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT,
-                                                       fill=tk.Y,
-                                                       padx=15)
+        self.btn_config = ttk.Button(
+            utility_frame,
+            text="切换配置",
+            command=self.select_and_switch_config,
+            padding=(12, 8)
+        )
+        self.btn_config.pack(side=tk.LEFT, padx=(0, 6))
 
-        # 内容生成区
-        btn_generate = ttk.Button(toolbar, text="⚡ 批量生成",
-                                 command=self.batch_generate,
-                                 padding=(10, 8))
-        btn_generate.pack(side=tk.LEFT, padx=5)
+        self.btn_reload = ttk.Button(
+            utility_frame,
+            text="重载大纲",
+            command=self.reload_outline,
+            padding=(12, 8)
+        )
+        self.btn_reload.pack(side=tk.LEFT, padx=6)
 
-        btn_preview = ttk.Button(toolbar, text="👁️ 预览",
-                                command=self.preview_selected,
-                                padding=(10, 8))
-        btn_preview.pack(side=tk.LEFT, padx=5)
+        self.btn_refresh = ttk.Button(
+            utility_frame,
+            text="扫描输出状态",
+            command=self.refresh_status,
+            padding=(12, 8)
+        )
+        self.btn_refresh.pack(side=tk.LEFT, padx=6)
 
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT,
-                                                       fill=tk.Y,
-                                                       padx=15)
+        self.btn_tree_expand = ttk.Button(
+            utility_frame,
+            text="展开全部▼",
+            command=self.show_expand_menu,
+            padding=(12, 8)
+        )
+        self.btn_tree_expand.pack(side=tk.LEFT, padx=6)
 
-        # 其他区
-        btn_output = ttk.Button(toolbar, text="📂 输出目录",
-                               command=self.open_output_dir,
-                               padding=(10, 8))
-        btn_output.pack(side=tk.LEFT, padx=5)
+        self.btn_output = ttk.Button(
+            utility_frame,
+            text="打开输出目录",
+            command=self.open_output_dir,
+            padding=(12, 8)
+        )
+        self.btn_output.pack(side=tk.LEFT, padx=(6, 0))
+
+        action_frame = ttk.Frame(action_bar)
+        action_frame.pack(side=tk.RIGHT)
+
+        self.btn_preview = ttk.Button(
+            action_frame,
+            text="预览所选",
+            command=self.preview_selected,
+            padding=(12, 8)
+        )
+        self.btn_preview.pack(side=tk.LEFT, padx=6)
+
+        self.btn_generate = ttk.Button(
+            action_frame,
+            text="生成所选 0",
+            command=self.batch_generate,
+            padding=(16, 8),
+            default=tk.ACTIVE
+        )
+        self.btn_generate.pack(side=tk.LEFT, padx=(6, 0))
 
     def create_main_panes(self):
         """创建主面板"""
         main_frame = ttk.Frame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
-        # 标题和说明
         header_frame = ttk.Frame(main_frame)
-        header_frame.pack(fill=tk.X, pady=5)
+        header_frame.pack(fill=tk.X, pady=(0, 8))
 
-        ttk.Label(header_frame, text="📄 大纲结构（仅四级标题可多选）",
-                 font=('TkDefaultFont', 10, 'bold')).pack(side=tk.LEFT)
+        title_group = ttk.Frame(header_frame)
+        title_group.pack(side=tk.LEFT)
+        ttk.Label(
+            title_group,
+            text="大纲结构",
+            font=("TkDefaultFont", 10, "bold")
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            title_group,
+            text="仅四级标题支持多选生成",
+            foreground="#666666"
+        ).pack(side=tk.LEFT, padx=(10, 0))
 
-        # 全选/全不选四级标题
-        self.select_all_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(header_frame, text="全选四级标题",
-                       variable=self.select_all_var,
-                       command=self.toggle_select_all).pack(side=tk.RIGHT, padx=5)
+        control_group = ttk.Frame(header_frame)
+        control_group.pack(side=tk.RIGHT)
+
+        ttk.Label(control_group, text="搜索").pack(side=tk.LEFT, padx=(0, 6))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *_: self.apply_tree_filters())
+        self.search_entry = ttk.Entry(control_group, textvariable=self.search_var, width=24)
+        self.search_entry.pack(side=tk.LEFT, padx=(0, 10))
+
+        ttk.Label(control_group, text="筛选").pack(side=tk.LEFT, padx=(0, 6))
+        self.status_filter_var = tk.StringVar(value="全部")
+        self.status_filter_combo = ttk.Combobox(
+            control_group,
+            textvariable=self.status_filter_var,
+            values=("全部", "未生成", "已生成", "已完成", "部分完成"),
+            state="readonly",
+            width=10
+        )
+        self.status_filter_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.status_filter_combo.bind("<<ComboboxSelected>>", lambda event: self.apply_tree_filters())
+
+        self.btn_select_all = ttk.Button(
+            control_group,
+            text="全选四级标题",
+            command=self.select_all_leaf_titles,
+            padding=(10, 6)
+        )
+        self.btn_select_all.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.btn_clear_selection = ttk.Button(
+            control_group,
+            text="清空选择",
+            command=self.clear_selection,
+            padding=(10, 6)
+        )
+        self.btn_clear_selection.pack(side=tk.LEFT)
 
         # 大纲树（支持多选）
         tree_frame = ttk.Frame(main_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.outline_tree = ttk.Treeview(tree_frame, columns=("status", "progress"),
-                                        height=30, show="tree headings",
-                                        selectmode='extended')
+        self.outline_tree = ttk.Treeview(
+            tree_frame,
+            columns=("status", "progress"),
+            height=30,
+            show="tree headings",
+            selectmode='extended'
+        )
         self.outline_tree.heading("#0", text="标题")
         self.outline_tree.heading("status", text="状态")
         self.outline_tree.heading("progress", text="进度")
-        self.outline_tree.column("#0", width=600)
-        self.outline_tree.column("status", width=80, anchor=tk.CENTER)
-        self.outline_tree.column("progress", width=100, anchor=tk.CENTER)
+        self.outline_tree.column("#0", width=680)
+        self.outline_tree.column("status", width=110, anchor=tk.CENTER)
+        self.outline_tree.column("progress", width=110, anchor=tk.CENTER)
+        self.outline_tree.tag_configure("completed", foreground="#1f7a4d")
+        self.outline_tree.tag_configure("partial", foreground="#8a5a00")
+        self.outline_tree.tag_configure("pending", foreground="#666666")
 
         # 滚动条
         sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
@@ -576,59 +663,65 @@ class MainWindow(tk.Tk):
 
     def create_status_bar(self):
         """创建状态栏"""
-        status_frame = ttk.Frame(self)
+        status_frame = ttk.Frame(self, padding=(8, 4))
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # 状态文本
-        self.status_text = tk.StringVar()
-        self.status_text.set("就绪")
-        status_label = ttk.Label(status_frame, textvariable=self.status_text)
-        status_label.pack(side=tk.LEFT, padx=5)
+        self.task_text = tk.StringVar(value="当前任务: 空闲")
+        ttk.Label(status_frame, textvariable=self.task_text).pack(side=tk.LEFT)
 
-        self.config_text = tk.StringVar()
-        self.config_text.set("配置: -")
-        config_label = ttk.Label(status_frame, textvariable=self.config_text)
-        config_label.pack(side=tk.LEFT, padx=10)
+        self.batch_progress_text = tk.StringVar(value="0 / 0")
+        ttk.Label(status_frame, textvariable=self.batch_progress_text).pack(side=tk.RIGHT)
 
-        # 进度条
-        self.progress_bar = ttk.Progressbar(status_frame, mode='indeterminate')
-        self.progress_bar.pack(side=tk.RIGHT, padx=5)
+        self.btn_stop_generation = ttk.Button(
+            status_frame,
+            text="停止本轮",
+            command=self.request_stop_generation,
+            padding=(10, 6)
+        )
+        self.btn_stop_generation.pack(side=tk.RIGHT, padx=(10, 0))
+        self.btn_stop_generation.config(state=tk.DISABLED)
 
-        # 统计信息
-        self.stats_text = tk.StringVar()
-        self.stats_text.set("已生成: 0 / 总计: 0")
-        stats_label = ttk.Label(status_frame, textvariable=self.stats_text)
-        stats_label.pack(side=tk.RIGHT, padx=10)
+        self.progress_bar = ttk.Progressbar(
+            status_frame,
+            mode='determinate',
+            length=220,
+            maximum=1,
+            value=0
+        )
+        self.progress_bar.pack(side=tk.RIGHT, padx=(10, 0))
 
     def update_window_context(self):
         """更新窗口标题和当前配置显示"""
         config_name = self.bid_writer.config.config_path.name
         self.title(f"自动标书撰写系统 - GUI版 [{config_name}]")
-        self.config_text.set(f"配置: {config_name}")
+        self.config_text.set(config_name)
+        base_dir = Path.cwd().resolve()
+        output_dir = self.bid_writer.file_saver.output_directory.resolve()
+        self.output_text.set(_display_path(output_dir, base_dir))
 
     def create_expand_menu(self):
         """创建展开/收缩下拉菜单"""
         self.expand_menu = tk.Menu(self, tearoff=0)
         self.expand_menu.add_command(
-            label="📂 全部展开",
+            label="全部展开",
             command=self.expand_all
         )
         self.expand_menu.add_separator()
         self.expand_menu.add_command(
-            label="📂 展开至一级 (Ctrl+1)",
+            label="展开至一级 (Ctrl+1)",
             command=self.expand_to_level_1
         )
         self.expand_menu.add_command(
-            label="📂 展开至二级 (Ctrl+2)",
+            label="展开至二级 (Ctrl+2)",
             command=self.expand_to_level_2
         )
         self.expand_menu.add_command(
-            label="📂 展开至三级 (Ctrl+3)",
+            label="展开至三级 (Ctrl+3)",
             command=self.expand_to_level_3
         )
         self.expand_menu.add_separator()
         self.expand_menu.add_command(
-            label="📁 收缩全部 (Ctrl+0)",
+            label="收缩全部 (Ctrl+0)",
             command=self.collapse_all
         )
 
@@ -639,6 +732,9 @@ class MainWindow(tk.Tk):
         self.bind('<Control-Key-2>', lambda e: self.expand_to_level_2())
         self.bind('<Control-Key-3>', lambda e: self.expand_to_level_3())
         self.bind('<Control-Key-0>', lambda e: self.collapse_all())
+        self.bind('<Control-a>', lambda e: self.select_all_leaf_titles())
+        self.bind('<Control-f>', lambda e: self.focus_search())
+        self.bind('<Escape>', lambda e: self.clear_selection())
 
     def show_expand_menu(self):
         """显示展开/收缩菜单"""
@@ -647,6 +743,85 @@ class MainWindow(tk.Tk):
         y = self.btn_tree_expand.winfo_rooty() + self.btn_tree_expand.winfo_height()
         # 在按钮下方显示菜单
         self.expand_menu.post(x, y)
+
+    def focus_search(self):
+        """聚焦到搜索框"""
+        self.search_entry.focus_set()
+        self.search_entry.selection_range(0, tk.END)
+        return "break"
+
+    def _get_selected_heading_paths(self) -> set[str]:
+        """记录当前选中的叶子节点路径"""
+        selected_paths: set[str] = set()
+        for item_id in self.outline_tree.selection():
+            heading = self.tree_node_map.get(item_id)
+            if heading and not heading.children:
+                selected_paths.add(heading.full_path)
+        return selected_paths
+
+    def _restore_selected_heading_paths(self, selected_paths: set[str]):
+        """在树重绘后恢复叶子节点选择"""
+        if not selected_paths:
+            return
+
+        for item_id, heading in self.tree_node_map.items():
+            if heading.children:
+                continue
+            if heading.full_path in selected_paths:
+                self.outline_tree.selection_add(item_id)
+
+    def _has_active_filters(self) -> bool:
+        """是否启用了搜索或状态筛选"""
+        query = self.search_var.get().strip() if hasattr(self, "search_var") else ""
+        status_filter = self.status_filter_var.get() if hasattr(self, "status_filter_var") else "全部"
+        return bool(query) or status_filter != "全部"
+
+    def _heading_matches_search(self, heading: HeadingNode, query: str) -> bool:
+        """标题是否命中搜索条件"""
+        if not query:
+            return True
+
+        query_lower = query.lower()
+        return query_lower in heading.title.lower() or query_lower in heading.full_path.lower()
+
+    def _heading_matches_status_filter(self, heading: HeadingNode, status_filter: str) -> bool:
+        """标题是否命中状态筛选"""
+        if status_filter == "全部":
+            return True
+
+        status = self.adapter.get_status_text(heading)
+        if status_filter == "已生成":
+            return status in {"已完成", "部分完成"}
+        return status == status_filter
+
+    def _heading_or_descendant_matches(self, heading: HeadingNode, query: str, status_filter: str) -> bool:
+        """标题本身或子节点是否命中过滤条件"""
+        self_matches = (
+            self._heading_matches_search(heading, query)
+            and self._heading_matches_status_filter(heading, status_filter)
+        )
+        if self_matches:
+            return True
+        return any(
+            self._heading_or_descendant_matches(child, query, status_filter)
+            for child in heading.children
+        )
+
+    def apply_tree_filters(self):
+        """应用搜索和状态筛选"""
+        if not hasattr(self, "outline_tree"):
+            return
+
+        self._remember_current_tree_view_state()
+        selected_paths = self._get_selected_heading_paths()
+        self._render_outline_tree()
+        if self._has_active_filters():
+            self._set_all_nodes_open("", True)
+        else:
+            self._apply_tree_view_state()
+        self._restore_selected_heading_paths(selected_paths)
+        self.update_stats()
+        self.update_action_states()
 
     def load_outline(self, preserve_tree_view: bool = True, reset_tree_view: bool = False):
         """加载大纲到树形视图"""
@@ -667,15 +842,20 @@ class MainWindow(tk.Tk):
 
     def _sync_loaded_outline(self, reset_tree_view: bool = False):
         """同步已加载的大纲到界面"""
+        selected_paths = set() if reset_tree_view else self._get_selected_heading_paths()
         if reset_tree_view:
             self.reset_tree_view_state()
 
         self.adapter.refresh_generated_titles()
         self._render_outline_tree()
-        self._apply_tree_view_state()
-        self.select_all_var.set(False)
+        if self._has_active_filters():
+            self._set_all_nodes_open("", True)
+        else:
+            self._apply_tree_view_state()
+        self._restore_selected_heading_paths(selected_paths)
         self.update_window_context()
         self.update_stats()
+        self.update_action_states()
         remember_last_config(str(self.bid_writer.config.config_path))
 
     def _render_outline_tree(self):
@@ -684,10 +864,14 @@ class MainWindow(tk.Tk):
             self.outline_tree.delete(item)
 
         self.tree_node_map.clear()
+        self.visible_leaf_count = 0
 
         root_headings = self.adapter.get_outline_tree()
+        query = self.search_var.get().strip() if hasattr(self, "search_var") else ""
+        status_filter = self.status_filter_var.get() if hasattr(self, "status_filter_var") else "全部"
+
         for heading in root_headings:
-            self._add_tree_node("", heading)
+            self._add_tree_node("", heading, query, status_filter)
 
     def reset_tree_view_state(self):
         """重置大纲树视图状态为默认全部展开"""
@@ -760,22 +944,31 @@ class MainWindow(tk.Tk):
                 self.outline_tree.item(child_id, open=is_open)
             self._set_all_nodes_open(child_id, is_open)
 
-    def _add_tree_node(self, parent: str, heading: HeadingNode):
+    def _add_tree_node(self, parent: str, heading: HeadingNode, query: str = "", status_filter: str = "全部"):
         """递归添加树节点"""
-        # 获取状态
-        status = self.adapter.get_status_icon(heading)
-        progress_info = ""
+        if not self._heading_or_descendant_matches(heading, query, status_filter):
+            return
 
+        status = self.adapter.get_status_text(heading)
+        progress_info = "-"
         if heading.children:
             generated, total = self.adapter.get_progress(heading)
-            if total > 0:
-                progress_info = f"{generated}/{total}"
+            progress_info = f"{generated}/{total}" if total > 0 else "-"
+        else:
+            self.visible_leaf_count += 1
 
-        # 插入节点
+        if status == "已完成":
+            row_tag = "completed"
+        elif status == "部分完成":
+            row_tag = "partial"
+        else:
+            row_tag = "pending"
+
         node_id = self.outline_tree.insert(
             parent, 'end',
-            text=f" {heading.title}",
-            values=(status, progress_info)
+            text=heading.title,
+            values=(status, progress_info),
+            tags=(row_tag,)
         )
 
         # 保存节点映射
@@ -783,13 +976,62 @@ class MainWindow(tk.Tk):
 
         # 递归添加子节点
         for child in heading.children:
-            self._add_tree_node(node_id, child)
+            self._add_tree_node(node_id, child, query, status_filter)
+
+    def _get_selected_leaf_headings(self) -> List[HeadingNode]:
+        """返回当前选中的四级标题"""
+        selected_headings: List[HeadingNode] = []
+        seen_paths: set[str] = set()
+        for item_id in self.outline_tree.selection():
+            heading = self.tree_node_map.get(item_id)
+            if not heading or heading.children or heading.full_path in seen_paths:
+                continue
+            seen_paths.add(heading.full_path)
+            selected_headings.append(heading)
+        return selected_headings
+
+    def update_action_states(self):
+        """同步顶部操作按钮和统计信息"""
+        selected_headings = self._get_selected_leaf_headings()
+        selected_count = len(selected_headings)
+        self.selection_text.set(str(selected_count))
+        self.btn_generate.config(
+            text=f"生成所选 {selected_count}",
+            state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL)
+        )
+        self.btn_preview.config(
+            state=(tk.DISABLED if self.is_generating or selected_count != 1 else tk.NORMAL)
+        )
+        self.btn_select_all.config(
+            state=(tk.DISABLED if self.is_generating or self.visible_leaf_count == 0 else tk.NORMAL)
+        )
+        self.btn_clear_selection.config(
+            state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL)
+        )
+
+        button_state = tk.DISABLED if self.is_generating else tk.NORMAL
+        for widget in (
+            self.btn_config,
+            self.btn_reload,
+            self.btn_refresh,
+            self.btn_tree_expand,
+            self.btn_output,
+        ):
+            widget.config(state=button_state)
+
+        self.search_entry.config(state=(tk.DISABLED if self.is_generating else tk.NORMAL))
+        self.status_filter_combo.config(state=("disabled" if self.is_generating else "readonly"))
+
+        self.btn_stop_generation.config(
+            state=(tk.NORMAL if self.is_generating else tk.DISABLED)
+        )
 
     def on_tree_select(self, event):
         """当选择树节点时 - 只允许选择四级标题（叶子节点）"""
         selection = self.outline_tree.selection()
         if not selection:
             self.status_text.set("未选择任何标题")
+            self.update_action_states()
             return
 
         # 过滤掉非叶子节点
@@ -823,6 +1065,7 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已选择: {heading.title if heading else ''}")
         else:
             self.status_text.set(f"已选择 {count} 个四级标题")
+        self.update_action_states()
 
     def on_title_select(self, event):
         """保留空方法，避免旧绑定报错"""
@@ -840,15 +1083,15 @@ class MainWindow(tk.Tk):
 
     def reload_outline(self):
         """重新加载大纲"""
-        self.status_text.set("正在重新加载大纲...")
+        self.status_text.set("正在重载大纲...")
         if self.load_outline(preserve_tree_view=True):
-            self.status_text.set("大纲重新加载完成")
+            self.status_text.set("大纲重载完成")
 
     def refresh_status(self):
         """刷新状态"""
-        self.status_text.set("正在刷新状态...")
+        self.status_text.set("正在扫描输出状态...")
         if self.load_outline(preserve_tree_view=True):
-            self.status_text.set("状态刷新完成")
+            self.status_text.set("输出状态刷新完成")
 
     def select_and_switch_config(self):
         """选择并切换配置文件"""
@@ -891,20 +1134,9 @@ class MainWindow(tk.Tk):
 
     def batch_generate(self):
         """批量生成选中的标题"""
-        selection = self.outline_tree.selection()
-        if not selection:
-            messagebox.showwarning("警告", "请先选择要生成的四级标题")
-            return
-
-        # 获取选中的HeadingNode列表
-        selected_headings = []
-        for item_id in selection:
-            heading = self.tree_node_map.get(item_id)
-            if heading and not heading.children:
-                selected_headings.append(heading)
-
+        selected_headings = self._get_selected_leaf_headings()
         if not selected_headings:
-            messagebox.showwarning("警告", "请选择四级标题（叶子节点）")
+            messagebox.showwarning("警告", "请先选择要生成的四级标题")
             return
 
         # 获取生成参数
@@ -915,10 +1147,17 @@ class MainWindow(tk.Tk):
         additional_requirements, min_words = params
 
         # 确认对话框
-        if not messagebox.askyesno("确认",
-            f"确定要生成 {len(selected_headings)} 个标题吗？\n\n" +
-            f"附加要求：{additional_requirements or '（无）'}\n" +
-            f"最低字数：{min_words}"):
+        warning_line = ""
+        if len(selected_headings) >= 20:
+            warning_line = "\n\n本次任务较大，建议确认筛选范围后再执行。"
+
+        if not messagebox.askyesno(
+            "确认",
+            f"确定要生成 {len(selected_headings)} 个标题吗？\n\n"
+            f"附加要求：{additional_requirements or '（无）'}\n"
+            f"最低字数：{min_words}"
+            f"{warning_line}"
+        ):
             return
 
         # 在主线程执行生成（避免线程安全问题），批量生成模式自动保存
@@ -927,52 +1166,83 @@ class MainWindow(tk.Tk):
     def _do_batch_generate(self, headings: List[HeadingNode],
                            additional_requirements: str, min_words: int, auto_save: bool = False):
         """执行批量生成（主线程）"""
-        # 开始进度条
-        self.progress_bar.start()
-
         total = len(headings)
         success_count = 0
         skip_count = 0
         fail_count = 0
+        completed_count = 0
+        stopped_early = False
 
-        for i, heading in enumerate(headings, 1):
-            self.status_text.set(f"[{i}/{total}] 正在生成: {heading.title}")
-            self.update_idletasks()  # 保持界面响应
+        self.is_generating = True
+        self.stop_requested = False
+        self.progress_bar.configure(maximum=max(total, 1), value=0)
+        self.batch_progress_text.set(f"0 / {total}")
+        self.task_text.set("当前任务: 准备开始")
+        self.update_action_states()
 
-            # 生成内容（批量生成时自动保存，单个生成时需要预览确认）
-            result = self._generate_with_preview(heading, additional_requirements, min_words, auto_save=auto_save)
+        try:
+            for i, heading in enumerate(headings, 1):
+                if self.stop_requested:
+                    stopped_early = True
+                    break
 
-            if result == "success":
-                success_count += 1
-            elif result == "skip":
-                skip_count += 1
-            else:
-                fail_count += 1
+                self.progress_bar.configure(value=i - 1)
+                self.batch_progress_text.set(f"{i - 1} / {total}")
+                self.task_text.set(f"当前任务 {i}/{total}: {heading.title}")
+                self.status_text.set(f"[{i}/{total}] 正在生成: {heading.title}")
+                self.update_idletasks()
 
-        # 停止进度条
-        self.progress_bar.stop()
+                result = self._generate_with_preview(
+                    heading,
+                    additional_requirements,
+                    min_words,
+                    auto_save=auto_save
+                )
 
-        # 只在状态栏显示批量生成结果，不弹窗
+                completed_count = i
+                self.progress_bar.configure(value=i)
+                self.batch_progress_text.set(f"{i} / {total}")
+
+                if result == "success":
+                    success_count += 1
+                elif result == "skip":
+                    skip_count += 1
+                else:
+                    fail_count += 1
+
+                if self.stop_requested:
+                    stopped_early = True
+                    break
+        finally:
+            self.is_generating = False
+            self.stop_requested = False
+            self.update_action_states()
+
         self.refresh_status()
-        self.status_text.set(f"批量生成完成 - 成功: {success_count}, 跳过: {skip_count}, 失败: {fail_count}")
+        self.progress_bar.configure(value=(completed_count if stopped_early else total))
+        self.batch_progress_text.set(f"{completed_count if stopped_early else total} / {total}")
+        self.task_text.set("当前任务: 空闲")
+        if stopped_early:
+            self.status_text.set(
+                f"批量生成已停止 - 成功: {success_count}, 跳过: {skip_count}, 失败: {fail_count}"
+            )
+        else:
+            self.status_text.set(
+                f"批量生成完成 - 成功: {success_count}, 跳过: {skip_count}, 失败: {fail_count}"
+            )
 
     def preview_selected(self):
         """预览选中的标题"""
-        selection = self.outline_tree.selection()
-        if not selection:
+        selected_headings = self._get_selected_leaf_headings()
+        if not selected_headings:
             messagebox.showwarning("警告", "请先选择要预览的标题")
             return
 
-        if len(selection) > 1:
+        if len(selected_headings) > 1:
             messagebox.showwarning("警告", "只能预览单个标题")
             return
 
-        item_id = selection[0]
-        heading = self.tree_node_map.get(item_id)
-
-        if not heading or heading.children:
-            messagebox.showwarning("警告", "请选择四级标题（叶子节点）")
-            return
+        heading = selected_headings[0]
 
         # 查找文件（优先使用稳定 ID，兼容旧命名规则）
         file_saver = self.bid_writer.file_saver
@@ -995,17 +1265,31 @@ class MainWindow(tk.Tk):
             text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         else:
+            self.status_text.set(f"未找到预览文件: {heading.title}")
             messagebox.showinfo("预览", f"文件未生成\n标题：{heading.title}")
 
-    def toggle_select_all(self):
-        """全选/全不选四级标题（叶子节点）"""
+    def clear_selection(self):
+        """清空当前选择"""
         # 清空当前选择
         for item_id in self.outline_tree.selection():
             self.outline_tree.selection_remove(item_id)
+        self.status_text.set("已清空选择")
+        self.update_action_states()
+        return "break"
 
-        if self.select_all_var.get():
-            # 全选所有叶子节点
-            self._select_all_leaf_nodes("")
+    def select_all_leaf_titles(self):
+        """全选当前结果中的四级标题"""
+        for item_id in self.outline_tree.selection():
+            self.outline_tree.selection_remove(item_id)
+
+        self._select_all_leaf_nodes("")
+        selected_count = len(self._get_selected_leaf_headings())
+        if selected_count == 0:
+            self.status_text.set("当前结果中没有可选择的四级标题")
+        else:
+            self.status_text.set(f"已选择 {selected_count} 个四级标题")
+        self.update_action_states()
+        return "break"
 
     def _select_all_leaf_nodes(self, parent):
         """递归选择所有叶子节点"""
@@ -1019,6 +1303,15 @@ class MainWindow(tk.Tk):
                 else:
                     # 递归处理子节点
                     self._select_all_leaf_nodes(child_id)
+
+    def request_stop_generation(self):
+        """请求在当前标题完成后停止批量生成"""
+        if not self.is_generating:
+            return
+
+        self.stop_requested = True
+        self.task_text.set("当前任务: 将在本标题完成后停止")
+        self.status_text.set("已请求停止，等待当前标题生成完成")
 
     def expand_to_level_1(self):
         """展开至一级节点"""
@@ -1352,7 +1645,7 @@ class MainWindow(tk.Tk):
             except Exception as e:
                 gen_window.close()
                 # 在状态栏显示错误信息，不弹窗
-                self.status_text.set(f"❌ 生成失败: {str(e)[:50]}...")
+                self.status_text.set(f"生成失败: {str(e)[:50]}...")
                 return "failed"
 
             # 关闭生成窗口
@@ -1362,7 +1655,7 @@ class MainWindow(tk.Tk):
             if auto_save:
                 filepath = self.bid_writer.file_saver.save(heading, content)
                 # 在状态栏显示保存成功信息
-                self.status_text.set(f"✓ 自动保存: {filepath.name}" )
+                self.status_text.set(f"已自动保存: {filepath.name}")
                 return "success"
 
             # 单个生成时显示预览对话框并获取用户操作
@@ -1371,7 +1664,7 @@ class MainWindow(tk.Tk):
             if action == "save":
                 filepath = self.bid_writer.file_saver.save(heading, content)
                 # 在状态栏显示保存成功信息
-                self.status_text.set(f"✓ 文件已保存: {filepath.name}")
+                self.status_text.set(f"文件已保存: {filepath.name}")
                 return "success"
 
             elif action == "modify":
@@ -1499,22 +1792,24 @@ class MainWindow(tk.Tk):
                 generated += 1
 
         total = len(leaf_nodes)
-        self.stats_text.set(f"已生成: {generated} / 总计: {total}")
+        self.stats_text.set(f"{generated} / {total}")
 
     def show_help(self):
         """显示帮助"""
         help_text = """使用说明：
 
-1. 在左侧大纲树中选择节点
-2. 右侧会显示该节点下的四级标题
-3. 使用 Ctrl+点击 多选标题
-4. 点击"批量生成"按钮开始生成
-5. 生成完成后状态会自动更新
+1. 在大纲树中选择四级标题，可使用 Ctrl+点击 多选
+2. 可通过顶部搜索框和状态筛选快速定位未生成章节
+3. 点击“生成所选”开始批量生成，生成过程中可请求停止下一项
+4. 已生成内容可通过“预览所选”直接查看
+5. “扫描输出状态”会重新读取输出目录并刷新完成情况
 
 快捷键：
-- Ctrl+A: 全选
-- Delete: 删除选中
-- F5: 刷新状态
+- Ctrl+A: 全选当前结果中的四级标题
+- Ctrl+F: 聚焦搜索框
+- Ctrl+1 / Ctrl+2 / Ctrl+3: 分级展开
+- Ctrl+0: 收缩全部
+- Esc: 清空当前选择
 """
         messagebox.showinfo("使用说明", help_text)
 
