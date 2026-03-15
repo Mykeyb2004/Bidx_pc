@@ -405,7 +405,6 @@ class MainWindow(tk.Tk):
         self._responsive_layout_force = False
         self._action_layout_mode = ""
         self._control_layout_mode = ""
-        self._status_wraplength = 0
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -501,7 +500,6 @@ class MainWindow(tk.Tk):
         summary_bar.pack(fill=tk.X, pady=(0, 8))
         summary_metrics_bar = ttk.Frame(summary_bar)
         summary_metrics_bar.pack(fill=tk.X)
-        self.summary_status_bar = ttk.Frame(summary_bar)
 
         self.config_text = tk.StringVar(value="-")
         self.output_text = tk.StringVar(value="-")
@@ -513,19 +511,23 @@ class MainWindow(tk.Tk):
         self._create_info_item(summary_metrics_bar, "输出", self.output_text)
         self._create_info_item(summary_metrics_bar, "已选", self.selection_text)
         self._create_info_item(summary_metrics_bar, "已生成", self.stats_text)
-        self.summary_status_bar.pack(fill=tk.X, pady=(6, 0))
+        self.summary_status_bar = ttk.Frame(summary_metrics_bar)
+        self.summary_status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.summary_status_bar.columnconfigure(1, weight=1)
         self.summary_status_label = ttk.Label(
             self.summary_status_bar,
             text="状态:",
             font=("TkDefaultFont", 9, "bold")
         )
-        self.summary_status_label.pack(side=tk.LEFT)
+        self.summary_status_label.grid(row=0, column=0, sticky="w")
         self.summary_status_value = ttk.Label(
             self.summary_status_bar,
             textvariable=self.status_text,
-            justify=tk.LEFT
+            justify=tk.LEFT,
+            anchor=tk.W,
+            font=("TkDefaultFont", 9)
         )
-        self.summary_status_value.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+        self.summary_status_value.grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
         self.action_bar = ttk.Frame(toolbar)
         self.action_bar.pack(fill=tk.X)
@@ -797,17 +799,11 @@ class MainWindow(tk.Tk):
         self.selection_action_group.grid(row=1, column=0, sticky="w", pady=(8, 0))
 
     def _update_status_wraplength(self):
-        """让状态摘要在窄窗口下自动换行"""
+        """状态摘要保持单行左右布局，不启用自动换行。"""
         if not hasattr(self, "summary_status_value"):
             return
 
-        available_width = max(
-            self.summary_status_bar.winfo_width() - self.summary_status_label.winfo_reqwidth() - 12,
-            240
-        )
-        if available_width != self._status_wraplength:
-            self.summary_status_value.configure(wraplength=available_width)
-            self._status_wraplength = available_width
+        self.summary_status_value.configure(wraplength=0)
 
     def create_status_bar(self):
         """创建状态栏"""
