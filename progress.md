@@ -18,3 +18,13 @@
 - 已确认当前实现只包含 `heading.title` 和 `heading.full_path`，尚未把完整大纲文本传给模型。
 - 已修改 `bid_writer/ai_writer.py`，在 prompt 中新增“完整总大纲参考”段落，并加入边界控制与全局去重约束语句。
 - 已用 `uv run python` 构造真实 prompt 验证：当前标题、标题层级路径、完整总大纲原文均已注入。
+- 新任务：修复 review 中的 3 个行为问题，涉及 `file_saver.py`、`config.py/main.py`、`gui.py`。
+- 已完成会话恢复检查并复读 `task_plan.md`、`findings.md`、`progress.md`，确认本轮工作在现有代码基础上继续，不回退用户改动。
+- 已复现实例：`overwrite_existing=False` 时连续保存同一章节，读取侧仍返回第一份旧文件。
+- 已复现实例：从其他目录的配置文件读取 `output.directory: ./out` 时，实际输出目录落在当前工作目录而不是配置文件目录。
+- 已确认 `GenerationWindow` 当前未处理用户主动关闭窗口的生命周期。
+- 已修改 `bid_writer/file_saver.py`，读取同一章节时改为从所有候选版本里选择最近生成的文件。
+- 已修改 `bid_writer/config.py`，`output_directory` 现统一按配置文件目录解析。
+- 已修改 `bid_writer/gui.py`，生成进度窗注册关闭处理，并把队列轮询改为挂在父窗口上，避免关闭子窗后丢失状态更新。
+- 已完成 3 组验证：版本文件读取返回最新内容；相对输出目录解析到配置目录；关闭进度窗后后台生成仍能正常返回结果。
+- 已重新运行 `uv run python -m compileall bid_writer run.py`，通过。

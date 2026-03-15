@@ -47,3 +47,17 @@
 - 完整大纲以 fenced code block 的形式注入 prompt，能保留原始 Markdown 结构，减少与其他提示段落混淆。
 - 扩写要求中新增了两条边界约束：只写当前标题负责范围；结合完整总大纲避免重复、遗漏和越级展开。
 - 运行时验证已确认 prompt 同时包含当前标题、标题层级路径、完整总大纲原文三项信息。
+
+## Review 修复相关发现
+- `find_existing_filepath()` 当前先查标准文件、再查首个匹配的 ID/legacy 文件，因此在存在 `__id_1`、`__id_2` 等版本文件时会稳定返回旧版本。
+- `save()` 在 `overwrite_existing=False` 时确实会持续生成新文件，说明问题出在“读取侧不认识最新版本”，不是保存覆盖失败。
+- `Config.output_directory` 与 `outline_file`、`bid_requirements_file` 使用了不同的路径规则；前者保留原始相对字符串，后者按配置文件目录解析。
+- `GenerationWindow.wait_completion()` 直接循环调用 `self.window.update()`；如果用户先把窗口销毁，后续任意一次 `update()` 或 `destroy()` 都可能抛 `TclError`。
+- 生成进度窗当前没有注册 `WM_DELETE_WINDOW` 行为，也没有“窗口已关闭但任务仍在运行”的状态字段。
+
+## Review 修复后的确认
+- `file_saver.py` 新增了基于修改时间和版本后缀的候选文件选择逻辑，读取侧现在会返回最近一次生成的章节文件。
+- `find_existing_filepath()` 不再对标准文件名做早返回，而是把标准文件、带稳定 ID 的版本文件、legacy 文件统一纳入候选后再选最新版本。
+- `Config.output_directory` 现在与输入文件路径保持一致，统一通过 `_resolve_path()` 相对于配置文件目录解析。
+- `GenerationWindow` 把队列轮询挂到父窗口上，而不是进度窗自身；即使进度窗已被用户关闭，后台任务状态仍会继续被消费。
+- `GenerationWindow.close()` 现在是幂等的，重复关闭或关闭已销毁窗口都不会再触发 Tk 异常。

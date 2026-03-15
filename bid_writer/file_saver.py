@@ -136,6 +136,30 @@ class FileSaver:
         match = self.HEADING_ID_PATTERN.search(stem)
         return match.group("heading_id") if match else None
 
+    def _extract_version_suffix(self, filepath: Path) -> int:
+        """提取文件名末尾的版本序号，基础文件返回 0。"""
+        stem = filepath.stem
+        if self.prefix and stem.startswith(self.prefix):
+            stem = stem[len(self.prefix):]
+
+        match = re.search(r'_(\d+)$', stem)
+        return int(match.group(1)) if match else 0
+
+    def _recency_key(self, filepath: Path) -> tuple[int, int, str]:
+        """按最近生成优先排序：先看修改时间，再看版本后缀。"""
+        try:
+            mtime_ns = filepath.stat().st_mtime_ns
+        except OSError:
+            mtime_ns = -1
+
+        return (mtime_ns, self._extract_version_suffix(filepath), filepath.name)
+
+    def _pick_latest_filepath(self, filepaths: list[Path]) -> Optional[Path]:
+        """从多个候选文件中返回最近一次生成的版本。"""
+        if not filepaths:
+            return None
+        return max(filepaths, key=self._recency_key)
+
     def read_metadata(self, filepath: Path) -> dict:
         """读取 Markdown 文件顶部的 YAML front matter"""
         try:
@@ -251,18 +275,24 @@ class FileSaver:
 
         return title, full_path, heading_id
 
-    def find_filepath_by_heading_id(self, heading_id: str) -> Optional[Path]:
-        """根据稳定 ID 查找已保存文件"""
+    def find_filepaths_by_heading_id(self, heading_id: str) -> list[Path]:
+        """根据稳定 ID 查找所有已保存文件"""
+        matches: list[Path] = []
         for filepath in sorted(self.list_saved_files()):
             parsed_id = self.parse_heading_id_from_path(filepath)
             if parsed_id == heading_id:
-                return filepath
+                matches.append(filepath)
+                continue
 
             metadata = self.read_metadata(filepath)
             if metadata.get("heading_id") == heading_id:
-                return filepath
+                matches.append(filepath)
 
-        return None
+        return matches
+
+    def find_filepath_by_heading_id(self, heading_id: str) -> Optional[Path]:
+        """根据稳定 ID 查找最近一次保存的文件"""
+        return self._pick_latest_filepath(self.find_filepaths_by_heading_id(heading_id))
 
     def find_legacy_filepaths(self, title: str) -> list[Path]:
         """查找旧命名规则下的文件路径"""
@@ -276,17 +306,23 @@ class FileSaver:
 
     def find_existing_filepath(self, heading: HeadingNode) -> Optional[Path]:
         """查找某个标题当前已存在的输出文件"""
-        target_path = self.build_heading_filepath(heading)
-        if target_path.exists():
-            return target_path
-
         heading_id = self.build_heading_id(heading)
-        by_id = self.find_filepath_by_heading_id(heading_id)
-        if by_id:
-            return by_id
+        candidates: list[Path] = []
+        seen: set[Path] = set()
 
-        legacy_matches = self.find_legacy_filepaths(heading.title)
-        return legacy_matches[0] if legacy_matches else None
+        def add_candidate(filepath: Optional[Path]) -> None:
+            if filepath is None or filepath in seen:
+                return
+            seen.add(filepath)
+            candidates.append(filepath)
+
+        for filepath in self.find_filepaths_by_heading_id(heading_id):
+            add_candidate(filepath)
+
+        for filepath in self.find_legacy_filepaths(heading.title):
+            add_candidate(filepath)
+
+        return self._pick_latest_filepath(candidates)
 
     def save(
         self,

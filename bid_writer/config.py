@@ -292,7 +292,8 @@ class Config:
     @property
     def output_directory(self) -> str:
         """输出目录"""
-        return self._get_first_defined(('output', 'directory'), default='./output')
+        value = self._get_first_defined(('output', 'directory'), default='./output')
+        return str(self._resolve_path(str(value).strip()))
 
     @property
     def output_prefix(self) -> str:

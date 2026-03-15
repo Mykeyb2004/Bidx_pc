@@ -1675,10 +1675,12 @@ class MainWindow(tk.Tk):
         """生成进度窗口 - 异步流式显示"""
 
         def __init__(self, parent, heading_title: str):
+            self.parent = parent
             self.window = tk.Toplevel(parent)
             self.window.title(f"正在生成 - {heading_title}")
             self.window.geometry("800x600")
             self.window.transient(parent)
+            self.window.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
             # 不使用 grab_set()，允许用户查看其他窗口
 
@@ -1721,9 +1723,46 @@ class MainWindow(tk.Tk):
             self.is_generating = False
             self.error = None
             self.result_data = None
+            self._queue_poll_id = None
 
             # 注意：不在这里启动定时检查
             # 定时器将在 start_generation() 中启动
+
+        @staticmethod
+        def _widget_exists(widget) -> bool:
+            try:
+                return widget is not None and bool(widget.winfo_exists())
+            except tk.TclError:
+                return False
+
+        def _cancel_queue_poll(self) -> None:
+            if self._queue_poll_id is None:
+                return
+            if self._widget_exists(self.parent):
+                try:
+                    self.parent.after_cancel(self._queue_poll_id)
+                except tk.TclError:
+                    pass
+            self._queue_poll_id = None
+
+        def _destroy_window(self) -> None:
+            if not self._widget_exists(self.window):
+                self.window = None
+                return
+            try:
+                self.window.destroy()
+            except tk.TclError:
+                pass
+            self.window = None
+
+        def _on_window_close(self) -> None:
+            """允许关闭进度窗，但不影响后台生成任务继续执行。"""
+            if self._widget_exists(self.progress):
+                try:
+                    self.progress.stop()
+                except tk.TclError:
+                    pass
+            self._destroy_window()
 
         def _check_queue(self):
             """定时检查队列并更新UI（主线程）"""
@@ -1733,40 +1772,47 @@ class MainWindow(tk.Tk):
 
                     if msg_type == "text":
                         # 追加文本
-                        self.text_widget.config(state=tk.NORMAL)
-                        self.text_widget.insert(tk.END, data)
-                        self.text_widget.see(tk.END)
-                        self.text_widget.config(state=tk.DISABLED)
+                        if self._widget_exists(self.text_widget):
+                            self.text_widget.config(state=tk.NORMAL)
+                            self.text_widget.insert(tk.END, data)
+                            self.text_widget.see(tk.END)
+                            self.text_widget.config(state=tk.DISABLED)
 
                     elif msg_type == "status":
                         # 更新状态
-                        self.status_label.config(text=data)
+                        if self._widget_exists(self.status_label):
+                            self.status_label.config(text=data)
 
                     elif msg_type == "done":
                         # 生成完成
                         self.is_generating = False
                         self.result_data = data
-                        self.progress.stop()
+                        self._cancel_queue_poll()
+                        if self._widget_exists(self.progress):
+                            self.progress.stop()
                         return
 
                     elif msg_type == "error":
                         # 发生错误
                         self.error = data
                         self.is_generating = False
-                        self.progress.stop()
+                        self._cancel_queue_poll()
+                        if self._widget_exists(self.progress):
+                            self.progress.stop()
                         return
 
             except queue.Empty:
                 pass
 
             # 如果还在生成，继续定时检查（50ms）
-            if self.is_generating:
-                self.window.after(50, self._check_queue)
+            if self.is_generating and self._widget_exists(self.parent):
+                self._queue_poll_id = self.parent.after(50, self._check_queue)
 
         def start_generation(self, heading, ai_writer, requirements, min_words):
             """启动后台生成线程"""
             self.is_generating = True
-            self.progress.start()
+            if self._widget_exists(self.progress):
+                self.progress.start()
 
             def _background_generate():
                 """后台线程执行生成"""
@@ -1808,8 +1854,10 @@ class MainWindow(tk.Tk):
         def wait_completion(self):
             """等待生成完成并返回结果"""
             while self.is_generating:
-                self.window.update()
-                self.window.after(100)
+                if not self._widget_exists(self.parent):
+                    raise RuntimeError("主窗口已关闭，无法继续等待生成结果")
+                self.parent.update()
+                self.parent.after(100)
 
             if self.error:
                 raise Exception(self.error)
@@ -1818,8 +1866,13 @@ class MainWindow(tk.Tk):
 
         def close(self):
             """关闭窗口"""
-            self.progress.stop()
-            self.window.destroy()
+            self._cancel_queue_poll()
+            if self._widget_exists(self.progress):
+                try:
+                    self.progress.stop()
+                except tk.TclError:
+                    pass
+            self._destroy_window()
 
     def _generate_with_preview(self, heading: HeadingNode,
                                additional_requirements: str,

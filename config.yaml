@@ -50,7 +50,7 @@ role: |
   3. 不允许在正文中出现“专家点评”之类的表述
 
 generation:
-  default_min_words: 3000
+  default_min_words: 1500
   min_words_min: 100
   min_words_max: 12000
   min_words_step: 100
