@@ -17,6 +17,7 @@ class FileSaver:
 
     HEADING_ID_SEPARATOR = "__"
     HEADING_ID_PATTERN = re.compile(r'__(?P<heading_id>[0-9a-f]{8,40})(?:_\d+)?$')
+    MARKDOWN_HEADING_PATTERN = re.compile(r'^#{1,6}\s+(?P<title>.+?)\s*$')
     FRONT_MATTER_DELIMITER = "---"
     FRONT_MATTER_MAX_LINES = 50
 
@@ -162,6 +163,52 @@ class FileSaver:
             return {}
 
         return metadata if isinstance(metadata, dict) else {}
+
+    def strip_front_matter(self, content: str) -> str:
+        """移除 Markdown 顶部的 YAML front matter。"""
+        normalized = content.lstrip("\ufeff")
+        if not normalized.startswith(self.FRONT_MATTER_DELIMITER):
+            return normalized
+
+        lines = normalized.splitlines()
+        if not lines or lines[0].strip() != self.FRONT_MATTER_DELIMITER:
+            return normalized
+
+        max_index = min(len(lines), self.FRONT_MATTER_MAX_LINES + 2)
+        for index in range(1, max_index):
+            if lines[index].strip() == self.FRONT_MATTER_DELIMITER:
+                return "\n".join(lines[index + 1:]).lstrip("\n")
+
+        return normalized
+
+    def strip_leading_title_headings(self, content: str, titles: list[str]) -> str:
+        """移除正文开头与目标标题重复的 Markdown 标题行。"""
+        normalized_titles = {title.strip() for title in titles if title and title.strip()}
+        if not normalized_titles:
+            return content.strip()
+
+        lines = content.splitlines()
+        while lines:
+            first_line = lines[0].strip()
+            if not first_line:
+                lines.pop(0)
+                continue
+
+            match = self.MARKDOWN_HEADING_PATTERN.match(first_line)
+            if not match or match.group("title").strip() not in normalized_titles:
+                break
+
+            lines.pop(0)
+            while lines and not lines[0].strip():
+                lines.pop(0)
+
+        return "\n".join(lines).strip()
+
+    def load_section_body(self, filepath: Path, title: Optional[str] = None) -> str:
+        """读取章节正文，兼容旧文件中的 front matter 和包裹标题。"""
+        content = filepath.read_text(encoding="utf-8")
+        body = self.strip_front_matter(content)
+        return self.strip_leading_title_headings(body, [title] if title else [])
 
     def _build_file_content(
         self,

@@ -281,7 +281,13 @@ class Config:
     @property
     def outline_file(self) -> str:
         """大纲文件路径"""
-        return self._get_first_defined(('inputs', 'outline_file'), 'outline_file', default='./outline.md')
+        value = self._get_first_defined(('inputs', 'outline_file'), 'outline_file', default='./outline.md')
+        if isinstance(value, str):
+            inline_path = self._extract_inline_file_path(value)
+            if inline_path:
+                return inline_path
+            return value.strip()
+        return str(value)
 
     @property
     def output_directory(self) -> str:

@@ -400,6 +400,7 @@ class MainWindow(tk.Tk):
         self.is_generating = False
         self.stop_requested = False
         self.visible_leaf_count = 0
+        self.generated_leaf_count = 0
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -471,6 +472,7 @@ class MainWindow(tk.Tk):
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="生成所选", command=self.batch_generate)
         action_menu.add_command(label="预览所选", command=self.preview_selected)
+        action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
         action_menu.add_separator()
         action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
         menubar.add_cascade(label="操作", menu=action_menu)
@@ -559,6 +561,14 @@ class MainWindow(tk.Tk):
             padding=(12, 8)
         )
         self.btn_preview.pack(side=tk.LEFT, padx=6)
+
+        self.btn_merge = ttk.Button(
+            action_frame,
+            text="整合标书",
+            command=self.merge_generated_sections,
+            padding=(12, 8)
+        )
+        self.btn_merge.pack(side=tk.LEFT, padx=6)
 
         self.btn_generate = ttk.Button(
             action_frame,
@@ -1002,6 +1012,9 @@ class MainWindow(tk.Tk):
         self.btn_preview.config(
             state=(tk.DISABLED if self.is_generating or selected_count != 1 else tk.NORMAL)
         )
+        self.btn_merge.config(
+            state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL)
+        )
         self.btn_select_all.config(
             state=(tk.DISABLED if self.is_generating or self.visible_leaf_count == 0 else tk.NORMAL)
         )
@@ -1267,6 +1280,36 @@ class MainWindow(tk.Tk):
         else:
             self.status_text.set(f"未找到预览文件: {heading.title}")
             messagebox.showinfo("预览", f"文件未生成\n标题：{heading.title}")
+
+    def merge_generated_sections(self):
+        """整合所有已生成章节为一个 Markdown 文件。"""
+        if self.is_generating:
+            return
+
+        if self.generated_leaf_count == 0:
+            messagebox.showwarning("提示", "当前没有可整合的已生成章节")
+            return
+
+        self.status_text.set("正在整合已生成章节...")
+        self.update_idletasks()
+
+        try:
+            result = self.bid_writer.merge_generated_sections()
+        except Exception as e:
+            self.status_text.set("整合标书失败")
+            messagebox.showerror("错误", f"生成整合标书失败：\n{e}")
+            return
+
+        output_path = _display_path(result.filepath.resolve(), Path.cwd().resolve())
+        merged_message = (
+            f"已整合 {result.merged_sections}/{result.total_sections} 个章节。"
+        )
+        if result.missing_sections:
+            merged_message += f"\n有 {result.missing_sections} 个章节未生成，已自动跳过。"
+
+        merged_message += f"\n\n输出文件：\n{output_path}"
+        self.status_text.set(f"整合标书已生成: {result.filepath.name}")
+        messagebox.showinfo("整合完成", merged_message)
 
     def clear_selection(self):
         """清空当前选择"""
@@ -1792,6 +1835,7 @@ class MainWindow(tk.Tk):
                 generated += 1
 
         total = len(leaf_nodes)
+        self.generated_leaf_count = generated
         self.stats_text.set(f"{generated} / {total}")
 
     def show_help(self):
@@ -1802,7 +1846,8 @@ class MainWindow(tk.Tk):
 2. 可通过顶部搜索框和状态筛选快速定位未生成章节
 3. 点击“生成所选”开始批量生成，生成过程中可请求停止下一项
 4. 已生成内容可通过“预览所选”直接查看
-5. “扫描输出状态”会重新读取输出目录并刷新完成情况
+5. 点击“整合标书”可按大纲顺序合并所有已生成章节正文
+6. “扫描输出状态”会重新读取输出目录并刷新完成情况
 
 快捷键：
 - Ctrl+A: 全选当前结果中的四级标题
