@@ -9,7 +9,7 @@ api:
   model: "gemini-3-pro-preview"
   # 可选参数
   temperature: 1
-  max_tokens: 30000
+  max_tokens: 10000
 
 # 角色设定
 role: |

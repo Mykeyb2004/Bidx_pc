@@ -439,13 +439,11 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("警告", "请选择四级标题（叶子节点）")
             return
 
-        # 查找文件（使用sanitize_filename清理后的文件名）
+        # 查找文件（优先使用稳定 ID，兼容旧命名规则）
         file_saver = self.bid_writer.file_saver
-        output_dir = file_saver.output_directory
-        sanitized_filename = file_saver.sanitize_filename(heading.title)
-        filepath = output_dir / f"{file_saver.prefix}{sanitized_filename}.md"
+        filepath = file_saver.find_existing_filepath(heading)
 
-        if filepath.exists():
+        if filepath and filepath.exists():
             # 读取并预览
             content = filepath.read_text(encoding='utf-8')
             preview_window = tk.Toplevel(self)
@@ -817,7 +815,7 @@ class MainWindow(tk.Tk):
 
             # 批量生成时自动保存，跳过预览对话框
             if auto_save:
-                filepath = self.bid_writer.file_saver.save(heading.title, content)
+                filepath = self.bid_writer.file_saver.save(heading, content)
                 # 在状态栏显示保存成功信息
                 self.status_text.set(f"✓ 自动保存: {filepath.name}" )
                 return "success"
@@ -826,7 +824,7 @@ class MainWindow(tk.Tk):
             action, modification = self._show_preview_dialog(heading, content, word_count)
 
             if action == "save":
-                filepath = self.bid_writer.file_saver.save(heading.title, content)
+                filepath = self.bid_writer.file_saver.save(heading, content)
                 # 在状态栏显示保存成功信息
                 self.status_text.set(f"✓ 文件已保存: {filepath.name}")
                 return "success"
