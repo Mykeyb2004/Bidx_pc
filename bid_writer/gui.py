@@ -8,7 +8,7 @@ import os
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import ttk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 from typing import List, Optional
 from pathlib import Path
 
@@ -1290,11 +1290,16 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("提示", "当前没有可整合的已生成章节")
             return
 
+        output_title = self._prompt_merge_output_title()
+        if output_title is None:
+            self.status_text.set("已取消整合标书")
+            return
+
         self.status_text.set("正在整合已生成章节...")
         self.update_idletasks()
 
         try:
-            result = self.bid_writer.merge_generated_sections()
+            result = self.bid_writer.merge_generated_sections(output_title=output_title)
         except Exception as e:
             self.status_text.set("整合标书失败")
             messagebox.showerror("错误", f"生成整合标书失败：\n{e}")
@@ -1310,6 +1315,27 @@ class MainWindow(tk.Tk):
         merged_message += f"\n\n输出文件：\n{output_path}"
         self.status_text.set(f"整合标书已生成: {result.filepath.name}")
         messagebox.showinfo("整合完成", merged_message)
+
+    def _prompt_merge_output_title(self) -> Optional[str]:
+        """提示用户输入整合标书文件名。"""
+        while True:
+            value = simpledialog.askstring(
+                "整合标书",
+                "请输入整合标书文件名（无需填写 .md）：",
+                parent=self,
+                initialvalue="整合标书"
+            )
+            if value is None:
+                return None
+
+            normalized = value.strip()
+            if normalized.lower().endswith(".md"):
+                normalized = normalized[:-3].rstrip()
+
+            if normalized:
+                return normalized
+
+            messagebox.showwarning("提示", "文件名不能为空", parent=self)
 
     def clear_selection(self):
         """清空当前选择"""
@@ -1846,7 +1872,7 @@ class MainWindow(tk.Tk):
 2. 可通过顶部搜索框和状态筛选快速定位未生成章节
 3. 点击“生成所选”开始批量生成，生成过程中可请求停止下一项
 4. 已生成内容可通过“预览所选”直接查看
-5. 点击“整合标书”可按大纲顺序合并所有已生成章节正文
+5. 点击“整合标书”可按大纲顺序合并所有已生成章节正文，并自定义输出文件名
 6. “扫描输出状态”会重新读取输出目录并刷新完成情况
 
 快捷键：
