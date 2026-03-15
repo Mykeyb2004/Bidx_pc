@@ -6,6 +6,7 @@ Tkinter GUI 主界面
 
 import os
 import tkinter as tk
+from dataclasses import dataclass, field
 from tkinter import ttk
 from tkinter import filedialog, messagebox
 from typing import List, Optional
@@ -14,6 +15,7 @@ from pathlib import Path
 from .main import BidWriter
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
+from .gui_state import get_startup_config_candidates, remember_last_config
 
 import threading
 import queue
@@ -22,6 +24,14 @@ import sys
 
 DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
 _TK_ENV_READY = False
+
+
+@dataclass
+class TreeViewState:
+    """大纲树展开状态"""
+
+    mode: str = "all"
+    expanded_paths: list[str] = field(default_factory=list)
 
 
 def _is_valid_tcl_dir(path: Path) -> bool:
@@ -348,15 +358,45 @@ def choose_config_file(parent=None, initial_path: Optional[str] = None) -> Optio
     return result
 
 
+def _build_startup_bid_writer(config_path: Optional[str] = None) -> tuple[BidWriter, bool]:
+    """按候选顺序构建启动时使用的 BidWriter"""
+    fallback_bid_writer: Optional[BidWriter] = None
+    last_error: Optional[Exception] = None
+
+    for candidate in get_startup_config_candidates(config_path):
+        try:
+            bid_writer = BidWriter(candidate)
+        except Exception as e:
+            last_error = e
+            continue
+
+        if fallback_bid_writer is None:
+            fallback_bid_writer = bid_writer
+
+        if bid_writer.load_outline():
+            return bid_writer, True
+
+        last_error = FileNotFoundError(
+            bid_writer.last_error_message or f"加载配置失败: {candidate}"
+        )
+
+    if fallback_bid_writer is not None:
+        return fallback_bid_writer, False
+
+    raise FileNotFoundError(str(last_error) if last_error else "未找到可用配置文件")
+
+
 class MainWindow(tk.Tk):
     """主窗口类"""
 
-    def __init__(self, bid_writer: BidWriter):
+    def __init__(self, bid_writer: BidWriter, outline_preloaded: bool = False):
         ensure_tk_runtime()
         super().__init__()
 
         self.bid_writer = bid_writer
         self.adapter = GUIAdapter(bid_writer)
+        self.tree_view_state = TreeViewState()
+        self._suppress_tree_view_events = False
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -388,7 +428,11 @@ class MainWindow(tk.Tk):
         self.bind_shortcuts()
 
         # 加载大纲
-        self.load_outline()
+        if outline_preloaded:
+            self._sync_loaded_outline(reset_tree_view=True)
+            self.status_text.set("大纲加载完成")
+        else:
+            self.load_outline(preserve_tree_view=False, reset_tree_view=True)
 
     def center_window(self):
         """居中窗口"""
@@ -527,6 +571,8 @@ class MainWindow(tk.Tk):
 
         # 绑定选择事件
         self.outline_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
+        self.outline_tree.bind("<<TreeviewOpen>>", self.on_tree_open_close)
+        self.outline_tree.bind("<<TreeviewClose>>", self.on_tree_open_close)
 
     def create_status_bar(self):
         """创建状态栏"""
@@ -564,6 +610,11 @@ class MainWindow(tk.Tk):
         """创建展开/收缩下拉菜单"""
         self.expand_menu = tk.Menu(self, tearoff=0)
         self.expand_menu.add_command(
+            label="📂 全部展开",
+            command=self.expand_all
+        )
+        self.expand_menu.add_separator()
+        self.expand_menu.add_command(
             label="📂 展开至一级 (Ctrl+1)",
             command=self.expand_to_level_1
         )
@@ -597,9 +648,11 @@ class MainWindow(tk.Tk):
         # 在按钮下方显示菜单
         self.expand_menu.post(x, y)
 
-
-    def load_outline(self):
+    def load_outline(self, preserve_tree_view: bool = True, reset_tree_view: bool = False):
         """加载大纲到树形视图"""
+        if preserve_tree_view:
+            self._remember_current_tree_view_state()
+
         # 加载大纲
         if not self.bid_writer.load_outline():
             messagebox.showerror(
@@ -608,12 +661,22 @@ class MainWindow(tk.Tk):
             )
             return False
 
-        self.adapter.refresh_generated_titles()
-        self._render_outline_tree()
-        self.select_all_var.set(False)
-        self.update_stats()
+        self._sync_loaded_outline(reset_tree_view=reset_tree_view)
         self.status_text.set("大纲加载完成")
         return True
+
+    def _sync_loaded_outline(self, reset_tree_view: bool = False):
+        """同步已加载的大纲到界面"""
+        if reset_tree_view:
+            self.reset_tree_view_state()
+
+        self.adapter.refresh_generated_titles()
+        self._render_outline_tree()
+        self._apply_tree_view_state()
+        self.select_all_var.set(False)
+        self.update_window_context()
+        self.update_stats()
+        remember_last_config(str(self.bid_writer.config.config_path))
 
     def _render_outline_tree(self):
         """将已加载的大纲渲染到树形视图"""
@@ -625,6 +688,77 @@ class MainWindow(tk.Tk):
         root_headings = self.adapter.get_outline_tree()
         for heading in root_headings:
             self._add_tree_node("", heading)
+
+    def reset_tree_view_state(self):
+        """重置大纲树视图状态为默认全部展开"""
+        self.tree_view_state = TreeViewState(mode="all")
+
+    def _remember_current_tree_view_state(self):
+        """在重绘前记录当前树展开状态"""
+        if not self.tree_node_map:
+            return
+
+        if self.tree_view_state.mode == "custom":
+            self.tree_view_state.expanded_paths = self._collect_expanded_paths()
+
+    def _collect_expanded_paths(self) -> list[str]:
+        """收集当前已展开的节点路径"""
+        expanded_paths: list[str] = []
+        for item_id, heading in self.tree_node_map.items():
+            if heading.children and bool(self.outline_tree.item(item_id, "open")):
+                expanded_paths.append(heading.full_path)
+        return sorted(expanded_paths)
+
+    def _apply_tree_view_state(self):
+        """在树重绘后恢复展开状态"""
+        if not self.tree_node_map:
+            return
+
+        self._suppress_tree_view_events = True
+        try:
+            if self.tree_view_state.mode == "all":
+                self._set_all_nodes_open("", True)
+            elif self.tree_view_state.mode == "level_1":
+                self._expand_to_level(1)
+            elif self.tree_view_state.mode == "level_2":
+                self._expand_to_level(2)
+            elif self.tree_view_state.mode == "level_3":
+                self._expand_to_level(3)
+            elif self.tree_view_state.mode == "collapsed":
+                self._set_all_nodes_open("", False)
+            elif self.tree_view_state.mode == "custom":
+                self._restore_expanded_paths(set(self.tree_view_state.expanded_paths))
+            else:
+                self._set_all_nodes_open("", True)
+        finally:
+            self._suppress_tree_view_events = False
+
+    def _restore_expanded_paths(self, expanded_paths: set[str]):
+        """按路径恢复自定义展开状态"""
+        self._set_all_nodes_open("", False)
+        self._restore_expanded_paths_recursive("", expanded_paths)
+
+    def _restore_expanded_paths_recursive(self, parent_id: str, expanded_paths: set[str]):
+        """递归恢复节点展开状态"""
+        children = self.outline_tree.get_children(parent_id)
+        for child_id in children:
+            heading = self.tree_node_map.get(child_id)
+            if not heading:
+                continue
+
+            if heading.children:
+                self.outline_tree.item(child_id, open=heading.full_path in expanded_paths)
+
+            self._restore_expanded_paths_recursive(child_id, expanded_paths)
+
+    def _set_all_nodes_open(self, parent_id: str, is_open: bool):
+        """递归展开或收缩所有节点"""
+        children = self.outline_tree.get_children(parent_id)
+        for child_id in children:
+            heading = self.tree_node_map.get(child_id)
+            if heading and heading.children:
+                self.outline_tree.item(child_id, open=is_open)
+            self._set_all_nodes_open(child_id, is_open)
 
     def _add_tree_node(self, parent: str, heading: HeadingNode):
         """递归添加树节点"""
@@ -694,16 +828,26 @@ class MainWindow(tk.Tk):
         """保留空方法，避免旧绑定报错"""
         pass
 
+    def on_tree_open_close(self, event):
+        """记录用户手动展开/收缩的树状态"""
+        if self._suppress_tree_view_events:
+            return
+
+        self.tree_view_state = TreeViewState(
+            mode="custom",
+            expanded_paths=self._collect_expanded_paths()
+        )
+
     def reload_outline(self):
         """重新加载大纲"""
         self.status_text.set("正在重新加载大纲...")
-        if self.load_outline():
+        if self.load_outline(preserve_tree_view=True):
             self.status_text.set("大纲重新加载完成")
 
     def refresh_status(self):
         """刷新状态"""
         self.status_text.set("正在刷新状态...")
-        if self.load_outline():
+        if self.load_outline(preserve_tree_view=True):
             self.status_text.set("状态刷新完成")
 
     def select_and_switch_config(self):
@@ -742,10 +886,7 @@ class MainWindow(tk.Tk):
 
         self.bid_writer = next_bid_writer
         self.adapter = GUIAdapter(next_bid_writer)
-        self._render_outline_tree()
-        self.select_all_var.set(False)
-        self.update_window_context()
-        self.update_stats()
+        self._sync_loaded_outline(reset_tree_view=True)
         self.status_text.set(f"已切换配置: {selected_path.name}")
 
     def batch_generate(self):
@@ -881,22 +1022,32 @@ class MainWindow(tk.Tk):
 
     def expand_to_level_1(self):
         """展开至一级节点"""
-        self._expand_to_level(1)
+        self.tree_view_state = TreeViewState(mode="level_1")
+        self._apply_tree_view_state()
         self.status_text.set("已展开至一级节点")
 
     def expand_to_level_2(self):
         """展开至二级节点"""
-        self._expand_to_level(2)
+        self.tree_view_state = TreeViewState(mode="level_2")
+        self._apply_tree_view_state()
         self.status_text.set("已展开至二级节点")
 
     def expand_to_level_3(self):
         """展开至三级节点"""
-        self._expand_to_level(3)
+        self.tree_view_state = TreeViewState(mode="level_3")
+        self._apply_tree_view_state()
         self.status_text.set("已展开至三级节点")
+
+    def expand_all(self):
+        """展开全部节点"""
+        self.tree_view_state = TreeViewState(mode="all")
+        self._apply_tree_view_state()
+        self.status_text.set("已展开所有节点")
 
     def collapse_all(self):
         """收缩全部节点"""
-        self._collapse_all_nodes("")
+        self.tree_view_state = TreeViewState(mode="collapsed")
+        self._apply_tree_view_state()
         self.status_text.set("已收缩所有节点")
 
     def _expand_to_level(self, max_level: int):
@@ -1387,14 +1538,8 @@ class MainWindow(tk.Tk):
 def run_gui(config_path: Optional[str] = None):
     """运行GUI应用"""
     ensure_tk_runtime()
-
-    if config_path is None:
-        config_path = choose_config_file(initial_path="config.yaml")
-        if not config_path:
-            return
-
-    bid_writer = BidWriter(config_path)
-    app = MainWindow(bid_writer)
+    bid_writer, outline_preloaded = _build_startup_bid_writer(config_path)
+    app = MainWindow(bid_writer, outline_preloaded=outline_preloaded)
     app.mainloop()
 
 

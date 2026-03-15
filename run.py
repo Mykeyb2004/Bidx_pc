@@ -15,7 +15,7 @@ def main():
     parser.add_argument(
         "--config", "-c",
         default=None,
-        help="配置文件路径（留空则启动后在界面中选择）"
+        help="配置文件路径（留空则自动使用上次配置或 config.yaml）"
     )
     args = parser.parse_args()
 
