@@ -401,6 +401,11 @@ class MainWindow(tk.Tk):
         self.stop_requested = False
         self.visible_leaf_count = 0
         self.generated_leaf_count = 0
+        self._responsive_layout_pending = False
+        self._responsive_layout_force = False
+        self._action_layout_mode = ""
+        self._control_layout_mode = ""
+        self._status_wraplength = 0
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -430,6 +435,8 @@ class MainWindow(tk.Tk):
 
         # 绑定快捷键
         self.bind_shortcuts()
+        self.bind("<Configure>", self.on_window_resize)
+        self.after_idle(lambda: self.schedule_responsive_layout(force=True))
 
         # 加载大纲
         if outline_preloaded:
@@ -492,6 +499,9 @@ class MainWindow(tk.Tk):
 
         summary_bar = ttk.Frame(toolbar)
         summary_bar.pack(fill=tk.X, pady=(0, 8))
+        summary_metrics_bar = ttk.Frame(summary_bar)
+        summary_metrics_bar.pack(fill=tk.X)
+        self.summary_status_bar = ttk.Frame(summary_bar)
 
         self.config_text = tk.StringVar(value="-")
         self.output_text = tk.StringVar(value="-")
@@ -499,20 +509,31 @@ class MainWindow(tk.Tk):
         self.stats_text = tk.StringVar(value="0 / 0")
         self.status_text = tk.StringVar(value="就绪")
 
-        self._create_info_item(summary_bar, "配置", self.config_text)
-        self._create_info_item(summary_bar, "输出", self.output_text)
-        self._create_info_item(summary_bar, "已选", self.selection_text)
-        self._create_info_item(summary_bar, "已生成", self.stats_text)
-        self._create_info_item(summary_bar, "状态", self.status_text, padx=(0, 0))
+        self._create_info_item(summary_metrics_bar, "配置", self.config_text)
+        self._create_info_item(summary_metrics_bar, "输出", self.output_text)
+        self._create_info_item(summary_metrics_bar, "已选", self.selection_text)
+        self._create_info_item(summary_metrics_bar, "已生成", self.stats_text)
+        self.summary_status_bar.pack(fill=tk.X, pady=(6, 0))
+        self.summary_status_label = ttk.Label(
+            self.summary_status_bar,
+            text="状态:",
+            font=("TkDefaultFont", 9, "bold")
+        )
+        self.summary_status_label.pack(side=tk.LEFT)
+        self.summary_status_value = ttk.Label(
+            self.summary_status_bar,
+            textvariable=self.status_text,
+            justify=tk.LEFT
+        )
+        self.summary_status_value.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
 
-        action_bar = ttk.Frame(toolbar)
-        action_bar.pack(fill=tk.X)
+        self.action_bar = ttk.Frame(toolbar)
+        self.action_bar.pack(fill=tk.X)
 
-        utility_frame = ttk.Frame(action_bar)
-        utility_frame.pack(side=tk.LEFT)
+        self.utility_frame = ttk.Frame(self.action_bar)
 
         self.btn_config = ttk.Button(
-            utility_frame,
+            self.utility_frame,
             text="切换配置",
             command=self.select_and_switch_config,
             padding=(12, 8)
@@ -520,7 +541,7 @@ class MainWindow(tk.Tk):
         self.btn_config.pack(side=tk.LEFT, padx=(0, 6))
 
         self.btn_reload = ttk.Button(
-            utility_frame,
+            self.utility_frame,
             text="重载大纲",
             command=self.reload_outline,
             padding=(12, 8)
@@ -528,7 +549,7 @@ class MainWindow(tk.Tk):
         self.btn_reload.pack(side=tk.LEFT, padx=6)
 
         self.btn_refresh = ttk.Button(
-            utility_frame,
+            self.utility_frame,
             text="扫描输出状态",
             command=self.refresh_status,
             padding=(12, 8)
@@ -536,7 +557,7 @@ class MainWindow(tk.Tk):
         self.btn_refresh.pack(side=tk.LEFT, padx=6)
 
         self.btn_tree_expand = ttk.Button(
-            utility_frame,
+            self.utility_frame,
             text="展开全部▼",
             command=self.show_expand_menu,
             padding=(12, 8)
@@ -544,18 +565,17 @@ class MainWindow(tk.Tk):
         self.btn_tree_expand.pack(side=tk.LEFT, padx=6)
 
         self.btn_output = ttk.Button(
-            utility_frame,
+            self.utility_frame,
             text="打开输出目录",
             command=self.open_output_dir,
             padding=(12, 8)
         )
         self.btn_output.pack(side=tk.LEFT, padx=(6, 0))
 
-        action_frame = ttk.Frame(action_bar)
-        action_frame.pack(side=tk.RIGHT)
+        self.action_frame = ttk.Frame(self.action_bar)
 
         self.btn_preview = ttk.Button(
-            action_frame,
+            self.action_frame,
             text="预览所选",
             command=self.preview_selected,
             padding=(12, 8)
@@ -563,7 +583,7 @@ class MainWindow(tk.Tk):
         self.btn_preview.pack(side=tk.LEFT, padx=6)
 
         self.btn_merge = ttk.Button(
-            action_frame,
+            self.action_frame,
             text="整合标书",
             command=self.merge_generated_sections,
             padding=(12, 8)
@@ -571,7 +591,7 @@ class MainWindow(tk.Tk):
         self.btn_merge.pack(side=tk.LEFT, padx=6)
 
         self.btn_generate = ttk.Button(
-            action_frame,
+            self.action_frame,
             text="生成所选 0",
             command=self.batch_generate,
             padding=(16, 8),
@@ -588,7 +608,7 @@ class MainWindow(tk.Tk):
         header_frame.pack(fill=tk.X, pady=(0, 8))
 
         title_group = ttk.Frame(header_frame)
-        title_group.pack(side=tk.LEFT)
+        title_group.pack(fill=tk.X)
         ttk.Label(
             title_group,
             text="大纲结构",
@@ -600,29 +620,36 @@ class MainWindow(tk.Tk):
             foreground="#666666"
         ).pack(side=tk.LEFT, padx=(10, 0))
 
-        control_group = ttk.Frame(header_frame)
-        control_group.pack(side=tk.RIGHT)
+        self.control_group = ttk.Frame(header_frame)
+        self.control_group.pack(fill=tk.X, pady=(8, 0))
+        self.search_filter_group = ttk.Frame(self.control_group)
+        self.selection_action_group = ttk.Frame(self.control_group)
 
-        ttk.Label(control_group, text="搜索").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Label(self.search_filter_group, text="搜索").grid(row=0, column=0, padx=(0, 6))
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *_: self.apply_tree_filters())
-        self.search_entry = ttk.Entry(control_group, textvariable=self.search_var, width=24)
-        self.search_entry.pack(side=tk.LEFT, padx=(0, 10))
+        self.search_entry = ttk.Entry(
+            self.search_filter_group,
+            textvariable=self.search_var,
+            width=18
+        )
+        self.search_entry.grid(row=0, column=1, sticky="ew", padx=(0, 10))
 
-        ttk.Label(control_group, text="筛选").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Label(self.search_filter_group, text="筛选").grid(row=0, column=2, padx=(0, 6))
         self.status_filter_var = tk.StringVar(value="全部")
         self.status_filter_combo = ttk.Combobox(
-            control_group,
+            self.search_filter_group,
             textvariable=self.status_filter_var,
             values=("全部", "未生成", "已生成", "已完成", "部分完成"),
             state="readonly",
             width=10
         )
-        self.status_filter_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.status_filter_combo.grid(row=0, column=3, padx=(0, 10))
         self.status_filter_combo.bind("<<ComboboxSelected>>", lambda event: self.apply_tree_filters())
+        self.search_filter_group.columnconfigure(1, weight=1)
 
         self.btn_select_all = ttk.Button(
-            control_group,
+            self.selection_action_group,
             text="全选四级标题",
             command=self.select_all_leaf_titles,
             padding=(10, 6)
@@ -630,7 +657,7 @@ class MainWindow(tk.Tk):
         self.btn_select_all.pack(side=tk.LEFT, padx=(0, 6))
 
         self.btn_clear_selection = ttk.Button(
-            control_group,
+            self.selection_action_group,
             text="清空选择",
             command=self.clear_selection,
             padding=(10, 6)
@@ -670,6 +697,117 @@ class MainWindow(tk.Tk):
         self.outline_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.outline_tree.bind("<<TreeviewOpen>>", self.on_tree_open_close)
         self.outline_tree.bind("<<TreeviewClose>>", self.on_tree_open_close)
+
+    def on_window_resize(self, event):
+        """窗口尺寸变化后刷新自适应布局"""
+        if event.widget is not self:
+            return
+        self.schedule_responsive_layout()
+
+    def schedule_responsive_layout(self, force: bool = False):
+        """合并连续布局刷新请求，避免频繁重排"""
+        if not hasattr(self, "action_bar"):
+            return
+
+        self._responsive_layout_force = self._responsive_layout_force or force
+        if self._responsive_layout_pending:
+            return
+
+        self._responsive_layout_pending = True
+        self.after_idle(self._flush_responsive_layout)
+
+    def _flush_responsive_layout(self):
+        """在空闲时执行一次布局刷新"""
+        self._responsive_layout_pending = False
+        force = self._responsive_layout_force
+        self._responsive_layout_force = False
+        self.refresh_responsive_layout(force=force)
+
+    def refresh_responsive_layout(self, force: bool = False):
+        """根据窗口宽度调整工具栏和筛选区布局"""
+        if not hasattr(self, "action_bar"):
+            return
+
+        action_layout_mode = self._get_action_layout_mode()
+        control_layout_mode = self._get_control_layout_mode()
+
+        if force or action_layout_mode != self._action_layout_mode:
+            self._layout_action_bar(action_layout_mode)
+            self._action_layout_mode = action_layout_mode
+
+        if force or control_layout_mode != self._control_layout_mode:
+            self._layout_control_group(control_layout_mode)
+            self._control_layout_mode = control_layout_mode
+
+        self._update_status_wraplength()
+
+    def _get_action_layout_mode(self) -> str:
+        """计算工具按钮区域应使用的布局模式"""
+        available_width = max(self.action_bar.winfo_width(), self.winfo_width() - 32)
+        if available_width <= 1:
+            return self._action_layout_mode or "stacked"
+
+        required_width = self.utility_frame.winfo_reqwidth() + self.action_frame.winfo_reqwidth() + 24
+        return "single" if required_width <= available_width else "stacked"
+
+    def _layout_action_bar(self, layout_mode: str):
+        """工具按钮区域宽度不足时拆分为两行"""
+        self.utility_frame.grid_forget()
+        self.action_frame.grid_forget()
+        self.action_bar.grid_columnconfigure(0, weight=0)
+        self.action_bar.grid_columnconfigure(1, weight=0)
+
+        if layout_mode == "single":
+            self.action_bar.grid_columnconfigure(0, weight=1)
+            self.utility_frame.grid(row=0, column=0, sticky="w")
+            self.action_frame.grid(row=0, column=1, sticky="e")
+            return
+
+        self.action_bar.grid_columnconfigure(0, weight=1)
+        self.utility_frame.grid(row=0, column=0, sticky="w")
+        self.action_frame.grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+    def _get_control_layout_mode(self) -> str:
+        """计算筛选控制区域应使用的布局模式"""
+        available_width = max(self.control_group.winfo_width(), self.winfo_width() - 32)
+        if available_width <= 1:
+            return self._control_layout_mode or "stacked"
+
+        required_width = (
+            self.search_filter_group.winfo_reqwidth()
+            + self.selection_action_group.winfo_reqwidth()
+            + 24
+        )
+        return "single" if required_width <= available_width else "stacked"
+
+    def _layout_control_group(self, layout_mode: str):
+        """筛选控制区域宽度不足时拆分为两行"""
+        self.search_filter_group.grid_forget()
+        self.selection_action_group.grid_forget()
+        self.control_group.grid_columnconfigure(0, weight=0)
+        self.control_group.grid_columnconfigure(1, weight=0)
+
+        self.control_group.grid_columnconfigure(0, weight=1)
+        self.search_filter_group.grid(row=0, column=0, sticky="ew")
+
+        if layout_mode == "single":
+            self.selection_action_group.grid(row=0, column=1, sticky="e")
+            return
+
+        self.selection_action_group.grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+    def _update_status_wraplength(self):
+        """让状态摘要在窄窗口下自动换行"""
+        if not hasattr(self, "summary_status_value"):
+            return
+
+        available_width = max(
+            self.summary_status_bar.winfo_width() - self.summary_status_label.winfo_reqwidth() - 12,
+            240
+        )
+        if available_width != self._status_wraplength:
+            self.summary_status_value.configure(wraplength=available_width)
+            self._status_wraplength = available_width
 
     def create_status_bar(self):
         """创建状态栏"""
@@ -1038,6 +1176,7 @@ class MainWindow(tk.Tk):
         self.btn_stop_generation.config(
             state=(tk.NORMAL if self.is_generating else tk.DISABLED)
         )
+        self.schedule_responsive_layout()
 
     def on_tree_select(self, event):
         """当选择树节点时 - 只允许选择四级标题（叶子节点）"""
