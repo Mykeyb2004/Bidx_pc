@@ -14,3 +14,7 @@
 - 已复核 `AIWriter.build_prompt()`、`Config._get_text_or_file()` 与运行时 prompt，确认当前模型接收到的是路径字符串而不是文件内容。
 - 已修改 `bid_writer/config.py`，兼容从多行块 inline 文本中提取唯一有效路径，并在文件存在时读取 Markdown 正文。
 - 已用 `uv run python` 做运行时验证：`bid_requirements` 首行为 `# 项目采购需求`，`scoring_criteria` 首行为 `# 评分标准`，prompt 中不再出现原始路径字面量。
+- 新任务：在章节扩写 prompt 中补充完整总大纲原文，并强化“仅写当前章节范围、避免与其他章节重复”的边界约束。
+- 已确认当前实现只包含 `heading.title` 和 `heading.full_path`，尚未把完整大纲文本传给模型。
+- 已修改 `bid_writer/ai_writer.py`，在 prompt 中新增“完整总大纲参考”段落，并加入边界控制与全局去重约束语句。
+- 已用 `uv run python` 构造真实 prompt 验证：当前标题、标题层级路径、完整总大纲原文均已注入。

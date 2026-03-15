@@ -63,6 +63,7 @@ class AIWriter:
             完整的提示词
         """
         prompt_parts = []
+        outline_content = self.config.get_outline_content().strip()
 
         first_line = self._format_first_line(heading)
         english_rule = (
@@ -97,12 +98,25 @@ class AIWriter:
 - 字数要求：不少于 {min_words} 字
 - 第一行应为： {first_line}
 - 请直接输出扩写内容，不要包含标题本身
+- 只撰写当前标题负责的内容边界，不要越级展开同级、下级或后续章节应写的内容
+- 结合完整总大纲把握全局结构，避免与其他章节重复，并确保当前章节应覆盖的内容不遗漏
 - 内容要专业、严谨，符合标书撰写规范
 {format_rule}
 {english_rule}
 {chr(10).join(markdown_specific_rules)}
 {summary_rule}
 {extra_rules}
+""")
+
+        if outline_content:
+            prompt_parts.append(f"""
+## 完整总大纲参考
+以下为本项目标书的完整 Markdown 大纲原文。请据此理解当前章节在全稿中的位置、边界和上下文关系。
+请仅撰写“当前标题”负责的内容，不要照抄大纲，不要把其他章节应展开的内容提前写入本章节。
+
+```markdown
+{outline_content}
+```
 """)
 
         # 添加招标需求上下文
