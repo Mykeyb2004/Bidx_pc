@@ -10,3 +10,7 @@
 - 已新增 `bid_writer/gui_state.py`，持久化上次成功加载的配置文件。
 - 已调整 GUI 启动逻辑，默认直接加载上次配置或 `config.yaml`，不再默认弹启动选择框。
 - 已为大纲树加入默认全部展开与展开状态恢复逻辑，并通过脚本验证刷新后能够保留一级展开和自定义收起状态。
+- 新任务：修复 `config.yaml` 中 `bid_requirements` / `scoring_criteria` 的多行块路径写法，使其真正读取 `.md` 文件正文并注入 prompt。
+- 已复核 `AIWriter.build_prompt()`、`Config._get_text_or_file()` 与运行时 prompt，确认当前模型接收到的是路径字符串而不是文件内容。
+- 已修改 `bid_writer/config.py`，兼容从多行块 inline 文本中提取唯一有效路径，并在文件存在时读取 Markdown 正文。
+- 已用 `uv run python` 做运行时验证：`bid_requirements` 首行为 `# 项目采购需求`，`scoring_criteria` 首行为 `# 评分标准`，prompt 中不再出现原始路径字面量。

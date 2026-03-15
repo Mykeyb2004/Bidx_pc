@@ -102,6 +102,43 @@ class Config:
             return path.read_text(encoding='utf-8')
         return ""
 
+    def _looks_like_path(self, value: str) -> bool:
+        """粗略判断字符串是否像文件路径，避免误把普通正文当路径处理。"""
+        normalized = value.strip()
+        if not normalized:
+            return False
+        if normalized.startswith(("~", "/", "./", "../")):
+            return True
+        if "/" in normalized or "\\" in normalized:
+            return True
+        if len(normalized) >= 2 and normalized[1] == ":":
+            return True
+        return bool(Path(normalized).suffix)
+
+    def _extract_inline_file_path(self, inline_value: str) -> Optional[str]:
+        """从 inline 文本中提取唯一的有效路径行，兼容多行块中的注释和引号。"""
+        candidates = []
+        for raw_line in inline_value.splitlines():
+            trimmed = raw_line.strip()
+            if not trimmed or trimmed.startswith('#'):
+                continue
+            if len(trimmed) >= 2 and trimmed[0] == trimmed[-1] and trimmed[0] in {"'", '"'}:
+                trimmed = trimmed[1:-1].strip()
+            if trimmed:
+                candidates.append(trimmed)
+
+        if len(candidates) != 1:
+            return None
+
+        candidate = candidates[0]
+        if not self._looks_like_path(candidate):
+            return None
+
+        path = self._resolve_path(candidate)
+        if path.exists() and path.is_file():
+            return candidate
+        return None
+
     def _get_text_or_file(
         self,
         inline_paths: list[tuple[str, ...] | str],
@@ -121,10 +158,10 @@ class Config:
         if not isinstance(inline_value, str):
             return str(inline_value)
 
-        # 兼容旧配置：内容字段中直接填文件路径
-        trimmed = inline_value.strip()
-        if "\n" not in trimmed and len(trimmed) < 260:
-            text = self._read_text_file(trimmed)
+        # 兼容旧配置：内容字段中直接填文件路径，或多行块中仅保留“注释 + 路径”。
+        inline_path = self._extract_inline_file_path(inline_value)
+        if inline_path:
+            text = self._read_text_file(inline_path)
             if text:
                 return text
 
