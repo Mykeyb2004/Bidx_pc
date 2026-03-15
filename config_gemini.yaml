@@ -104,3 +104,4 @@ output:
   directory: "./output"
   # 文件名前缀（可选）
   prefix: ""
+  normalize_soft_line_breaks_on_merge: false

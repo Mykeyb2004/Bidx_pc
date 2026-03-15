@@ -365,6 +365,14 @@ class Config:
         )
 
     @property
+    def output_normalize_soft_line_breaks_on_merge(self) -> bool:
+        """整合标书时是否归一化正文中的软回车"""
+        return self._get_bool(
+            ('output', 'normalize_soft_line_breaks_on_merge'),
+            default=False
+        )
+
+    @property
     def output_filename_max_length(self) -> int:
         """输出文件名最大长度"""
         return self._get_int(('output', 'filename_max_length'), default=100)

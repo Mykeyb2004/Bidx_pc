@@ -37,5 +37,6 @@ output:
   prefix: ""
   include_title_header: true
   overwrite_existing: true
+  normalize_soft_line_breaks_on_merge: false
   filename_max_length: 100
   empty_filename_fallback: "untitled"

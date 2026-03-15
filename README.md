@@ -166,6 +166,7 @@ output:
   prefix: ""
   include_title_header: true
   overwrite_existing: true
+  normalize_soft_line_breaks_on_merge: false
   filename_max_length: 100
   empty_filename_fallback: "untitled"
 ```
@@ -178,6 +179,7 @@ output:
 - `inputs.*_file` 路径会按“相对于配置文件所在目录”解析
 - `bid_requirements`、`scoring_criteria` 支持直接写长文本，也兼容“内容字段里只写一个文件路径”的旧配置
 - `prompt.first_line_template` 支持 `{title}` 和 `{full_path}` 占位符
+- `output.normalize_soft_line_breaks_on_merge` 控制“整合标书”时是否把普通正文中的软回车合并回单段，默认关闭
 - `output.overwrite_existing: true` 时，同一标题默认覆盖已有标准输出文件
 - `output.prefix` 可为所有输出文件统一增加前缀
 

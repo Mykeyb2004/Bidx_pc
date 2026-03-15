@@ -4,6 +4,7 @@
 """
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,11 @@ class MergedBidResult:
 
 class BidWriter:
     """GUI 共享的核心状态与服务"""
+
+    _MARKDOWN_HEADING_RE = re.compile(r'^\s*#{1,6}\s+')
+    _UNORDERED_LIST_RE = re.compile(r'^\s*[-*+]\s+')
+    _ORDERED_LIST_RE = re.compile(r'^\s*(?:\d+[.)]|[（(]\d+[)）]|[一二三四五六七八九十百千]+、)\s*')
+    _HORIZONTAL_RULE_RE = re.compile(r'^\s*(?:-{3,}|\*{3,}|_{3,})\s*$')
 
     def __init__(self, config_path: str = "config.yaml"):
         self.config_path = config_path
@@ -75,6 +81,70 @@ class BidWriter:
             current = current.parent
         return chain
 
+    @staticmethod
+    def _needs_spacing_between(left: str, right: str) -> bool:
+        """处理中英文混排时的最小空格补齐。"""
+        if not left or not right:
+            return False
+        return left[-1].isascii() and left[-1].isalnum() and right[0].isascii() and right[0].isalnum()
+
+    @classmethod
+    def _is_structured_markdown_line(cls, line: str, in_code_block: bool) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return True
+        if stripped.startswith("```"):
+            return True
+        if in_code_block:
+            return True
+        if cls._MARKDOWN_HEADING_RE.match(line):
+            return True
+        if stripped.startswith(">"):
+            return True
+        if stripped.startswith("|") or (stripped.endswith("|") and stripped.count("|") >= 2):
+            return True
+        if cls._UNORDERED_LIST_RE.match(line) or cls._ORDERED_LIST_RE.match(line):
+            return True
+        return bool(cls._HORIZONTAL_RULE_RE.match(line))
+
+    @classmethod
+    def _normalize_soft_line_breaks_for_merge(cls, content: str) -> str:
+        """整合标书时，将普通正文中的单换行合并回段落。"""
+        lines = content.splitlines()
+        if not lines:
+            return content
+
+        normalized_parts: list[str] = []
+        paragraph_buffer: list[str] = []
+        in_code_block = False
+
+        def flush_paragraph() -> None:
+            if not paragraph_buffer:
+                return
+            merged = paragraph_buffer[0]
+            for fragment in paragraph_buffer[1:]:
+                separator = " " if cls._needs_spacing_between(merged.rstrip(), fragment.lstrip()) else ""
+                merged = f"{merged.rstrip()}{separator}{fragment.lstrip()}"
+            normalized_parts.append(merged.strip())
+            paragraph_buffer.clear()
+
+        for line in lines:
+            stripped = line.strip()
+            is_fence = stripped.startswith("```")
+            structured = cls._is_structured_markdown_line(line, in_code_block)
+
+            if structured:
+                flush_paragraph()
+                normalized_parts.append(line.rstrip())
+            else:
+                paragraph_buffer.append(line)
+
+            if is_fence:
+                in_code_block = not in_code_block
+
+        flush_paragraph()
+        return "\n".join(normalized_parts).strip()
+
     def merge_generated_sections(self, output_title: str = "整合标书") -> MergedBidResult:
         """按大纲顺序整合所有已生成章节正文。"""
         if self.parser is None:
@@ -99,6 +169,8 @@ class BidWriter:
             if not section_body.strip():
                 missing_sections += 1
                 continue
+            if self.config.output_normalize_soft_line_breaks_on_merge:
+                section_body = self._normalize_soft_line_breaks_for_merge(section_body)
 
             heading_chain = self._get_heading_chain(heading)
             shared_depth = 0
