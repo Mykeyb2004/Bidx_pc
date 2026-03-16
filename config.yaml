@@ -71,4 +71,4 @@ outline_file:  |
 output:
   directory: "./output"
   prefix: ""
-  normalize_soft_line_breaks_on_merge: true
+  normalize_soft_line_breaks_on_merge: false

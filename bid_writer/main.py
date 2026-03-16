@@ -109,41 +109,12 @@ class BidWriter:
 
     @classmethod
     def _normalize_soft_line_breaks_for_merge(cls, content: str) -> str:
-        """整合标书时，将普通正文中的单换行合并回段落。"""
-        lines = content.splitlines()
-        if not lines:
+        """整合标书时，移除行尾空格并将 LF 统一替换为 CRLF。"""
+        if not content:
             return content
-
-        normalized_parts: list[str] = []
-        paragraph_buffer: list[str] = []
-        in_code_block = False
-
-        def flush_paragraph() -> None:
-            if not paragraph_buffer:
-                return
-            merged = paragraph_buffer[0]
-            for fragment in paragraph_buffer[1:]:
-                separator = " " if cls._needs_spacing_between(merged.rstrip(), fragment.lstrip()) else ""
-                merged = f"{merged.rstrip()}{separator}{fragment.lstrip()}"
-            normalized_parts.append(merged.strip())
-            paragraph_buffer.clear()
-
-        for line in lines:
-            stripped = line.strip()
-            is_fence = stripped.startswith("```")
-            structured = cls._is_structured_markdown_line(line, in_code_block)
-
-            if structured:
-                flush_paragraph()
-                normalized_parts.append(line.rstrip())
-            else:
-                paragraph_buffer.append(line)
-
-            if is_fence:
-                in_code_block = not in_code_block
-
-        flush_paragraph()
-        return "\n".join(normalized_parts).strip()
+        normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+        normalized = "\n".join(line.rstrip(" \t") for line in normalized.split("\n"))
+        return normalized.replace("\n", "\r\n")
 
     def merge_generated_sections(self, output_title: str = "整合标书") -> MergedBidResult:
         """按大纲顺序整合所有已生成章节正文。"""
@@ -169,9 +140,6 @@ class BidWriter:
             if not section_body.strip():
                 missing_sections += 1
                 continue
-            if self.config.output_normalize_soft_line_breaks_on_merge:
-                section_body = self._normalize_soft_line_breaks_for_merge(section_body)
-
             heading_chain = self._get_heading_chain(heading)
             shared_depth = 0
             for previous_heading, current_heading in zip(previous_chain, heading_chain):
@@ -193,6 +161,8 @@ class BidWriter:
             raise ValueError("输出目录中未找到可整合的已生成章节")
 
         merged_content = "\n".join(merged_parts).rstrip() + "\n"
+        if self.config.output_normalize_soft_line_breaks_on_merge:
+            merged_content = self._normalize_soft_line_breaks_for_merge(merged_content)
         filepath = self.file_saver.save(
             output_title,
             merged_content,
