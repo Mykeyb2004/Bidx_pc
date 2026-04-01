@@ -25,7 +25,8 @@ generation:
   min_words_min: 100
   min_words_max: 12000
   min_words_step: 100
-  stream: true
+  stream: false
+  stream_idle_timeout_seconds: 12
 
 prompt:
   output_format: "纯正文"

@@ -445,6 +445,17 @@ class Config:
         return self._get_bool(('generation', 'stream'), default=True)
 
     @property
+    def generation_stream_idle_timeout_seconds(self) -> int:
+        """流式输出在最后一个 token 后的静默收尾超时时间（秒）"""
+        env_value = os.environ.get('BID_WRITER_STREAM_IDLE_TIMEOUT_SECONDS')
+        if env_value:
+            try:
+                return int(env_value)
+            except ValueError:
+                pass
+        return self._get_int(('generation', 'stream_idle_timeout_seconds'), default=12)
+
+    @property
     def prompt_output_format(self) -> str:
         """输出格式说明"""
         return self._get_first_defined(('prompt', 'output_format'), default='Markdown格式')

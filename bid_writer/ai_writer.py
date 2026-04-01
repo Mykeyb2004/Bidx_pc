@@ -3,8 +3,11 @@ AI扩写引擎
 调用Gemini API进行内容扩写
 """
 
+import queue
 import re
+import threading
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Generator, Optional
 from openai import OpenAI
 
@@ -12,6 +15,7 @@ from .config import Config
 from .context_pruner import ChapterContext, ChapterContextPruner
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
 from .outline_parser import HeadingNode
+from .timing_logger import write_timing_log
 
 
 @dataclass
@@ -33,6 +37,18 @@ class FinalizeResult:
     postprocess: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class PreparedGeneration:
+    """一次生成请求的已准备上下文。"""
+
+    request_options: dict[str, Any]
+    heading_title: str
+    heading_full_path: str
+    trace_id: str = ""
+    trace_session: Optional[GenerationTraceSession] = None
+    stream: bool = True
+
+
 class AIWriter:
     """AI扩写引擎"""
 
@@ -48,6 +64,7 @@ class AIWriter:
     _SUMMARY_HEADING_RE = re.compile(
         r'(?m)^\s*(?:[一二三四五六七八九十]+、|[（(][一二三四五六七八九十]+[)）]|\d+\.|[（(]\d+[)）])?\s*(章节小结|小结|总结)\s*$'
     )
+    _SECTION_STYLE_SPLIT_RE = re.compile(r'\n\s*\n')
     
     def __init__(self, config: Config):
         self.config = config
@@ -266,6 +283,27 @@ class AIWriter:
         max_tables = self.config.prompt_max_tables_per_section
         return 1 if max_tables > 0 else 0
 
+    def _requires_formal_hierarchy(self, text: str) -> bool:
+        """
+        判断正文是否已经形成明显的多段/多块结构，若是则要求使用正式层级序号。
+
+        这不是在要求所有正文都必须编号，而是避免长篇多段正文“看起来已分层，
+        但完全没有一、（一）1.（1）”的情况漏过后处理。
+        """
+        stripped = text.strip()
+        if not stripped:
+            return False
+
+        paragraph_count = len([part for part in self._SECTION_STYLE_SPLIT_RE.split(stripped) if part.strip()])
+        table_count = self._markdown_table_count(stripped)
+        line_count = len([line for line in stripped.splitlines() if line.strip()])
+
+        if len(stripped) >= 1800 and paragraph_count >= 4:
+            return True
+        if len(stripped) >= 1200 and paragraph_count >= 3 and table_count >= 1:
+            return True
+        return len(stripped) >= 2500 and line_count >= 8
+
     def _build_summary_rule_text(self) -> str:
         summary_title = self.config.prompt_summary_title.strip()
         if summary_title:
@@ -316,6 +354,8 @@ class AIWriter:
         issues: list[str] = []
         if self._disallowed_paragraph_transition_count(text) >= 1:
             issues.append("numbering_transitions")
+        if self._requires_formal_hierarchy(text) and self._formal_heading_count(text) == 0:
+            issues.append("missing_formal_hierarchy")
         if not self.config.prompt_allow_markdown_headings and self._markdown_heading_count(text) >= 1:
             issues.append("markdown_headings")
 
@@ -327,8 +367,9 @@ class AIWriter:
         summary_title = self.config.prompt_summary_title.strip()
         issue_lines = {
             "numbering_transitions": "1. 不得使用“首先、其次、再次、最后”组织正文；如需分层，使用正式层级序号。",
-            "markdown_headings": "2. 删除正文中的Markdown标题符号（#），改为普通正文层级表达。",
-            "forbidden_summary": "5. 删除文末单独设置的小结或总结段。",
+            "missing_formal_hierarchy": "2. 当前正文已形成明显分层结构，但完全没有使用正式层级序号；请改写为一、（一）1. （1）体系。",
+            "markdown_headings": "3. 删除正文中的Markdown标题符号（#），改为普通正文层级表达。",
+            "forbidden_summary": "6. 删除文末单独设置的小结或总结段。",
         }
         dynamic_issue_lines = [issue_lines[issue] for issue in issues if issue in issue_lines]
 
@@ -356,6 +397,10 @@ class AIWriter:
 6. {self._build_english_rule_text()}
 7. 保持原文信息量、逻辑和专业风格，尽量不压缩内容。
 8. 只输出修复后的正文，不要解释。
+
+特别注意：
+- 如果原文已经分成多个明显功能板块、多个表格或多个长段落，就必须显式补上一、（一）1. （1）层级，而不是继续保持整篇大段散文式表达。
+- 表格前如需设置引导性小标题，也必须纳入正式层级序号体系。
 
 本次需要重点修复的问题：
 {chr(10).join(dynamic_issue_lines) if dynamic_issue_lines else "1. 按上述统一规则校正格式。"}
@@ -406,6 +451,38 @@ class AIWriter:
                 "format_repair_issues": issues,
             },
         )
+
+    # 流式生成后后处理改变了内容时，通过此标记通知调用方替换显示内容
+    STREAM_REPLACE_SENTINEL = "\x00\x01__replaced__\x00\x01"
+    STREAM_STATUS_SENTINEL = "\x00\x01__status__\x00\x01"
+
+    @classmethod
+    def make_stream_status(cls, message: str) -> str:
+        return cls.STREAM_STATUS_SENTINEL + message
+
+    @staticmethod
+    def _finalize_trace_session_async(
+        trace_session: Optional[GenerationTraceSession],
+        output_text: str,
+        status: str = "completed",
+        error: str = "",
+        postprocess: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if trace_session is None or trace_session.finished:
+            return
+
+        def worker() -> None:
+            try:
+                trace_session.finalize(
+                    output_text,
+                    status=status,
+                    error=error,
+                    postprocess=postprocess,
+                )
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     @staticmethod
     def _iter_text_chunks(text: str, chunk_size: int = 1200) -> Generator[str, None, None]:
@@ -519,8 +596,8 @@ class AIWriter:
                     prompt_sections,
                     "requirement_brief",
                     f"""
-## 需求要点
-以下为根据项目需求提炼出的当前章节写作要点，请优先据此组织内容：
+## 需求原文摘录
+以下为从项目采购需求原文中摘取的相关内容，请据此写作。优先贴合原文要求，不要把摘录重新概括成“必须覆盖”“硬约束”等元语言：
 {pruned_context.requirement_brief}
 """,
                 )
@@ -641,6 +718,48 @@ class AIWriter:
         Yields/Returns:
             扩写的内容（流式或一次性返回）
         """
+        prepared = self.prepare_generation(
+            heading,
+            additional_requirements=additional_requirements,
+            min_words=min_words,
+            stream=stream,
+        )
+        raw_result = self.expand_raw(prepared)
+
+        if stream:
+            def wrapped_stream() -> Generator[str, None, None]:
+                chunks: list[str] = []
+                for token in raw_result:
+                    chunks.append(token)
+                    yield token
+
+                raw_content = "".join(chunks)
+                finalize_result = self.finalize_generation(
+                    heading,
+                    raw_content,
+                    trace_session=prepared.trace_session,
+                )
+                final_content = finalize_result.content
+                if final_content != raw_content:
+                    yield self.STREAM_REPLACE_SENTINEL + final_content
+
+            return wrapped_stream()
+
+        raw_content = raw_result
+        return self.finalize_generation(
+            heading,
+            raw_content,
+            trace_session=prepared.trace_session,
+        ).content
+
+    def prepare_generation(
+        self,
+        heading: HeadingNode,
+        additional_requirements: str = "",
+        min_words: int = 500,
+        stream: bool = True,
+    ) -> PreparedGeneration:
+        """准备模型请求和 trace 会话，但不执行正文后处理。"""
         prompt_result = self.build_prompt_result(heading, additional_requirements, min_words)
         system_prompt = self.build_system_prompt()
 
@@ -663,42 +782,189 @@ class AIWriter:
             request_options=request_options,
         )
 
-        if stream:
-            return self._stream_expand(heading, request_options, trace_session)
-        else:
-            return self._sync_expand(heading, request_options, trace_session)
+        return PreparedGeneration(
+            request_options=request_options,
+            heading_title=heading.title,
+            heading_full_path=heading.full_path,
+            trace_id=trace_session.trace_id if trace_session is not None else "",
+            trace_session=trace_session,
+            stream=stream,
+        )
 
-    def _stream_expand(
+    def expand_raw(self, prepared: PreparedGeneration) -> Generator[str, None, None] | str:
+        """只执行模型生成，不做正文后处理。"""
+        if prepared.stream:
+            return self._stream_expand_raw(
+                prepared.request_options,
+                prepared.trace_session,
+                heading_title=prepared.heading_title,
+                heading_full_path=prepared.heading_full_path,
+                trace_id=prepared.trace_id,
+            )
+        return self._sync_expand_raw(prepared.request_options, prepared.trace_session)
+
+    def finalize_generation(
         self,
         heading: HeadingNode,
+        raw_content: str,
+        trace_session: Optional[GenerationTraceSession] = None,
+    ) -> FinalizeResult:
+        """对原始正文执行后处理，并异步完成 trace 落盘。"""
+        write_timing_log(
+            "finalize_generation_started",
+            heading_title=heading.title,
+            heading_full_path=heading.full_path,
+            trace_id=trace_session.trace_id if trace_session is not None else "",
+            raw_chars=len(raw_content),
+        )
+        finalize_result = self._finalize_generated_content(heading, raw_content)
+        write_timing_log(
+            "finalize_generation_finished",
+            heading_title=heading.title,
+            heading_full_path=heading.full_path,
+            trace_id=trace_session.trace_id if trace_session is not None else "",
+            raw_chars=len(raw_content),
+            final_chars=len(finalize_result.content),
+            format_repair_applied=bool(finalize_result.postprocess.get("format_repair_applied")),
+            format_repair_issues=finalize_result.postprocess.get("format_repair_issues") or [],
+        )
+        if trace_session is not None and not trace_session.finished:
+            self._finalize_trace_session_async(
+                trace_session,
+                finalize_result.content,
+                status="completed",
+                postprocess=finalize_result.postprocess,
+            )
+        return finalize_result
+
+    def _stream_expand_raw(
+        self,
         request_options: dict,
         trace_session: Optional[GenerationTraceSession] = None,
+        heading_title: str = "",
+        heading_full_path: str = "",
+        trace_id: str = "",
     ) -> Generator[str, None, None]:
-        """流式扩写"""
+        """流式扩写：逐 token 立即 yield，仅返回原始正文。"""
         chunks: list[str] = []
+        response = None
+        finish_reason = ""
+        last_token_at = ""
+        idle_timeout_seconds = max(3, self.config.generation_stream_idle_timeout_seconds)
+        close_requested = threading.Event()
+        event_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+        def _close_response() -> None:
+            close = getattr(response, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+        def _reader() -> None:
+            try:
+                assert response is not None
+                for chunk in response:
+                    if close_requested.is_set():
+                        return
+                    if not chunk.choices:
+                        continue
+
+                    choice = chunk.choices[0]
+                    token = choice.delta.content or ""
+                    if token:
+                        event_queue.put(("token", token))
+
+                    if choice.finish_reason:
+                        event_queue.put(("finish", str(choice.finish_reason)))
+                        return
+
+                event_queue.put(("end", "iterator_exhausted"))
+            except Exception as exc:
+                if close_requested.is_set():
+                    event_queue.put(("end", "closed_after_idle_timeout"))
+                else:
+                    event_queue.put(("error", exc))
+
         try:
             response = self.client.chat.completions.create(**request_options)
-            for chunk in response:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
-                    chunks.append(content)
+            reader = threading.Thread(target=_reader, name="llm-stream-reader", daemon=True)
+            reader.start()
+
+            while True:
+                wait_timeout = idle_timeout_seconds if chunks else max(idle_timeout_seconds, self.config.api_timeout_seconds)
+                try:
+                    event_type, payload = event_queue.get(timeout=wait_timeout)
+                except queue.Empty:
+                    if chunks:
+                        finish_reason = f"idle_timeout_after_last_token_{idle_timeout_seconds}s"
+                        write_timing_log(
+                            "stream_idle_timeout_close",
+                            heading_title=heading_title,
+                            heading_full_path=heading_full_path,
+                            trace_id=trace_id or (trace_session.trace_id if trace_session is not None else ""),
+                            output_chars=len("".join(chunks)),
+                            last_token_at=last_token_at,
+                            idle_timeout_seconds=idle_timeout_seconds,
+                        )
+                        close_requested.set()
+                        _close_response()
+                        break
+                    raise TimeoutError(
+                        f"流式输出在 {wait_timeout} 秒内未收到任何内容，已中止本次生成。"
+                    )
+
+                if event_type == "token":
+                    token = str(payload)
+                    chunks.append(token)
+                    last_token_at = datetime.now().astimezone().isoformat(timespec="milliseconds")
+                    yield token
+                    continue
+
+                if event_type == "finish":
+                    finish_reason = str(payload)
+                    break
+
+                if event_type == "end":
+                    finish_reason = str(payload)
+                    break
+
+                if event_type == "error":
+                    raise payload
         except Exception as exc:
+            write_timing_log(
+                "stream_generation_error",
+                heading_title=heading_title,
+                heading_full_path=heading_full_path,
+                trace_id=trace_id or (trace_session.trace_id if trace_session is not None else ""),
+                output_chars=len("".join(chunks)),
+                last_token_at=last_token_at,
+                finish_reason=finish_reason,
+                error=str(exc),
+            )
             if trace_session is not None:
                 trace_session.finalize("".join(chunks), status="failed", error=str(exc))
             raise
-        finalize_result = self._finalize_generated_content(heading, "".join(chunks))
-        content = finalize_result.content
-        if trace_session is not None and not trace_session.finished:
-            trace_session.finalize(content, status="completed", postprocess=finalize_result.postprocess)
-        yield from self._iter_text_chunks(content)
+        finally:
+            write_timing_log(
+                "stream_last_token_received",
+                heading_title=heading_title,
+                heading_full_path=heading_full_path,
+                trace_id=trace_id or (trace_session.trace_id if trace_session is not None else ""),
+                output_chars=len("".join(chunks)),
+                last_token_at=last_token_at,
+                finish_reason=finish_reason,
+            )
+            close_requested.set()
+            _close_response()
 
-    def _sync_expand(
+    def _sync_expand_raw(
         self,
-        heading: HeadingNode,
         request_options: dict,
         trace_session: Optional[GenerationTraceSession] = None,
     ) -> str:
-        """同步扩写"""
+        """同步扩写，仅返回原始正文。"""
         try:
             response = self.client.chat.completions.create(**request_options)
             content = response.choices[0].message.content or ""
@@ -707,10 +973,6 @@ class AIWriter:
                 trace_session.finalize("", status="failed", error=str(exc))
             raise
 
-        finalize_result = self._finalize_generated_content(heading, content)
-        content = finalize_result.content
-        if trace_session is not None:
-            trace_session.finalize(content, status="completed", postprocess=finalize_result.postprocess)
         return content
 
     def count_chinese_words(self, text: str) -> int:

@@ -16,6 +16,7 @@ from .main import BidWriter
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
 from .gui_state import get_startup_config_candidates, remember_last_config
+from .timing_logger import write_timing_log
 
 import threading
 import queue
@@ -1774,6 +1775,17 @@ class MainWindow(tk.Tk):
                             self.text_widget.see(tk.END)
                             self.text_widget.config(state=tk.DISABLED)
 
+                    elif msg_type == "replace":
+                        # 后处理修复了格式，替换整个显示内容
+                        if self._widget_exists(self.text_widget):
+                            self.text_widget.config(state=tk.NORMAL)
+                            self.text_widget.delete('1.0', tk.END)
+                            self.text_widget.insert('1.0', data)
+                            self.text_widget.see(tk.END)
+                            self.text_widget.config(state=tk.DISABLED)
+                        if self._widget_exists(self.status_label):
+                            self.status_label.config(text="格式已自动修复")
+
                     elif msg_type == "status":
                         # 更新状态
                         if self._widget_exists(self.status_label):
@@ -1816,12 +1828,13 @@ class MainWindow(tk.Tk):
                     self.text_queue.put(("status", "正在生成内容..."))
 
                     content_parts = []
-                    result = ai_writer.expand(
+                    prepared = ai_writer.prepare_generation(
                         heading,
                         requirements,
                         min_words,
                         stream=ai_writer.config.generation_stream
                     )
+                    result = ai_writer.expand_raw(prepared)
 
                     if isinstance(result, str):
                         content_parts.append(result)
@@ -1835,9 +1848,23 @@ class MainWindow(tk.Tk):
                     word_count = ai_writer.count_chinese_words(content)
 
                     self.text_queue.put(("status", f"生成完成 - {word_count} 字"))
-                    self.text_queue.put(("done", (content, word_count)))
+                    write_timing_log(
+                        "generation_done_enqueued",
+                        heading_title=heading.title,
+                        heading_full_path=heading.full_path,
+                        trace_id=prepared.trace_id,
+                        raw_chars=len(content),
+                        word_count=word_count,
+                    )
+                    self.text_queue.put(("done", (content, word_count, prepared.trace_session)))
 
                 except Exception as e:
+                    write_timing_log(
+                        "generation_background_error",
+                        heading_title=heading.title,
+                        heading_full_path=heading.full_path,
+                        error=str(e),
+                    )
                     self.text_queue.put(("error", str(e)))
 
             # 启动后台线程
@@ -1898,7 +1925,7 @@ class MainWindow(tk.Tk):
 
             # 等待完成（不阻塞，窗口可交互）
             try:
-                content, word_count = gen_window.wait_completion()
+                raw_content, word_count, trace_session = gen_window.wait_completion()
             except Exception as e:
                 gen_window.close()
                 # 在状态栏显示错误信息，不弹窗
@@ -1906,7 +1933,24 @@ class MainWindow(tk.Tk):
                 return "failed"
 
             # 关闭生成窗口
+            write_timing_log(
+                "popup_close_called",
+                heading_title=heading.title,
+                heading_full_path=heading.full_path,
+                trace_id=trace_session.trace_id if trace_session is not None else "",
+                raw_chars=len(raw_content),
+            )
             gen_window.close()
+
+            # 关闭生成窗口后再做格式整理，避免“正在生成”窗口长时间滞留
+            self.status_text.set(f"正在整理输出: {heading.title}")
+            finalize_result = self.bid_writer.ai_writer.finalize_generation(
+                heading,
+                raw_content,
+                trace_session=trace_session,
+            )
+            content = finalize_result.content
+            word_count = self.bid_writer.ai_writer.count_chinese_words(content)
 
             # 批量生成时自动保存，跳过预览对话框
             if auto_save:

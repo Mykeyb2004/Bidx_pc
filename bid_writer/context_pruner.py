@@ -9,8 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from openai import OpenAI
-
 from .config import Config
 from .outline_parser import HeadingNode
 
@@ -61,8 +59,6 @@ _FOCUS_TERM_EXPANSIONS = (
     ("应用", ("应用", "应用转化", "借鉴", "支撑", "依据")),
 )
 _SKIP_SUMMARY_LABELS = {"采购需求", "项目概况", "项目任务", "项目内容", "项目技术说明"}
-
-
 @dataclass
 class ScoringCriterion:
     """命中的评分标准行。"""
@@ -102,21 +98,27 @@ class ChapterContext:
 
 
 class ChapterContextPruner:
-    """基于规则和可选轻量模型的章节级上下文裁剪。"""
+    """基于规则的章节级上下文裁剪。"""
 
     def __init__(self, config: Config):
         self.config = config
-        self._brief_client: Optional[OpenAI] = None
-        if config.pruning_api_is_configured:
-            self._brief_client = OpenAI(
-                base_url=config.pruning_api_base_url,
-                api_key=config.pruning_api_key,
-                timeout=config.pruning_timeout_seconds,
-                max_retries=config.pruning_max_retries,
-            )
 
     def build_context(self, heading: HeadingNode) -> ChapterContext:
         """构建当前章节的局部上下文。"""
+        context = self._build_base_context(heading)
+        if self.config.context_pruning_requirements_brief_enabled:
+            (
+                context.requirement_brief,
+                context.requirement_brief_status,
+                context.requirement_brief_error,
+            ) = self._build_requirement_brief_with_cache(heading, context)
+        else:
+            context.requirement_brief_status = "disabled"
+
+        return context
+
+    def _build_base_context(self, heading: HeadingNode) -> ChapterContext:
+        """构建不含 requirement_brief 的基础上下文。"""
         response_labels = self._extract_response_labels(heading)
         chapter_focus_terms = self._build_focus_terms(heading)
         match_keywords = self._build_match_keywords(heading, response_labels)
@@ -130,7 +132,6 @@ class ChapterContextPruner:
         requirement_seed, requirement_blocks = self._build_requirement_seed(
             heading,
             response_labels,
-            scoring_items,
             match_keywords,
             scoring_focus_terms,
         )
@@ -146,16 +147,15 @@ class ChapterContextPruner:
             requirement_blocks=requirement_blocks,
         )
 
-        if self.config.context_pruning_requirements_brief_enabled:
-            (
-                context.requirement_brief,
-                context.requirement_brief_status,
-                context.requirement_brief_error,
-            ) = self._build_requirement_brief(heading, context)
-        else:
-            context.requirement_brief_status = "disabled"
-
         return context
+
+    def _build_requirement_brief_with_cache(
+        self,
+        heading: HeadingNode,
+        context: ChapterContext,
+    ) -> tuple[str, str, str]:
+        """根据当前章节命中的采购需求原文，生成只含摘录的 requirement_brief。"""
+        return self._build_requirement_brief(heading, context)
 
     @staticmethod
     def _heading_chain(heading: HeadingNode) -> list[HeadingNode]:
@@ -571,11 +571,22 @@ class ChapterContextPruner:
             index += 1
         return merged
 
+    @classmethod
+    def _is_low_value_requirement_block(cls, block: str) -> bool:
+        """过滤只有标题、没有实质信息的需求块。"""
+        lines = [cls._clean_requirement_text(line) for line in block.splitlines() if cls._clean_requirement_text(line)]
+        if not lines:
+            return True
+        if len(lines) <= 2 and all(cls._looks_like_heading_block(line) for line in lines):
+            return True
+        normalized_lines = [cls._normalize_text(line) for line in lines]
+        meaningful_lines = [line for line in normalized_lines if len(line) >= 8]
+        return not meaningful_lines
+
     def _build_requirement_seed(
         self,
         heading: HeadingNode,
         response_labels: list[str],
-        scoring_items: list[ScoringCriterion],
         match_keywords: Optional[list[str]] = None,
         focus_terms: Optional[list[str]] = None,
     ) -> tuple[str, list[RequirementBlockMatch]]:
@@ -585,11 +596,6 @@ class ChapterContextPruner:
 
         keywords = list(match_keywords) if match_keywords is not None else self._build_match_keywords(heading, response_labels)
         current_focus_terms = list(focus_terms or [])
-        for criterion in scoring_items:
-            for source in (criterion.subitem, criterion.standard):
-                for variant in self._extract_keyword_variants(source):
-                    if variant not in keywords:
-                        keywords.append(variant)
 
         blocks = self._split_requirement_blocks(text)
         scored_blocks: list[tuple[int, int, str]] = []
@@ -630,6 +636,8 @@ class ChapterContextPruner:
         for _, index, block in scored_blocks:
             if block in selected:
                 continue
+            if self._is_low_value_requirement_block(block):
+                continue
             if total_chars >= 1000 or len(selected) >= _MAX_SELECTED_REQUIREMENT_BLOCKS:
                 break
             selected.append(block)
@@ -638,6 +646,8 @@ class ChapterContextPruner:
 
         if not selected:
             for index, block in enumerate(blocks[:4]):
+                if self._is_low_value_requirement_block(block):
+                    continue
                 if total_chars >= 900 or len(selected) >= 3:
                     break
                 selected.append(block)
@@ -771,71 +781,68 @@ class ChapterContextPruner:
             "## 需求 Seed",
             context.requirement_seed or "（无）",
             "",
-            "## 需求 Brief",
+            "## 需求原文摘录",
             context.requirement_brief or "（无）",
         ])
 
         filepath.write_text(content, encoding="utf-8")
         return filepath
 
+    @classmethod
+    def _extract_requirement_excerpt(cls, block: str) -> str:
+        """从命中的需求块中截取原文摘录，不做归纳改写。"""
+        if cls._is_low_value_requirement_block(block):
+            return ""
+
+        lines = [cls._clean_requirement_text(line) for line in block.splitlines() if cls._clean_requirement_text(line)]
+        if not lines:
+            return ""
+
+        label = ""
+        content = ""
+        if len(lines) >= 2 and cls._looks_like_heading_block("\n".join(lines[:2])):
+            label = cls._title_core(lines[0])
+            content = " ".join(lines[1:])
+        elif len(lines) >= 2 and len(lines[0]) <= 20:
+            label = cls._title_core(lines[0])
+            content = " ".join(lines[1:])
+        else:
+            content = " ".join(lines)
+
+        content = re.sub(r"\s+", " ", content).strip()
+        content = _LEADING_NUMBER_RE.sub("", content).strip()
+        if not content:
+            return ""
+
+        sentences = [segment.strip() for segment in re.split(r"[。！？]", content) if segment.strip()]
+        excerpt = "。".join(sentences[:2]).strip("。")
+        if not excerpt:
+            excerpt = content
+        excerpt = f"{excerpt}。"
+
+        if label and label not in _SKIP_SUMMARY_LABELS:
+            return f"【{label}】{excerpt}"
+        return excerpt
+
     def _build_requirement_brief(self, heading: HeadingNode, context: ChapterContext) -> tuple[str, str, str]:
-        if not context.requirement_seed:
-            return "", "skipped_empty_seed", ""
-        if self._brief_client is None:
-            return "", "skipped_unconfigured", ""
+        del heading  # requirement_brief 仅依赖当前章节已命中的需求块
 
-        scoring_text = "\n".join(
-            f"- {item.subitem}（权重：{item.weight or '未标注'}）：{item.standard}"
-            for item in context.scoring_items
-        ) or "（未命中明确评分项）"
+        selected_blocks = [match.block for match in context.requirement_blocks if match.selected and match.block.strip()]
+        if not selected_blocks:
+            return "", "skipped_empty_blocks", ""
 
-        user_prompt = f"""请将以下材料压缩为“章节写作 brief”。你不是正文生成模型，只做提炼，不要写标书正文，不要补充未提供的信息。
+        excerpt_lines: list[str] = []
+        seen: set[str] = set()
+        for block in selected_blocks:
+            excerpt = self._extract_requirement_excerpt(block)
+            normalized = self._normalize_text(excerpt)
+            if not excerpt or not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            excerpt_lines.append(f"{len(excerpt_lines) + 1}. {excerpt}")
+            if len(excerpt_lines) >= 4:
+                break
 
-当前章节：{heading.full_path}
-命中评分项：
-{scoring_text}
-
-命中需求片段：
-{context.requirement_seed}
-
-请严格按以下结构输出，每部分最多 4 条，单条尽量不超过 40 字：
-必须覆盖：
-1. ...
-
-建议强调：
-1. ...
-
-硬约束：
-1. ...
-
-不要写什么：
-1. ...
-"""
-
-        options = {
-            "model": self.config.pruning_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是投标文本前处理助手，只负责提炼章节写作 brief，不负责写正文。",
-                },
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": self.config.pruning_temperature,
-            "max_tokens": self.config.pruning_max_tokens,
-            "stream": False,
-        }
-        if self.config.pruning_top_p is not None:
-            options["top_p"] = self.config.pruning_top_p
-        if self.config.pruning_seed is not None:
-            options["seed"] = self.config.pruning_seed
-
-        try:
-            response = self._brief_client.chat.completions.create(**options)
-        except Exception as exc:
-            return "", "failed_exception", str(exc)
-
-        brief = (response.choices[0].message.content or "").strip()
-        if not brief:
-            return "", "empty_response", ""
-        return brief, "generated", ""
+        if not excerpt_lines:
+            return "", "empty_excerpt", ""
+        return "\n".join(excerpt_lines), "extracted", ""
