@@ -133,6 +133,7 @@ class AIWriter:
             f"- 本章重点：{'；'.join(focus_terms)}",
             f"- 字数要求：不少于 {min_words} 字",
             f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
+            "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。",
             f"- 表格控制：{self._build_table_rule_text()}",
             "- 写作依据：优先根据下方评分关注和需求要点组织内容。",
         ]
@@ -199,6 +200,8 @@ class AIWriter:
             constraints.append("严禁使用Markdown标题符号（#）。")
         if not self.config.prompt_allow_english_terms:
             constraints.append("除专有名词或用户明确要求外，禁止输出不必要的英文、英文缩写或中英对照。")
+        constraints.append("默认使用正式层级序号组织正文；除非用户明确要求只写单段摘要，否则至少出现一个正式层级序号“一、”。")
+        constraints.append("只要正文包含多个板块、多个长段落、表格或并列清单，必须继续使用“（一）”“1.”“（1）”展开，不得输出无序号散文式正文。")
 
         constraints.extend(self.config.prompt_hard_constraints)
 
@@ -324,6 +327,19 @@ class AIWriter:
             return "可保留必要英文术语或专有名词，但不要堆砌中英混杂表达。"
         return "除专有名词或用户明确要求外，不要输出不必要的英文、英文缩写或中英对照。"
 
+    def _build_structure_contract_section(self) -> str:
+        return "\n".join(
+            [
+                "## 结构输出硬要求",
+                "- 本次正文默认采用显式层级结构，不接受整篇无序号散文式表达。",
+                "- 除非用户明确要求只写单段摘要，否则正文至少出现一个正式层级序号“一、”。",
+                "- 只要正文存在两个及以上功能板块、三个及以上自然段、表格、清单、流程、机制或并列措施，必须继续使用“（一）”“1.”“（1）”展开。",
+                "- 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文。",
+                "- 表格前的引导性标题、板块标题或小标题，同样必须纳入正式层级序号体系，不得裸写。",
+                "- 段内枚举可使用“第一……、第二……”或“一是……；二是……”，但不能替代章节层级序号。",
+            ]
+        )
+
     def _build_extra_rules_section(self) -> str:
         rules = self.config.prompt_extra_rules
         if not rules:
@@ -363,91 +379,17 @@ class AIWriter:
             issues.append("forbidden_summary")
         return issues
 
-    def _repair_output_format(self, heading: HeadingNode, content: str, issues: list[str]) -> str:
-        summary_title = self.config.prompt_summary_title.strip()
-        issue_lines = {
-            "numbering_transitions": "1. 不得使用“首先、其次、再次、最后”组织正文；如需分层，使用正式层级序号。",
-            "missing_formal_hierarchy": "2. 当前正文已形成明显分层结构，但完全没有使用正式层级序号；请改写为一、（一）1. （1）体系。",
-            "markdown_headings": "3. 删除正文中的Markdown标题符号（#），改为普通正文层级表达。",
-            "forbidden_summary": "6. 删除文末单独设置的小结或总结段。",
-        }
-        dynamic_issue_lines = [issue_lines[issue] for issue in issues if issue in issue_lines]
-
-        repair_messages = [
-            {
-                "role": "system",
-                "content": (
-                    self.build_system_prompt()
-                    + "\n\n你现在不是重新写内容，而是修复投标正文的格式与结构。"
-                    + "不得新增事实，不得删减关键信息，不得改变原意。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"""请将以下投标正文修复为符合配置要求的版本。
-
-当前章节：{heading.full_path}
-
-修复要求：
-1. 输出格式按“{self.config.prompt_output_format}”组织内容，直接输出正文，不要解释。
-2. 如果正文需要分层展开，必须使用正式层级序号：一、（一）1. （1）。
-3. 如果序号后面带标题文字，则该行只写“序号 + 标题”，下一行另起正文。
-4. 正文中的段内枚举或并列说明，可以保留“第一……、第二……”或“一是……；二是……”。
-5. {self._build_summary_rule_text()}
-6. {self._build_english_rule_text()}
-7. 保持原文信息量、逻辑和专业风格，尽量不压缩内容。
-8. 只输出修复后的正文，不要解释。
-
-特别注意：
-- 如果原文已经分成多个明显功能板块、多个表格或多个长段落，就必须显式补上一、（一）1. （1）层级，而不是继续保持整篇大段散文式表达。
-- 表格前如需设置引导性小标题，也必须纳入正式层级序号体系。
-
-本次需要重点修复的问题：
-{chr(10).join(dynamic_issue_lines) if dynamic_issue_lines else "1. 按上述统一规则校正格式。"}
-
-原始正文：
-{content}
-""",
-            },
-        ]
-        request_options = {
-            "model": self.config.model,
-            "messages": repair_messages,
-            "temperature": min(self.config.temperature, 0.2),
-            "max_tokens": self.config.max_tokens,
-            "stream": False,
-        }
-        if self.config.api_top_p is not None:
-            request_options["top_p"] = self.config.api_top_p
-        if self.config.api_seed is not None:
-            request_options["seed"] = self.config.api_seed
-
-        try:
-            response = self.client.chat.completions.create(**request_options)
-        except Exception:
-            return content
-
-        repaired = (response.choices[0].message.content or "").strip()
-        return repaired or content
-
     def _finalize_generated_content(self, heading: HeadingNode, content: str) -> FinalizeResult:
+        del heading  # 不再进行二次大模型格式修复，仅保留轻量规范化与问题检测。
         normalized_content, replacement_count = self._normalize_bidder_references(content)
         issues = self._collect_output_issues(normalized_content)
-        repaired = normalized_content
-        format_repair_applied = False
-        if issues:
-            repaired = self._repair_output_format(heading, normalized_content, issues)
-            format_repair_applied = repaired != normalized_content
-
-        repaired, replacement_count_after_repair = self._normalize_bidder_references(repaired)
-        replacement_count += replacement_count_after_repair
 
         return FinalizeResult(
-            content=repaired,
+            content=normalized_content,
             postprocess={
                 "bidder_reference_normalized": replacement_count > 0,
                 "bidder_reference_replacements": replacement_count,
-                "format_repair_applied": format_repair_applied,
+                "format_repair_applied": False,
                 "format_repair_issues": issues,
             },
         )
@@ -557,6 +499,12 @@ class AIWriter:
                     self._build_task_card(heading, pruned_context, min_words),
                 ]
             ),
+        )
+        self._append_prompt_section(
+            prompt_parts,
+            prompt_sections,
+            "structure_contract",
+            self._build_structure_contract_section(),
         )
 
         if first_line:
