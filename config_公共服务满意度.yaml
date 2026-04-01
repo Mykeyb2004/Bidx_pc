@@ -73,6 +73,7 @@ context_pruning:
 
 generation_trace:
   enabled: true
+  directory: "./log/generation_traces"
   mode: "full"
   write_prompt: true
   write_output: true

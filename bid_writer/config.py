@@ -637,7 +637,7 @@ class Config:
         value = self._get_first_defined(('generation_trace', 'directory'), default='')
         if isinstance(value, str) and value.strip():
             return str(self._resolve_path(value.strip()))
-        return str(Path(self.output_directory) / '_generation_traces')
+        return str((Path(__file__).resolve().parent.parent / 'log' / 'generation_traces'))
 
     @property
     def generation_trace_write_prompt(self) -> bool:
