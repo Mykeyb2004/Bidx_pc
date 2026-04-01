@@ -25,6 +25,14 @@ class PromptBuildResult:
     full_context_stats: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class FinalizeResult:
+    """生成结果后处理。"""
+
+    content: str
+    postprocess: dict[str, Any] = field(default_factory=dict)
+
+
 class AIWriter:
     """AI扩写引擎"""
 
@@ -99,23 +107,16 @@ class AIWriter:
     def _build_task_card(self, heading: HeadingNode, pruned_context: Optional[ChapterContext], min_words: int) -> str:
         chain = self._heading_chain(heading)
         project_title = chain[0].title if chain else heading.title
-        board_title = chain[1].title if len(chain) >= 2 else "（无）"
         bidder_name = self.config.prompt_bidder_name or "当前投标主体"
         focus_terms = self._chapter_focus_terms(heading, pruned_context)
-        response_labels = ", ".join(pruned_context.response_labels) if pruned_context and pruned_context.response_labels else "（未命中明确响应板块）"
 
         lines = [
             "## 章节任务卡",
             f"- 写作场景：为{bidder_name}撰写“{project_title}”投标文件中的当前章节正文。",
-            f"- 所属板块：{board_title}",
-            f"- 响应板块：{response_labels}",
             f"- 本章重点：{'；'.join(focus_terms)}",
             f"- 字数要求：不少于 {min_words} 字",
             f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
-            f"- 收束方式：{self._build_summary_rule_text()}",
             f"- 表格控制：{self._build_table_rule_text()}",
-            f"- 术语要求：{self._build_english_rule_text()}",
-            "- 结构格式：章节层级如需分层展开，使用“一、（一）1.（1）”；正文段内枚举可使用“第一……、第二……”或“一是……；二是……”。不得使用“首先、其次、再次、最后”。",
             "- 写作依据：优先根据下方评分关注和需求要点组织内容。",
         ]
         return "\n".join(lines)
@@ -296,6 +297,18 @@ class AIWriter:
             ]
         )
 
+    def _normalize_bidder_references(self, text: str) -> tuple[str, int]:
+        bidder_name = self.config.prompt_bidder_name.strip()
+        if not bidder_name or not text.strip():
+            return text, 0
+
+        normalized = text
+        replacements = 0
+        for alias in ("我方", "我司", "本公司", "本单位"):
+            normalized, count = re.subn(re.escape(alias), bidder_name, normalized)
+            replacements += count
+        return normalized, replacements
+
     def _collect_output_issues(self, text: str) -> list[str]:
         if not text.strip():
             return []
@@ -306,27 +319,15 @@ class AIWriter:
         if not self.config.prompt_allow_markdown_headings and self._markdown_heading_count(text) >= 1:
             issues.append("markdown_headings")
 
-        table_count = self._markdown_table_count(text)
-        max_tables = max(0, self.config.prompt_max_tables_per_section)
-        min_tables = self._required_min_table_count()
-        if table_count < min_tables:
-            issues.append("missing_tables")
-        if max_tables >= 0 and table_count > max_tables:
-            issues.append("too_many_tables")
-
         if not self.config.prompt_summary_title.strip() and self._contains_summary_heading(text):
             issues.append("forbidden_summary")
         return issues
 
     def _repair_output_format(self, heading: HeadingNode, content: str, issues: list[str]) -> str:
-        max_tables = max(0, self.config.prompt_max_tables_per_section)
-        min_tables = self._required_min_table_count()
         summary_title = self.config.prompt_summary_title.strip()
         issue_lines = {
             "numbering_transitions": "1. 不得使用“首先、其次、再次、最后”组织正文；如需分层，使用正式层级序号。",
             "markdown_headings": "2. 删除正文中的Markdown标题符号（#），改为普通正文层级表达。",
-            "missing_tables": f"3. 在不新增事实的前提下，补足Markdown表格数量；当前正文至少需要 {min_tables} 个，最多 {max_tables} 个。",
-            "too_many_tables": f"4. 将Markdown表格数量压缩到不超过 {max_tables} 个。",
             "forbidden_summary": "5. 删除文末单独设置的小结或总结段。",
         }
         dynamic_issue_lines = [issue_lines[issue] for issue in issues if issue in issue_lines]
@@ -351,11 +352,10 @@ class AIWriter:
 2. 如果正文需要分层展开，必须使用正式层级序号：一、（一）1. （1）。
 3. 如果序号后面带标题文字，则该行只写“序号 + 标题”，下一行另起正文。
 4. 正文中的段内枚举或并列说明，可以保留“第一……、第二……”或“一是……；二是……”。
-5. {self._build_table_rule_text()}
-6. {self._build_summary_rule_text()}
-7. {self._build_english_rule_text()}
-8. 保持原文信息量、逻辑和专业风格，尽量不压缩内容。
-9. 只输出修复后的正文，不要解释。
+5. {self._build_summary_rule_text()}
+6. {self._build_english_rule_text()}
+7. 保持原文信息量、逻辑和专业风格，尽量不压缩内容。
+8. 只输出修复后的正文，不要解释。
 
 本次需要重点修复的问题：
 {chr(10).join(dynamic_issue_lines) if dynamic_issue_lines else "1. 按上述统一规则校正格式。"}
@@ -385,11 +385,27 @@ class AIWriter:
         repaired = (response.choices[0].message.content or "").strip()
         return repaired or content
 
-    def _finalize_generated_content(self, heading: HeadingNode, content: str) -> str:
-        issues = self._collect_output_issues(content)
+    def _finalize_generated_content(self, heading: HeadingNode, content: str) -> FinalizeResult:
+        normalized_content, replacement_count = self._normalize_bidder_references(content)
+        issues = self._collect_output_issues(normalized_content)
+        repaired = normalized_content
+        format_repair_applied = False
         if issues:
-            return self._repair_output_format(heading, content, issues)
-        return content
+            repaired = self._repair_output_format(heading, normalized_content, issues)
+            format_repair_applied = repaired != normalized_content
+
+        repaired, replacement_count_after_repair = self._normalize_bidder_references(repaired)
+        replacement_count += replacement_count_after_repair
+
+        return FinalizeResult(
+            content=repaired,
+            postprocess={
+                "bidder_reference_normalized": replacement_count > 0,
+                "bidder_reference_replacements": replacement_count,
+                "format_repair_applied": format_repair_applied,
+                "format_repair_issues": issues,
+            },
+        )
 
     @staticmethod
     def _iter_text_chunks(text: str, chunk_size: int = 1200) -> Generator[str, None, None]:
@@ -670,9 +686,10 @@ class AIWriter:
             if trace_session is not None:
                 trace_session.finalize("".join(chunks), status="failed", error=str(exc))
             raise
-        content = self._finalize_generated_content(heading, "".join(chunks))
+        finalize_result = self._finalize_generated_content(heading, "".join(chunks))
+        content = finalize_result.content
         if trace_session is not None and not trace_session.finished:
-            trace_session.finalize(content, status="completed")
+            trace_session.finalize(content, status="completed", postprocess=finalize_result.postprocess)
         yield from self._iter_text_chunks(content)
 
     def _sync_expand(
@@ -690,9 +707,10 @@ class AIWriter:
                 trace_session.finalize("", status="failed", error=str(exc))
             raise
 
-        content = self._finalize_generated_content(heading, content)
+        finalize_result = self._finalize_generated_content(heading, content)
+        content = finalize_result.content
         if trace_session is not None:
-            trace_session.finalize(content, status="completed")
+            trace_session.finalize(content, status="completed", postprocess=finalize_result.postprocess)
         return content
 
     def count_chinese_words(self, text: str) -> int:

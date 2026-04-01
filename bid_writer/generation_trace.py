@@ -62,6 +62,7 @@ class GenerationTraceSession:
         self.created_at = _utc_now_string()
         self.completed_at: Optional[str] = None
         self.status = "running"
+        self.postprocess: dict[str, Any] = {}
         self._finished = False
 
         self.trace_dir = self._build_trace_dir()
@@ -186,6 +187,7 @@ class GenerationTraceSession:
                 "system_prompt_chars": len(self.system_prompt),
                 "user_prompt_chars": len(self.user_prompt),
             },
+            "postprocess": self.postprocess,
             "output_chars": output_chars,
             "error": error,
             "artifacts": artifacts,
@@ -215,6 +217,16 @@ class GenerationTraceSession:
         ]
         if error:
             lines.append(f"- error: {error}")
+        if self.postprocess:
+            issues = self.postprocess.get("format_repair_issues") or []
+            lines.extend(
+                [
+                    f"- bidder_reference_normalized: {self.postprocess.get('bidder_reference_normalized', False)}",
+                    f"- bidder_reference_replacements: {self.postprocess.get('bidder_reference_replacements', 0)}",
+                    f"- format_repair_applied: {self.postprocess.get('format_repair_applied', False)}",
+                    f"- format_repair_issues: {', '.join(issues) if issues else '（无）'}",
+                ]
+            )
         lines.extend(
             [
                 "",
@@ -237,6 +249,16 @@ class GenerationTraceSession:
             f"- user_prompt_chars: {len(self.user_prompt)}",
             f"- output_chars: {len(output_text)}",
         ]
+        if self.postprocess:
+            issues = self.postprocess.get("format_repair_issues") or []
+            lines.extend(
+                [
+                    f"- bidder_reference_normalized: {self.postprocess.get('bidder_reference_normalized', False)}",
+                    f"- bidder_reference_replacements: {self.postprocess.get('bidder_reference_replacements', 0)}",
+                    f"- format_repair_applied: {self.postprocess.get('format_repair_applied', False)}",
+                    f"- format_repair_issues: {', '.join(issues) if issues else '（无）'}",
+                ]
+            )
 
         if self.pruned_context is not None:
             lines.extend(
@@ -274,13 +296,21 @@ class GenerationTraceSession:
         )
         return "\n".join(lines)
 
-    def finalize(self, output_text: str, status: str = "completed", error: str = "") -> None:
+    def finalize(
+        self,
+        output_text: str,
+        status: str = "completed",
+        error: str = "",
+        postprocess: Optional[dict[str, Any]] = None,
+    ) -> None:
         if self._finished:
             return
 
         self._finished = True
         self.status = status
         self.completed_at = _utc_now_string()
+        if postprocess:
+            self.postprocess = postprocess
 
         if self.config.generation_trace_write_output:
             self._write_text(
