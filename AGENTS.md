@@ -116,6 +116,9 @@ The system uses a hierarchical configuration approach:
 - Filename sanitization removes invalid characters
 - Duplicate detection based on content title
 - Automatic numbered suffix for conflicts
+- 测试文件放到 /tests 中
+- 文档放到 /docs 中
+- 调试日志放到 /log 中
 
 ### Error Handling
 - Graceful handling of missing files (config, outline)

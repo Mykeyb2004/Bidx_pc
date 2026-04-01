@@ -19,18 +19,6 @@ role: |
   五、语言要求
    使用机关化、研究型、政府采购风格表达，要求政策性强、逻辑严密、结构清楚、措辞稳妥。优先使用“围绕”“聚焦”“立足”“依托”“构建”“细化”“强化”“形成”“推动”“确保”等表述。严禁使用宣传式、营销式、口号式语言，严禁出现“行业领先”“全面赋能”“高质量高标准完成”等空泛表述。
 
-  ### 【输出规范】
-  - 输出内容序号规范：第一层级到第四层级的启示序号分别是：一、（一）1. （1）。如果序号后面是标题，则使用：序号和小标题后回车换行
-  - **正文排版：** 不在正文中使用列表，可使用“一是…；二是……；三是…”或“1.；2.”。
-  - 标书投标方为：杭州菲尔德咨询。
-  - 严禁使用Markdown标题符号（#）
-  - 严禁正文中出现类似“作为xx投标专家”之类的内容。严禁在正文中输出评论性、意图解释性的内容。
-  - 禁止输出AI腔调：如“在当今数字化转型的大背景下xxx”、“我们将秉承xxx的理念"等
-  - 禁止过度使用排比句、空洞的形容词、夸张的词语
-  - 禁止段落结构千篇一律：总-分-总的机械模式
-  - 禁止中英文混杂、不必要的专业术语堆砌、不必要的术语英文解释
-  - 禁止输出分割线
-
 
 generation:
   default_min_words: 1500
@@ -40,13 +28,54 @@ generation:
   stream: true
 
 prompt:
-  output_format: "Markdown格式"
-  first_line_template: "#### {title}"
+  output_format: "纯正文"
+  first_line_template: ""
+  allow_markdown_headings: false
   allow_english_terms: false
+  bidder_name: "杭州菲尔德咨询"
   max_tables_per_section: 2
   summary_title: ""
+  hard_constraints:
+    - "输出内容序号规范：第一层级到第四层级的启示序号分别是：一、（一）1. （1）。如果序号后面是标题，则在 序号和标题文本 的行后回车换行写正文。"
+    - "正文排版：不在正文中使用列表，可使用“一是……；二是……；三是……”或“1.……；2.……”。"
+    - "严禁使用Markdown标题符号（#）。"
+    - "严禁正文中出现类似“作为xx投标专家”之类的内容。严禁在正文中输出评论性、意图解释性的内容。"
+    - "禁止输出AI腔调，如“在当今数字化转型的大背景下...”“我们将秉承...的理念”等套话。"
+    - "禁止过度使用排比句、空洞的形容词、夸张的词语。"
+    - "禁止段落结构千篇一律，不要机械套用总-分-总。"
+    - "禁止中英文混杂、不必要的专业术语堆砌、不必要的术语英文解释。"
+    - "禁止输出分割线。"
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范，满足对评分标准高响应、高得分的要求"
+
+context_pruning:
+  enabled: true
+  debug_dump: true
+  local_outline:
+    include_ancestors: true
+    include_siblings: true
+    max_siblings: 8
+  scoring:
+    enabled: true
+    max_rows: 4
+  requirements_brief:
+    enabled: true
+    fallback: "rule_only"
+  api:
+    model: "gpt-5.4-mini"
+    temperature: 0.2
+    max_tokens: 1200
+    timeout_seconds: 60
+    max_retries: 2
+
+generation_trace:
+  enabled: true
+  mode: "full"
+  write_prompt: true
+  write_output: true
+  write_context: true
+  write_summary: true
+  redact_sensitive: true
 
 # 招标需求（指定文件路径）
 bid_requirements: |

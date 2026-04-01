@@ -129,3 +129,47 @@
 - 使用临时配置文件验证 `output.directory: ./out` 时，`Config.output_directory` 现在解析到配置文件所在目录下的 `out`。
 - 使用最小 Tk 脚本验证：生成开始后立即关闭进度窗口，后台生成仍正常完成，`wait_completion()` 返回结果且不再抛 `TclError`。
 - `uv run python -m compileall bid_writer run.py` 通过。
+
+---
+
+# 章节级上下文裁剪与辅助模型配置
+
+## 目标
+- 将章节扩写从“完整大纲 + 完整招标需求 + 完整评分标准”的全量注入，优化为“局部大纲 + 命中评分项 + 章节需求 brief”的裁剪注入。
+- 保留主生成模型用于正文写作，并为可选的“需求摘要”阶段预留独立辅助模型配置。
+- 约束辅助模型的敏感配置仅存放于 `.env.local`，不写入 YAML。
+- 将 `[config_公共服务满意度.yaml](/Users/zhangqijin/PycharmProjects/BidX_simple/config_公共服务满意度.yaml)` 作为调试基准配置，通过显式 `--config` 方式验证，不改 GUI 默认启动顺序。
+
+## 阶段
+- [x] 复核当前默认配置选择、`config_公共服务满意度.yaml` 现状与单模型配置入口
+- [x] 确定章节裁剪采用“规则提取 + 可选轻量模型摘要”的混合策略
+- [x] 确定辅助模型敏感信息仅通过 `.env.local` 的 `BID_WRITER_PRUNING_*` 环境变量提供
+- [x] 实现 `context_pruning` 配置读取与辅助模型 env 覆写逻辑
+- [x] 实现章节级局部大纲、评分项路由、需求 seed/brief 生成链路
+- [x] 将 `config_公共服务满意度.yaml` 迁移到新 prompt 字段与裁剪配置结构
+- [x] 运行回退、长度和约束命中验证
+
+## 关键决策
+- GUI 启动顺序保持现状：显式 `--config` 优先，其次上次成功配置，再回退 `config.yaml`；公共服务满意度配置只作为调试基准，不挤占默认启动位。
+- 辅助模型只负责“章节需求 brief”压缩；局部大纲和评分项命中继续走规则逻辑，减少额外模型的不确定性。
+- 辅助模型配置采用独立环境变量前缀，如 `BID_WRITER_PRUNING_API_BASE_URL`、`BID_WRITER_PRUNING_API_KEY`，避免与主生成模型共享密钥或地址。
+- 若辅助模型缺少必要环境变量、调用失败或返回无效结果，正文生成直接回退到 `rule_only`，不再回退到“全量需求全文”模式。
+
+## 风险
+- 评分项路由若只依赖标题关键词，可能在无“对应评分标准”标记的大纲中命中不准，需要设计保底匹配顺序。
+- `[config_公共服务满意度.yaml](/Users/zhangqijin/PycharmProjects/BidX_simple/config_公共服务满意度.yaml)` 目前仍保留旧 prompt 字段，迁移时要避免与已实现的 `hard_constraints` 机制冲突。
+- 辅助模型与主模型完全分离后，文风和术语口径可能出现偏差，摘要 prompt 需要尽量结构化和去风格化。
+
+## 错误记录
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `session-catchup.py` 默认路径不存在 | 1 | 直接读取项目现有 `task_plan.md`、`findings.md`、`progress.md` 接续本轮规划，并记录该路径问题。 |
+
+## 验证结果
+- `Config('config_公共服务满意度.yaml')` 已能读取 `context_pruning.enabled`、`requirements_brief.enabled`、`prompt.bidder_name`、`prompt.hard_constraints` 等新字段。
+- 未设置 `BID_WRITER_PRUNING_API_BASE_URL` / `BID_WRITER_PRUNING_API_KEY` 时，`pruning_api_is_configured` 为 `False`，可作为后续 `rule_only` 回退条件。
+- 设置 `BID_WRITER_PRUNING_*` 环境变量后，`pruning_api_base_url`、`pruning_api_key`、`pruning_model`、`pruning_temperature`、`pruning_max_tokens` 均按预期被环境变量覆盖。
+- `uv run python -m compileall bid_writer run.py` 通过。
+- `AIWriter.build_prompt()` 在 `context_pruning.enabled=true` 时，已切换为注入局部大纲、命中评分项和需求 seed/brief，而不是完整大纲、完整需求和完整评分表。
+- 对 `2.9.2 数据资料保密管理制度` 的 prompt 进行对比：裁剪版长度 `2778`，关闭裁剪后的旧版长度 `9317`，减少 `6539` 个字符。
+- 将辅助模型指向不可用地址时，`requirement_brief` 会安静回退为空字符串，主 prompt 继续使用 `命中需求片段`，不影响章节生成流程。

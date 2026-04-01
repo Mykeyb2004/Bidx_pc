@@ -61,3 +61,31 @@
 - `Config.output_directory` 现在与输入文件路径保持一致，统一通过 `_resolve_path()` 相对于配置文件目录解析。
 - `GenerationWindow` 把队列轮询挂到父窗口上，而不是进度窗自身；即使进度窗已被用户关闭，后台任务状态仍会继续被消费。
 - `GenerationWindow.close()` 现在是幂等的，重复关闭或关闭已销毁窗口都不会再触发 Tk 异常。
+
+## 章节级上下文裁剪规划相关发现
+- 当前 GUI 默认启动顺序来自 `get_startup_config_candidates()`：显式配置优先，其次上次成功配置，再次是 `config.yaml`，最后才是其他 `config*.yaml`；没有“固定调试基准配置”的概念。
+- 当前代码只有一套模型配置入口，即 `Config.api_*` 和 `AIWriter` 单客户端；不存在辅助摘要模型的第二套配置通道。
+- `[config_公共服务满意度.yaml](/Users/zhangqijin/PycharmProjects/BidX_simple/config_公共服务满意度.yaml)` 仍是旧风格 prompt：`output_format: "Markdown格式"`、`first_line_template: "#### {title}"`，并把强约束写在 `role` 中，尚未迁移到 `prompt.bidder_name` / `prompt.hard_constraints`。
+- 对“章节级上下文裁剪”，最稳妥的首版是混合策略：局部大纲和评分项命中用规则提取，采购需求再按章节生成结构化 brief。
+- 用户确认辅助模型的敏感项 `base_url`、`api_key` 必须放 `.env.local`，不进入 YAML。
+- 基于现有环境变量命名规则，辅助模型宜采用独立前缀，如 `BID_WRITER_PRUNING_API_BASE_URL`、`BID_WRITER_PRUNING_API_KEY`，与主生成模型分离。
+- 为避免隐式耦合，若辅助模型 env 缺失，不应自动偷用主模型密钥；应直接回退到 `rule_only`。
+- `planning-with-files` 技能说明中的默认 catchup 脚本路径在当前环境不存在，因此本轮规划是基于项目内已有 planning 文件恢复上下文。
+
+## 章节级上下文裁剪配置接口实现后的确认
+- `Config` 已新增 `context_pruning` 相关属性，覆盖开关、调试输出、局部大纲、评分路由、需求摘要和辅助模型参数读取。
+- 辅助模型的 `base_url` 与 `api_key` 已按要求改为仅从环境变量 `BID_WRITER_PRUNING_API_BASE_URL` / `BID_WRITER_PRUNING_API_KEY` 读取，不再依赖 YAML。
+- 辅助模型的非敏感参数如 `model`、`temperature`、`max_tokens`、`timeout_seconds`、`max_retries` 支持 YAML 默认值，并允许被 `BID_WRITER_PRUNING_*` 环境变量覆盖。
+- `Config.pruning_api_is_configured` 已提供后续运行时判断条件，用于决定是否启用需求摘要模型。
+- `[config_公共服务满意度.yaml](/Users/zhangqijin/PycharmProjects/BidX_simple/config_公共服务满意度.yaml)` 已迁移到新 prompt 字段：`output_format: 纯正文`、`first_line_template: ""`、`allow_markdown_headings: false`、`bidder_name`、`hard_constraints`、`context_pruning`。
+- `.env.example` 和 `README.md` 已补充 `BID_WRITER_PRUNING_*` 的使用说明，明确敏感配置应进入 `.env.local`。
+
+## 章节级上下文裁剪链路实现后的确认
+- 新增 `bid_writer/context_pruner.py`，负责局部大纲构建、评分表 Markdown 解析、评分项路由、采购需求 seed 提取，以及可选的需求 brief 生成。
+- 评分项路由优先吃大纲祖先节点中的 `（响应：xxx）` / `（对应评分标准：xxx）` 标签，再结合标题链和最长公共子串匹配，对同一子项下的多行评分标准做二次排序。
+- 采购需求 seed 不再简单返回整份需求全文；当前实现会按段落打分，并将“短标题块 + 下一段正文”合并，避免只抽到 `1.2调查方法` 这类无信息量的短标题。
+- `AIWriter.build_prompt()` 在启用裁剪时不再注入 `## 完整总大纲参考`、`## 招标需求参考`、`## 评分标准参考`，而是切换为 `## 局部大纲参考`、`## 命中评分项参考`、`## 命中需求片段` / `## 需求提炼 Brief`。
+- 对公共服务满意度项目的 `2.9.2 数据资料保密管理制度`，评分路由已能把“保密工作制度”“数据真实性保障措施”等评分行排到前面。
+- 在未配置或调用失败的辅助模型场景下，`requirement_brief` 会返回空串，主 prompt 自动回退到规则提取的 `requirement_seed`，不会抛异常或阻塞生成。
+- `context_pruning.debug_dump=true` 时，`AIWriter.build_prompt()` 会把当前章节的局部大纲、命中评分项、需求 seed、需求 brief 和 prompt 长度统计写入输出目录下的 `_context_pruning_debug/*.md` sidecar 文件。
+- 为了提升需求 seed 的可解释性，关键词匹配已增加标题/评分语句的变体提取和 generic suffix 剥离，例如可从“数据资料保密管理制度”派生出“数据资料保密”等更短关键词。

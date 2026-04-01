@@ -75,6 +75,11 @@ BID_WRITER_MODEL=gpt-4o-mini
 BID_WRITER_TEMPERATURE=0.7
 BID_WRITER_MAX_TOKENS=8000
 BID_WRITER_API_KEY=your-api-key
+
+# 可选：章节上下文裁剪 / 需求 brief 辅助模型
+BID_WRITER_PRUNING_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_PRUNING_MODEL=gpt-4o-mini
+BID_WRITER_PRUNING_API_KEY=your-api-key
 ```
 
 至少需要配置：
@@ -82,6 +87,7 @@ BID_WRITER_API_KEY=your-api-key
 - `BID_WRITER_API_BASE_URL`：写入 `.env.local` 的模型服务地址
 - `BID_WRITER_API_KEY`：写入 `.env.local` 的 API Key
 - `BID_WRITER_MODEL`：写入 `.env.local` 的模型名称
+- `BID_WRITER_PRUNING_API_BASE_URL` / `BID_WRITER_PRUNING_API_KEY`：可选的章节裁剪辅助模型敏感配置，建议仅写入 `.env.local`
 - `inputs.outline_file`：Markdown 大纲文件
 - `inputs.bid_requirements_file` 或 `inputs.bid_requirements`：招标需求
 - `inputs.scoring_criteria_file` 或 `inputs.scoring_criteria`：评分标准
@@ -153,13 +159,48 @@ generation:
   stream: true
 
 prompt:
-  output_format: "Markdown格式"
-  first_line_template: "#### {title}"
+  output_format: "纯正文"
+  first_line_template: ""
+  allow_markdown_headings: false
   allow_english_terms: false
+  bidder_name: "示例投标主体名称"
   max_tables_per_section: 4
   summary_title: "章节小结"
+  hard_constraints:
+    - "严禁使用Markdown标题符号（#）。"
+    - "禁止输出评论性、意图解释性的内容。"
+    - "禁止输出分割线。"
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范"
+
+context_pruning:
+  enabled: false
+  debug_dump: false
+  local_outline:
+    include_ancestors: true
+    include_siblings: true
+    max_siblings: 8
+  scoring:
+    enabled: true
+    max_rows: 4
+  requirements_brief:
+    enabled: false
+    fallback: "rule_only"
+  api:
+    model: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 1200
+    timeout_seconds: 60
+    max_retries: 2
+
+generation_trace:
+  enabled: false
+  mode: "full"
+  write_prompt: true
+  write_output: true
+  write_context: true
+  write_summary: true
+  redact_sensitive: true
 
 output:
   directory: "./output"
@@ -179,6 +220,14 @@ output:
 - `inputs.*_file` 路径会按“相对于配置文件所在目录”解析
 - `bid_requirements`、`scoring_criteria` 支持直接写长文本，也兼容“内容字段里只写一个文件路径”的旧配置
 - `prompt.first_line_template` 支持 `{title}` 和 `{full_path}` 占位符
+- `prompt.first_line_template` 设为空字符串时，模型将直接输出正文而不重复当前章节标题
+- `prompt.allow_markdown_headings` 控制是否允许模型输出 Markdown 标题符号 `#`
+- `prompt.bidder_name` 用于统一约束投标主体名称
+- `prompt.hard_constraints` 用于配置高优先级输出强约束，程序会注入到 system prompt
+- `context_pruning.*` 用于配置章节级上下文裁剪；当前主要用于局部大纲、评分路由和需求 brief 的参数约束
+- `context_pruning.api.base_url` / `context_pruning.api.api_key` 不建议写入 YAML；请使用 `.env.local` 中的 `BID_WRITER_PRUNING_*` 环境变量提供敏感信息
+- `generation_trace.*` 用于记录单次章节扩写的完整 trace；默认输出到 `output/_generation_traces/`
+- `generation_trace.redact_sensitive: true` 时，trace 只保留 `api_base_url` 的 host，不写入完整地址与任何密钥
 - `output.normalize_soft_line_breaks_on_merge` 控制“整合标书”时是否把普通正文中的软回车合并回单段，默认关闭
 - `output.overwrite_existing: true` 时，同一标题默认覆盖已有标准输出文件
 - `output.prefix` 可为所有输出文件统一增加前缀
