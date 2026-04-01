@@ -27,6 +27,19 @@ class PromptBuildResult:
 
 class AIWriter:
     """AI扩写引擎"""
+
+    _FORMAL_HEADING_LINE_RE = re.compile(
+        r'(?m)^\s*(?:[一二三四五六七八九十]+、|[（(][一二三四五六七八九十]+[)）]|\d+\.|[（(]\d+[)）])'
+    )
+    _DISALLOWED_PARAGRAPH_TRANSITION_RE = re.compile(
+        r'(?m)(?:^|(?<=\n)\s*|(?<=\n\n)\s*)(首先|其次|再次|最后)[，、,.：:]?'
+    )
+    _MARKDOWN_HEADING_RE = re.compile(r'(?m)^\s*#{1,6}\s+')
+    _MARKDOWN_TABLE_LINE_RE = re.compile(r'^\s*\|?.+\|.+\|?\s*$')
+    _MARKDOWN_TABLE_ALIGN_RE = re.compile(r'^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$')
+    _SUMMARY_HEADING_RE = re.compile(
+        r'(?m)^\s*(?:[一二三四五六七八九十]+、|[（(][一二三四五六七八九十]+[)）]|\d+\.|[（(]\d+[)）])?\s*(章节小结|小结|总结)\s*$'
+    )
     
     def __init__(self, config: Config):
         self.config = config
@@ -98,7 +111,11 @@ class AIWriter:
             f"- 响应板块：{response_labels}",
             f"- 本章重点：{'；'.join(focus_terms)}",
             f"- 字数要求：不少于 {min_words} 字",
-            "- 输出方式：直接写投标正文，不重复标题，不写说明性语句，不另设总结。",
+            f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
+            f"- 收束方式：{self._build_summary_rule_text()}",
+            f"- 表格控制：{self._build_table_rule_text()}",
+            f"- 术语要求：{self._build_english_rule_text()}",
+            "- 结构格式：章节层级如需分层展开，使用“一、（一）1.（1）”；正文段内枚举可使用“第一……、第二……”或“一是……；二是……”。不得使用“首先、其次、再次、最后”。",
             "- 写作依据：优先根据下方评分关注和需求要点组织内容。",
         ]
         return "\n".join(lines)
@@ -160,6 +177,11 @@ class AIWriter:
                 f"投标主体统一使用“{bidder_name}”表述；除非用户明确要求，不要替换为其他公司名称、简称或第一人称主体。"
             )
 
+        if not self.config.prompt_allow_markdown_headings:
+            constraints.append("严禁使用Markdown标题符号（#）。")
+        if not self.config.prompt_allow_english_terms:
+            constraints.append("除专有名词或用户明确要求外，禁止输出不必要的英文、英文缩写或中英对照。")
+
         constraints.extend(self.config.prompt_hard_constraints)
 
         # 保持顺序去重，避免 system prompt 重复罗列。
@@ -204,6 +226,175 @@ class AIWriter:
         if self.config.api_seed is not None:
             options["seed"] = self.config.api_seed
         return options
+
+    @classmethod
+    def _formal_heading_count(cls, text: str) -> int:
+        return len(cls._FORMAL_HEADING_LINE_RE.findall(text))
+
+    @classmethod
+    def _disallowed_paragraph_transition_count(cls, text: str) -> int:
+        return len(cls._DISALLOWED_PARAGRAPH_TRANSITION_RE.findall(text))
+
+    @classmethod
+    def _markdown_heading_count(cls, text: str) -> int:
+        return len(cls._MARKDOWN_HEADING_RE.findall(text))
+
+    @classmethod
+    def _markdown_table_count(cls, text: str) -> int:
+        lines = text.splitlines()
+        count = 0
+        index = 0
+        while index < len(lines) - 1:
+            if not cls._MARKDOWN_TABLE_LINE_RE.match(lines[index]):
+                index += 1
+                continue
+            if not cls._MARKDOWN_TABLE_ALIGN_RE.match(lines[index + 1]):
+                index += 1
+                continue
+            count += 1
+            index += 2
+            while index < len(lines) and cls._MARKDOWN_TABLE_LINE_RE.match(lines[index]):
+                index += 1
+        return count
+
+    @classmethod
+    def _contains_summary_heading(cls, text: str) -> bool:
+        return bool(cls._SUMMARY_HEADING_RE.search(text))
+
+    def _required_min_table_count(self) -> int:
+        max_tables = self.config.prompt_max_tables_per_section
+        return 1 if max_tables > 0 else 0
+
+    def _build_summary_rule_text(self) -> str:
+        summary_title = self.config.prompt_summary_title.strip()
+        if summary_title:
+            return f"如需章节收束，文末总结标题统一使用“{summary_title}”，并与前文编号衔接。"
+        return "不另设总结或小结。"
+
+    def _build_table_rule_text(self) -> str:
+        max_tables = self.config.prompt_max_tables_per_section
+        min_tables = self._required_min_table_count()
+        if max_tables <= 0:
+            return "不输出Markdown表格。"
+        if min_tables == max_tables:
+            return f"插入 {max_tables} 个Markdown表格，用于概括关键信息，表格标题前不加序号。"
+        return f"插入 {min_tables} 至 {max_tables} 个Markdown表格，用于概括关键信息，表格标题前不加序号。"
+
+    def _build_english_rule_text(self) -> str:
+        if self.config.prompt_allow_english_terms:
+            return "可保留必要英文术语或专有名词，但不要堆砌中英混杂表达。"
+        return "除专有名词或用户明确要求外，不要输出不必要的英文、英文缩写或中英对照。"
+
+    def _build_extra_rules_section(self) -> str:
+        rules = self.config.prompt_extra_rules
+        if not rules:
+            return ""
+        return "\n".join(
+            [
+                "## 其他写作要求",
+                *[f"- {rule}" for rule in rules],
+            ]
+        )
+
+    def _collect_output_issues(self, text: str) -> list[str]:
+        if not text.strip():
+            return []
+
+        issues: list[str] = []
+        if self._disallowed_paragraph_transition_count(text) >= 1:
+            issues.append("numbering_transitions")
+        if not self.config.prompt_allow_markdown_headings and self._markdown_heading_count(text) >= 1:
+            issues.append("markdown_headings")
+
+        table_count = self._markdown_table_count(text)
+        max_tables = max(0, self.config.prompt_max_tables_per_section)
+        min_tables = self._required_min_table_count()
+        if table_count < min_tables:
+            issues.append("missing_tables")
+        if max_tables >= 0 and table_count > max_tables:
+            issues.append("too_many_tables")
+
+        if not self.config.prompt_summary_title.strip() and self._contains_summary_heading(text):
+            issues.append("forbidden_summary")
+        return issues
+
+    def _repair_output_format(self, heading: HeadingNode, content: str, issues: list[str]) -> str:
+        max_tables = max(0, self.config.prompt_max_tables_per_section)
+        min_tables = self._required_min_table_count()
+        summary_title = self.config.prompt_summary_title.strip()
+        issue_lines = {
+            "numbering_transitions": "1. 不得使用“首先、其次、再次、最后”组织正文；如需分层，使用正式层级序号。",
+            "markdown_headings": "2. 删除正文中的Markdown标题符号（#），改为普通正文层级表达。",
+            "missing_tables": f"3. 在不新增事实的前提下，补足Markdown表格数量；当前正文至少需要 {min_tables} 个，最多 {max_tables} 个。",
+            "too_many_tables": f"4. 将Markdown表格数量压缩到不超过 {max_tables} 个。",
+            "forbidden_summary": "5. 删除文末单独设置的小结或总结段。",
+        }
+        dynamic_issue_lines = [issue_lines[issue] for issue in issues if issue in issue_lines]
+
+        repair_messages = [
+            {
+                "role": "system",
+                "content": (
+                    self.build_system_prompt()
+                    + "\n\n你现在不是重新写内容，而是修复投标正文的格式与结构。"
+                    + "不得新增事实，不得删减关键信息，不得改变原意。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"""请将以下投标正文修复为符合配置要求的版本。
+
+当前章节：{heading.full_path}
+
+修复要求：
+1. 输出格式按“{self.config.prompt_output_format}”组织内容，直接输出正文，不要解释。
+2. 如果正文需要分层展开，必须使用正式层级序号：一、（一）1. （1）。
+3. 如果序号后面带标题文字，则该行只写“序号 + 标题”，下一行另起正文。
+4. 正文中的段内枚举或并列说明，可以保留“第一……、第二……”或“一是……；二是……”。
+5. {self._build_table_rule_text()}
+6. {self._build_summary_rule_text()}
+7. {self._build_english_rule_text()}
+8. 保持原文信息量、逻辑和专业风格，尽量不压缩内容。
+9. 只输出修复后的正文，不要解释。
+
+本次需要重点修复的问题：
+{chr(10).join(dynamic_issue_lines) if dynamic_issue_lines else "1. 按上述统一规则校正格式。"}
+
+原始正文：
+{content}
+""",
+            },
+        ]
+        request_options = {
+            "model": self.config.model,
+            "messages": repair_messages,
+            "temperature": min(self.config.temperature, 0.2),
+            "max_tokens": self.config.max_tokens,
+            "stream": False,
+        }
+        if self.config.api_top_p is not None:
+            request_options["top_p"] = self.config.api_top_p
+        if self.config.api_seed is not None:
+            request_options["seed"] = self.config.api_seed
+
+        try:
+            response = self.client.chat.completions.create(**request_options)
+        except Exception:
+            return content
+
+        repaired = (response.choices[0].message.content or "").strip()
+        return repaired or content
+
+    def _finalize_generated_content(self, heading: HeadingNode, content: str) -> str:
+        issues = self._collect_output_issues(content)
+        if issues:
+            return self._repair_output_format(heading, content, issues)
+        return content
+
+    @staticmethod
+    def _iter_text_chunks(text: str, chunk_size: int = 1200) -> Generator[str, None, None]:
+        for index in range(0, len(text), chunk_size):
+            yield text[index:index + chunk_size]
 
     @staticmethod
     def _format_scoring_items(scoring_items: list) -> str:
@@ -387,6 +578,15 @@ class AIWriter:
 """,
             )
 
+        extra_rules_section = self._build_extra_rules_section()
+        if extra_rules_section:
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "extra_rules",
+                extra_rules_section,
+            )
+
         prompt = "\n".join(prompt_parts)
         if pruned_context is not None:
             self.context_pruner.dump_debug(heading, pruned_context, prompt)
@@ -448,39 +648,36 @@ class AIWriter:
         )
 
         if stream:
-            return self._stream_expand(request_options, trace_session)
+            return self._stream_expand(heading, request_options, trace_session)
         else:
-            return self._sync_expand(request_options, trace_session)
+            return self._sync_expand(heading, request_options, trace_session)
 
     def _stream_expand(
         self,
+        heading: HeadingNode,
         request_options: dict,
         trace_session: Optional[GenerationTraceSession] = None,
     ) -> Generator[str, None, None]:
         """流式扩写"""
         chunks: list[str] = []
-        completed = False
         try:
             response = self.client.chat.completions.create(**request_options)
             for chunk in response:
                 if chunk.choices and chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     chunks.append(content)
-                    yield content
-            completed = True
         except Exception as exc:
             if trace_session is not None:
                 trace_session.finalize("".join(chunks), status="failed", error=str(exc))
             raise
-        finally:
-            if trace_session is not None and not trace_session.finished:
-                trace_session.finalize(
-                    "".join(chunks),
-                    status="completed" if completed else "interrupted",
-                )
+        content = self._finalize_generated_content(heading, "".join(chunks))
+        if trace_session is not None and not trace_session.finished:
+            trace_session.finalize(content, status="completed")
+        yield from self._iter_text_chunks(content)
 
     def _sync_expand(
         self,
+        heading: HeadingNode,
         request_options: dict,
         trace_session: Optional[GenerationTraceSession] = None,
     ) -> str:
@@ -493,6 +690,7 @@ class AIWriter:
                 trace_session.finalize("", status="failed", error=str(exc))
             raise
 
+        content = self._finalize_generated_content(heading, content)
         if trace_session is not None:
             trace_session.finalize(content, status="completed")
         return content

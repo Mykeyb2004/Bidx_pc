@@ -173,6 +173,17 @@ prompt:
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范"
 
+# prompt 字段说明
+# - output_format: 写入任务卡，明确正文组织方式
+# - first_line_template: 非空时强制首行模板
+# - allow_markdown_headings: false 时自动禁止输出 # 标题
+# - allow_english_terms: false 时自动禁止不必要的英文、中英对照
+# - max_tables_per_section: 大于 0 时要求章节插入 1 至 N 个 Markdown 表格；为 0 时禁止输出 Markdown 表格
+# - summary_title: 为空时不另设总结；非空时指定总结标题名称
+# - bidder_name: 写入任务卡和 system 强约束
+# - hard_constraints: 注入 system 的最高优先级规则
+# - extra_rules: 注入 user prompt 的“其他写作要求”段落
+
 context_pruning:
   enabled: false
   debug_dump: false
