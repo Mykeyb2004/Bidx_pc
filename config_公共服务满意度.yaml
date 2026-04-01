@@ -44,7 +44,7 @@ prompt:
   first_line_template: "#### {title}"
   allow_english_terms: false
   max_tables_per_section: 2
-  summary_title: "本节小结"
+  summary_title: ""
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范，满足对评分标准高响应、高得分的要求"
 

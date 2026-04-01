@@ -81,12 +81,28 @@ class AIWriter:
                 markdown_specific_rules.append(
                     f"- 在每个章节的正文中加入一定数量的markdown表格（少于等于{self.config.prompt_max_tables_per_section}个），概括、总结、展示正文内容，并增强内容的可读性和专业性。表格标题前不要序号"
                 )
-        summary_rule = ""
+        expansion_rules = [
+            f"- 字数要求：不少于 {min_words} 字",
+            f"- 第一行应为： {first_line}",
+            "- 直接输出扩写内容，不要包含标题本身",
+            "- 只撰写当前标题负责的内容边界，不要越级展开同级、下级或后续章节应写的内容",
+            "- 结合完整总大纲把握全局结构，避免与其他章节重复，并确保当前章节应覆盖的内容不遗漏",
+            "- 内容要专业、严谨，符合标书撰写规范",
+            format_rule,
+            english_rule,
+        ]
+        expansion_rules.extend(markdown_specific_rules)
         if self.config.prompt_summary_title:
-            summary_rule = (
+            expansion_rules.append(
                 f"- 如果要给该章节进行总结，可以给标题命名为“{self.config.prompt_summary_title}”的标题，注意序号与前文一致，且保持顺序。"
             )
-        extra_rules = "\n".join(f"- {rule}" for rule in self.config.prompt_extra_rules)
+        else:
+            expansion_rules.append(
+                "- 除非当前章节标题或用户要求明确要求总结，否则不要在结尾另设“小结”“总结”或类似收束性小节。"
+            )
+        expansion_rules.extend(
+            f"- {rule}" for rule in self.config.prompt_extra_rules
+        )
 
         prompt_parts.append(f"""请为以下标书章节进行专业扩写。
 
@@ -95,17 +111,7 @@ class AIWriter:
 当前标题：{heading.title}
 
 ## 扩写要求
-- 字数要求：不少于 {min_words} 字
-- 第一行应为： {first_line}
-- 请直接输出扩写内容，不要包含标题本身
-- 只撰写当前标题负责的内容边界，不要越级展开同级、下级或后续章节应写的内容
-- 结合完整总大纲把握全局结构，避免与其他章节重复，并确保当前章节应覆盖的内容不遗漏
-- 内容要专业、严谨，符合标书撰写规范
-{format_rule}
-{english_rule}
-{chr(10).join(markdown_specific_rules)}
-{summary_rule}
-{extra_rules}
+{chr(10).join(expansion_rules)}
 """)
 
         if outline_content:
