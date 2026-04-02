@@ -221,7 +221,7 @@ trace 会在三个阶段落盘：
 2. `02_context_assembly.json` 中的 `prompt_contract`
 3. `02_context_assembly.json` 中的 `prompt_sections`
 4. `04_prompt_user.md`
-4. `06_generation_output.md`
+5. `06_generation_output.md`
 
 如果只是判断“是不是塞了太多无关内容”，通常看到第 3 步就够了。
 
