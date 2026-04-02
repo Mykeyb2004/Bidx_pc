@@ -12,7 +12,7 @@ This roadmap upgrades the existing desktop bid-writing system from “prompt fea
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Prompt Contract & Baseline** - Make prompt assembly explicit, inspectable, and backward-compatible.
+- [x] **Phase 1: Prompt Contract & Baseline** - Make prompt assembly explicit, inspectable, and backward-compatible. (completed 2026-04-02)
 - [ ] **Phase 2: Context Routing Precision** - Reduce irrelevant outline, requirement, and scoring context for each chapter.
 - [ ] **Phase 3: Output Guardrails Hardening** - Enforce structure and constraint compliance more reliably.
 - [ ] **Phase 4: Prompt Evaluation Loop** - Add repeatable sample-based comparison and judgment workflow.
@@ -101,7 +101,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Prompt Contract & Baseline | 3/3 | In Progress | - |
+| 1. Prompt Contract & Baseline | 3/3 | Complete    | 2026-04-02 |
 | 2. Context Routing Precision | 0/3 | Not started | - |
 | 3. Output Guardrails Hardening | 0/3 | Not started | - |
 | 4. Prompt Evaluation Loop | 0/3 | Not started | - |

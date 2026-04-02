@@ -16,10 +16,10 @@
 - ✓ 系统可以从 YAML 与本地文件加载大纲、招标需求、评分标准和模型配置。 — existing
 - ✓ 系统已经具备 prompt 配置项、章节级上下文裁剪、生成 trace 与基础后处理能力。 — existing
 - ✓ 系统可以将单章节结果保存到本地，并按大纲顺序整合为完整标书草稿。 — existing
+- ✓ 已建立清晰、可维护、可追踪的提示词装配契约，维护者可从文档和 trace 直接检查章节 prompt 的结构、顺序和来源。 — Validated in Phase 1 (PRMT-01, PRMT-02, PRMT-03)
 
 ### Active
 
-- [ ] 建立清晰、可维护、可追踪的提示词装配契约，降低后续调 prompt 成本。
 - [ ] 提高章节上下文选择精度，减少无关需求、错配评分项和章节越界内容。
 - [ ] 建立基于 trace 和样本章节的 prompt 调优闭环，能比较改动前后效果。
 - [ ] 强化输出格式守卫，降低无序号、标题违规、主体称谓漂移和总结段违规等问题。
@@ -35,8 +35,9 @@
 - 当前代码库是 brownfield 项目，已经完成 `.planning/codebase/*` 映射，但尚未建立项目级 `PROJECT / REQUIREMENTS / ROADMAP / STATE` 文档。
 - 生成核心位于 `bid_writer/ai_writer.py`，当前已经支持 task card、结构硬要求、章节级上下文裁剪、trace 落盘和基础格式问题检测。
 - `bid_writer/config.py` 已暴露较多 prompt 相关配置，包括 `hard_constraints`、`extra_rules`、`summary_title`、`bidder_name`、`max_tables_per_section` 和 `context_pruning.*`。
-- `docs/generation_trace.md` 已说明 trace 工具主要用于调 prompt 和检查上下文质量，说明项目已经具备可观测性的基础，只缺少体系化调优流程。
-- 当前没有自动化测试目录，后续与 prompt 优化相关的验证手段需要从样本章节、trace 对比和最小回归检查开始建立。
+- Phase 1 已新增 `docs/prompt_contract.md`，把章节级 prompt contract、六个业务块和来源归并规则沉淀为维护者文档。
+- `docs/generation_trace.md` 已说明 trace 工具主要用于调 prompt 和检查上下文质量；Phase 1 进一步在 `02_context_assembly.json` 中加入 `prompt_contract` 摘要层。
+- 仓库已新增 `tests/test_prompt_contract.py` 与离线 fixtures，用于保护 prompt contract、trace 摘要层和旧版 YAML 配置兼容性。
 
 ## Constraints
 
@@ -50,9 +51,14 @@
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 以 brownfield prompt 优化作为本次项目初始化范围 | 现有产品功能已成型，用户当前目标明确指向“优化提示词” | — Pending |
-| 优先改造生成链路中的 prompt contract、上下文选择和验证闭环 | 这些环节直接决定输出质量，且比大范围 UI/架构调整更贴近目标 | — Pending |
-| 将可观测性与评估能力纳入 v1 范围 | prompt 优化如果没有回看与对比机制，后续无法稳定迭代 | — Pending |
+| 以 brownfield prompt 优化作为本次项目初始化范围 | 现有产品功能已成型，用户当前目标明确指向“优化提示词” | Confirmed in Phase 1 |
+| 优先改造生成链路中的 prompt contract、上下文选择和验证闭环 | 这些环节直接决定输出质量，且比大范围 UI/架构调整更贴近目标 | Phase 1 completed the prompt contract and trace baseline |
+| 将可观测性与评估能力纳入 v1 范围 | prompt 优化如果没有回看与对比机制，后续无法稳定迭代 | Phase 1 validated the trace contract baseline; evaluation loop remains planned for Phase 4 |
+
+## Current State
+
+- Phase 1 已完成：章节生成 prompt contract 现在是显式、可追踪且兼容旧配置的。
+- 下一阶段重点是 Phase 2：提高章节级上下文路由精度，减少无关大纲、需求和评分项进入 prompt。
 
 ## Evolution
 
@@ -72,4 +78,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after initialization*
+*Last updated: 2026-04-02 after Phase 1 completion*
