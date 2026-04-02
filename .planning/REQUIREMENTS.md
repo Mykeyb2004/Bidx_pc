@@ -9,7 +9,7 @@
 
 - [x] **PRMT-01**: Maintainer can identify the exact prompt sections and ordering used for one chapter generation without tracing multiple code paths manually.
 - [x] **PRMT-02**: Maintainer can see, in generation artifacts, which context blocks fed each prompt section for the selected chapter.
-- [ ] **PRMT-03**: Existing YAML configs still produce a valid generation prompt when new prompt-optimization fields are absent.
+- [x] **PRMT-03**: Existing YAML configs still produce a valid generation prompt when new prompt-optimization fields are absent.
 
 ### Context Routing
 
@@ -61,7 +61,7 @@
 |-------------|-------|--------|
 | PRMT-01 | Phase 1 | Complete |
 | PRMT-02 | Phase 1 | Complete |
-| PRMT-03 | Phase 1 | Pending |
+| PRMT-03 | Phase 1 | Complete |
 | CTXT-01 | Phase 2 | Pending |
 | CTXT-02 | Phase 2 | Pending |
 | CTXT-03 | Phase 2 | Pending |

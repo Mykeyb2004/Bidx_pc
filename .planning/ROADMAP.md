@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01: Audit current prompt assembly path and define the target prompt contract.
 - [x] 01-02: Refactor prompt-section construction so ordering, labels, and defaults are explicit.
-- [ ] 01-03: Add backward-compatibility coverage for existing YAML prompt configs.
+- [x] 01-03: Add backward-compatibility coverage for existing YAML prompt configs.
 
 ### Phase 2: Context Routing Precision
 **Goal**: Ensure each chapter prompt receives only the outline, requirement, and scoring context it actually needs.
@@ -101,7 +101,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Prompt Contract & Baseline | 2/3 | In Progress | - |
+| 1. Prompt Contract & Baseline | 3/3 | In Progress | - |
 | 2. Context Routing Precision | 0/3 | Not started | - |
 | 3. Output Guardrails Hardening | 0/3 | Not started | - |
 | 4. Prompt Evaluation Loop | 0/3 | Not started | - |
