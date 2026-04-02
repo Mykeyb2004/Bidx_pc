@@ -1,0 +1,23 @@
+api:
+  base_url: "https://example.com/v1"
+  api_key: "test-key"
+  model: "test-model"
+
+role: |
+  你是一位专业的标书撰写专家。
+
+outline_file: "./outline.md"
+bid_requirements_file: "./bid_requirements.md"
+scoring_criteria_file: "./scoring_criteria.md"
+
+generation:
+  stream: false
+  default_min_words: 800
+
+prompt:
+  output_format: "纯正文"
+  allow_markdown_headings: false
+  allow_english_terms: false
+
+output:
+  directory: "./output"

@@ -1,0 +1,65 @@
+api:
+  base_url: "https://example.com/v1"
+  api_key: "test-key"
+  model: "test-model"
+  temperature: 0.3
+  max_tokens: 2400
+
+role: |
+  你是一位专业的标书撰写专家。
+
+inputs:
+  outline_file: "./outline.md"
+  bid_requirements_file: "./bid_requirements.md"
+  scoring_criteria_file: "./scoring_criteria.md"
+
+generation:
+  stream: false
+  default_min_words: 1200
+
+prompt:
+  output_format: "纯正文"
+  first_line_template: ""
+  allow_markdown_headings: false
+  allow_english_terms: false
+  bidder_name: "测试投标主体"
+  max_tables_per_section: 2
+  summary_title: "章节小结"
+  hard_constraints:
+    - "严禁使用Markdown标题符号（#）。"
+    - "正文必须使用正式层级序号。"
+  extra_rules:
+    - "内容要专业、严谨，符合标书撰写规范。"
+
+context_pruning:
+  enabled: false
+  debug_dump: false
+  local_outline:
+    include_ancestors: true
+    include_siblings: true
+    max_siblings: 8
+  scoring:
+    enabled: true
+    max_rows: 4
+  requirements_brief:
+    enabled: false
+    fallback: "rule_only"
+  api:
+    model: "test-model"
+    temperature: 0.2
+    max_tokens: 800
+    timeout_seconds: 30
+    max_retries: 1
+
+generation_trace:
+  enabled: true
+  directory: "./trace-output"
+  mode: "full"
+  write_prompt: true
+  write_output: true
+  write_context: true
+  write_summary: true
+  redact_sensitive: true
+
+output:
+  directory: "./output"
