@@ -112,3 +112,113 @@ Important compatibility seams include:
 - default values for `prompt.*`, `context_pruning.*`, and `generation_trace.*`
 
 `README.md` and `config_公共服务满意度.yaml` together define the compatibility baseline that Phase 1 must preserve.
+
+## Phase 1 business blocks
+
+Phase 1 introduces a summarized maintainer-facing contract with these exact block ids:
+
+1. `system_constraints`
+2. `chapter_task`
+3. `structure_rules`
+4. `chapter_scope`
+5. `requirement_context`
+6. `scoring_context`
+
+These are business-level blocks for maintainers. They do not replace the raw `prompt_sections` layer.
+
+### Block intent
+
+| Block id | Prompt kind | Maintainer question it answers |
+|----------|-------------|--------------------------------|
+| `system_constraints` | system | Which hard constraints define the global writing contract? |
+| `chapter_task` | user | What chapter is being written and what operator-specific input applies? |
+| `structure_rules` | user | Which structural formatting rules shape the chapter output? |
+| `chapter_scope` | user | What outline boundary defines this chapter’s scope? |
+| `requirement_context` | user | Which requirement text or requirement-derived points feed this chapter? |
+| `scoring_context` | user | Which scoring items are being optimized for this chapter? |
+
+## Rollup and provenance rules
+
+Phase 1 rollup is defined from existing section ids and system-prompt sources.
+
+### `system_constraints`
+
+- source: `AIWriter.build_system_prompt()`
+- source_context:
+  - `Config.role`
+  - `prompt_bidder_name`
+  - `prompt_allow_markdown_headings`
+  - `prompt_allow_english_terms`
+  - `prompt_hard_constraints`
+
+### `chapter_task`
+
+- section_names:
+  - `task_card`
+  - `additional_requirements`
+- source_context:
+  - current `HeadingNode`
+  - `min_words`
+  - operator `additional_requirements`
+  - `prompt.output_format`
+  - bidder name and focus-term derivation inputs
+
+### `structure_rules`
+
+- section_names:
+  - `structure_contract`
+  - `first_line_rule`
+  - `extra_rules`
+- source_context:
+  - `prompt.first_line_template`
+  - `prompt.extra_rules`
+  - structure-contract helper output
+
+### `chapter_scope`
+
+- section_names:
+  - `scope_reference` or `full_outline`
+- source_context:
+  - `context_mode`
+  - pruned local outline context or complete outline text
+  - current heading parent/sibling boundary information
+
+### `requirement_context`
+
+- section_names:
+  - `requirement_brief`
+  - `requirement_points`
+  - `bid_requirements`
+- source_context:
+  - `pruned_context.requirement_brief`
+  - `pruned_context.requirement_seed`
+  - `Config.bid_requirements`
+  - requirement selection mode implied by pruning/full-context branch
+
+### `scoring_context`
+
+- section_names:
+  - `scoring_focus`
+  - `scoring_criteria`
+- source_context:
+  - matched `pruned_context.scoring_items`
+  - `Config.scoring_criteria`
+  - current scoring routing branch
+
+## Preservation rules
+
+Phase 1 preserves the raw `prompt_sections` layer exactly as the low-level forensic record.
+The new summarized contract is an additive presentation layer:
+
+- maintainers first see the six business blocks
+- low-level `prompt_sections` remains available unchanged
+- `source_context` must be shown for every business block
+- trace artifacts should expose both levels side by side rather than forcing one view
+
+## Implementation guidance for Phase 1
+
+- Keep ordering, defaults, enablement conditions, and compatibility shims code-defined.
+- Do not externalize section topology in Phase 1.
+- Preserve current trace filenames and raw context payloads.
+- Add the summary layer conservatively so existing trace-inspection habits keep working.
+- Treat `README.md` and checked-in YAML configs as public compatibility contracts, not just examples.
