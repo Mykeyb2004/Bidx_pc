@@ -24,6 +24,7 @@ class PromptBuildResult:
 
     prompt: str
     prompt_sections: list[dict[str, str]] = field(default_factory=list)
+    prompt_contract_blocks: list[dict[str, Any]] = field(default_factory=list)
     pruned_context: Optional[ChapterContext] = None
     context_mode: str = "full"
     full_context_stats: dict[str, Any] = field(default_factory=dict)
@@ -51,6 +52,15 @@ class PreparedGeneration:
 
 class AIWriter:
     """AI扩写引擎"""
+
+    _PROMPT_CONTRACT_BLOCKS: tuple[tuple[str, str, str], ...] = (
+        ("system_constraints", "System Constraints", "system"),
+        ("chapter_task", "Chapter Task", "user"),
+        ("structure_rules", "Structure Rules", "user"),
+        ("chapter_scope", "Chapter Scope", "user"),
+        ("requirement_context", "Requirement Context", "user"),
+        ("scoring_context", "Scoring Context", "user"),
+    )
 
     _FORMAL_HEADING_LINE_RE = re.compile(
         r'(?m)^\s*(?:[一二三四五六七八九十]+、|[（(][一二三四五六七八九十]+[)）]|\d+\.|[（(]\d+[)）])'
@@ -455,6 +465,141 @@ class AIWriter:
         prompt_parts.append(content)
         prompt_sections.append({"name": name, "content": content})
 
+    @staticmethod
+    def _dedupe_values(values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            normalized = value.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return deduped
+
+    def _build_prompt_contract_block(
+        self,
+        section_map: dict[str, str],
+        block_id: str,
+        label: str,
+        prompt_kind: str,
+        candidate_section_names: list[str],
+        source_context: list[str],
+        chars_override: Optional[int] = None,
+    ) -> dict[str, Any]:
+        section_names = [name for name in candidate_section_names if name in section_map]
+        chars = chars_override if chars_override is not None else sum(len(section_map[name]) for name in section_names)
+        return {
+            "id": block_id,
+            "label": label,
+            "prompt_kind": prompt_kind,
+            "section_names": section_names,
+            "source_context": self._dedupe_values(source_context),
+            "chars": chars,
+        }
+
+    def _build_prompt_contract_blocks(
+        self,
+        prompt_sections: list[dict[str, str]],
+        pruned_context: Optional[ChapterContext],
+        additional_requirements: str,
+    ) -> list[dict[str, Any]]:
+        section_map = {section["name"]: section["content"] for section in prompt_sections}
+        system_prompt = self.build_system_prompt()
+
+        block_specs: list[dict[str, Any]] = [
+            {
+                "id": "system_constraints",
+                "label": "System Constraints",
+                "prompt_kind": "system",
+                "section_names": [],
+                "source_context": [
+                    "Config.role",
+                    "prompt_bidder_name",
+                    "prompt_allow_markdown_headings",
+                    "prompt_allow_english_terms",
+                    "prompt_hard_constraints",
+                ],
+                "chars_override": len(system_prompt),
+            },
+            {
+                "id": "chapter_task",
+                "label": "Chapter Task",
+                "prompt_kind": "user",
+                "section_names": ["task_card", "additional_requirements"],
+                "source_context": [
+                    "HeadingNode.title",
+                    "HeadingNode.full_path",
+                    "min_words",
+                    "prompt.output_format",
+                    "prompt_bidder_name",
+                    "pruned_context.chapter_focus_terms" if pruned_context is not None else "HeadingNode.title",
+                    "additional_requirements" if additional_requirements.strip() else "",
+                ],
+            },
+            {
+                "id": "structure_rules",
+                "label": "Structure Rules",
+                "prompt_kind": "user",
+                "section_names": ["structure_contract", "first_line_rule", "extra_rules"],
+                "source_context": [
+                    "structure_contract",
+                    "prompt.first_line_template" if "first_line_rule" in section_map else "",
+                    "prompt.extra_rules" if "extra_rules" in section_map else "",
+                ],
+            },
+            {
+                "id": "chapter_scope",
+                "label": "Chapter Scope",
+                "prompt_kind": "user",
+                "section_names": ["scope_reference", "full_outline"],
+                "source_context": [
+                    "context_mode",
+                    "HeadingNode.parent",
+                    "HeadingNode.siblings",
+                    "pruned_context.local_outline" if pruned_context is not None else "outline_file",
+                ],
+            },
+            {
+                "id": "requirement_context",
+                "label": "Requirement Context",
+                "prompt_kind": "user",
+                "section_names": ["requirement_brief", "requirement_points", "bid_requirements"],
+                "source_context": [
+                    "pruned_context.requirement_brief" if "requirement_brief" in section_map else "",
+                    "pruned_context.requirement_seed" if "requirement_points" in section_map else "",
+                    "Config.bid_requirements" if "bid_requirements" in section_map else "",
+                ],
+            },
+            {
+                "id": "scoring_context",
+                "label": "Scoring Context",
+                "prompt_kind": "user",
+                "section_names": ["scoring_focus", "scoring_criteria"],
+                "source_context": [
+                    "pruned_context.scoring_items" if "scoring_focus" in section_map else "",
+                    "pruned_context.response_labels" if "scoring_focus" in section_map else "",
+                    "Config.scoring_criteria" if "scoring_criteria" in section_map else "",
+                ],
+            },
+        ]
+
+        blocks: list[dict[str, Any]] = []
+        for block_id, label, prompt_kind in self._PROMPT_CONTRACT_BLOCKS:
+            spec = next(spec for spec in block_specs if spec["id"] == block_id)
+            blocks.append(
+                self._build_prompt_contract_block(
+                    section_map=section_map,
+                    block_id=block_id,
+                    label=label,
+                    prompt_kind=prompt_kind,
+                    candidate_section_names=spec["section_names"],
+                    source_context=spec["source_context"],
+                    chars_override=spec.get("chars_override"),
+                )
+            )
+        return blocks
+
     def build_prompt_result(
         self,
         heading: HeadingNode,
@@ -634,6 +779,11 @@ class AIWriter:
         return PromptBuildResult(
             prompt=prompt,
             prompt_sections=prompt_sections,
+            prompt_contract_blocks=self._build_prompt_contract_blocks(
+                prompt_sections=prompt_sections,
+                pruned_context=pruned_context,
+                additional_requirements=additional_requirements,
+            ),
             pruned_context=pruned_context,
             context_mode=context_mode,
             full_context_stats=full_context_stats,
