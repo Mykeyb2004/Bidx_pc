@@ -6,6 +6,15 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 This is an AI-powered bid writing system (自动标书撰写系统) that generates professional bid content based on Markdown outlines. The system uses Gemini models to expand headings into comprehensive bid sections with Chinese government document standards.
 
+## Current Planning Context
+
+- GSD project initialization artifacts now live under `.planning/`
+- Current active scope: optimize prompt assembly, context pruning, output guardrails, and trace-driven evaluation
+- Canonical project context: `.planning/PROJECT.md`
+- Canonical scoped requirements: `.planning/REQUIREMENTS.md`
+- Canonical execution roadmap: `.planning/ROADMAP.md`
+- Current next step after initialization: `$gsd-discuss-phase 1`
+
 ## Development Commands
 
 ### Setup and Run
