@@ -238,6 +238,21 @@ output:
 - `context_pruning.*` 用于配置章节级上下文裁剪；当前主要用于局部大纲、评分路由和需求 brief 的参数约束
 - `context_pruning.api.base_url` / `context_pruning.api.api_key` 不建议写入 YAML；请使用 `.env.local` 中的 `BID_WRITER_PRUNING_*` 环境变量提供敏感信息
 - `generation_trace.*` 用于记录单次章节扩写的完整 trace；默认输出到 `output/_generation_traces/`
+
+### Prompt Contract 维护说明
+
+- 当前 prompt contract 仍然由代码定义，核心装配路径在 `bid_writer/ai_writer.py`，维护者视角的 contract 说明见 `docs/prompt_contract.md`
+- 现有 YAML 写法继续兼容，包含根级 `outline_file` / `bid_requirements` / `scoring_criteria` 以及 `inputs.*` 形式
+- Phase 1 新增的是可观测性和摘要层，不要求你为现有配置补写新的 prompt contract 字段
+- 回归命令：
+
+```bash
+uv run pytest tests/test_prompt_contract.py -q
+```
+
+- 这组测试会同时检查：
+  - existing YAML 配置在没有新字段时仍能成功构建 prompt
+  - `prompt_contract` 摘要层和原有 `prompt_sections` 细节层同时存在
 - `generation_trace.redact_sensitive: true` 时，trace 只保留 `api_base_url` 的 host，不写入完整地址与任何密钥
 - `output.normalize_soft_line_breaks_on_merge` 控制“整合标书”时是否把普通正文中的软回车合并回单段，默认关闭
 - `output.overwrite_existing: true` 时，同一标题默认覆盖已有标准输出文件
