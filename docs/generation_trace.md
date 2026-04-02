@@ -108,8 +108,25 @@ output/
 
 - `context_mode`
 - `context_pruning_enabled`
+- `prompt_contract`
 - `prompt_sections`
 - `prompt_lengths`
+
+其中 `prompt_contract` 是 Phase 1 新增的维护者视角摘要层，包含：
+
+- `block_order`
+- `blocks`
+
+每个 `blocks[]` 条目都会记录：
+
+- `id`
+- `label`
+- `prompt_kind`
+- `section_names`
+- `source_context`
+- `chars`
+
+推荐先看 `prompt_contract`，再下钻到 `prompt_sections`。前者回答“本次 prompt 按哪几个业务块组织”，后者回答“每个业务块底下具体落到了哪些低层 section”。
 
 当 `context_mode = "pruned"` 时，还会记录 `pruned_context`，主要包括：
 
@@ -174,6 +191,7 @@ output/
 
 - 本章标题
 - 上下文模式
+- business-block 顺序（`prompt_contract_blocks`）
 - prompt 长度
 - 命中评分项数量
 - 需求 seed / brief 长度
@@ -200,8 +218,9 @@ trace 会在三个阶段落盘：
 你在人工判断上下文是否合适时，建议按这个顺序看：
 
 1. `07_summary.md`
-2. `04_prompt_user.md`
-3. `02_context_assembly.json`
+2. `02_context_assembly.json` 中的 `prompt_contract`
+3. `02_context_assembly.json` 中的 `prompt_sections`
+4. `04_prompt_user.md`
 4. `06_generation_output.md`
 
 如果只是判断“是不是塞了太多无关内容”，通常看到第 3 步就够了。

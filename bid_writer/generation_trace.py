@@ -41,6 +41,7 @@ class GenerationTraceSession:
         system_prompt: str,
         user_prompt: str,
         prompt_sections: list[dict[str, Any]],
+        prompt_contract_blocks: list[dict[str, Any]],
         context_mode: str,
         pruned_context: Optional[ChapterContext],
         full_context_stats: dict[str, Any],
@@ -54,6 +55,7 @@ class GenerationTraceSession:
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
         self.prompt_sections = prompt_sections
+        self.prompt_contract_blocks = prompt_contract_blocks
         self.context_mode = context_mode
         self.pruned_context = pruned_context
         self.full_context_stats = full_context_stats
@@ -145,6 +147,20 @@ class GenerationTraceSession:
         payload: dict[str, Any] = {
             "context_mode": self.context_mode,
             "context_pruning_enabled": self.config.context_pruning_enabled,
+            "prompt_contract": {
+                "block_order": [block.get("id", "") for block in self.prompt_contract_blocks],
+                "blocks": [
+                    {
+                        "id": block.get("id", ""),
+                        "label": block.get("label", ""),
+                        "prompt_kind": block.get("prompt_kind", ""),
+                        "section_names": list(block.get("section_names", [])),
+                        "source_context": list(block.get("source_context", [])),
+                        "chars": int(block.get("chars", 0)),
+                    }
+                    for block in self.prompt_contract_blocks
+                ],
+            },
             "prompt_sections": [
                 {
                     "name": section.get("name", ""),
@@ -249,6 +265,11 @@ class GenerationTraceSession:
             f"- user_prompt_chars: {len(self.user_prompt)}",
             f"- output_chars: {len(output_text)}",
         ]
+        if self.prompt_contract_blocks:
+            lines.append(
+                "- prompt_contract_blocks: "
+                + ", ".join(block.get("id", "") for block in self.prompt_contract_blocks if block.get("id"))
+            )
         if self.postprocess:
             issues = self.postprocess.get("format_repair_issues") or []
             lines.extend(
@@ -285,6 +306,21 @@ class GenerationTraceSession:
 
         lines.extend(
             [
+                "",
+                "## Prompt Contract",
+                *[
+                    "- "
+                    + block.get("id", "")
+                    + ": "
+                    + (
+                        ", ".join(block.get("section_names", []))
+                        if block.get("section_names")
+                        else "system-only"
+                    )
+                    + " | source_context="
+                    + ", ".join(block.get("source_context", []))
+                    for block in self.prompt_contract_blocks
+                ],
                 "",
                 "## 产物文件",
                 "\n".join(
@@ -345,6 +381,7 @@ class GenerationTraceLogger:
         system_prompt: str,
         user_prompt: str,
         prompt_sections: list[dict[str, Any]],
+        prompt_contract_blocks: list[dict[str, Any]],
         context_mode: str,
         pruned_context: Optional[ChapterContext],
         full_context_stats: dict[str, Any],
@@ -362,6 +399,7 @@ class GenerationTraceLogger:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             prompt_sections=prompt_sections,
+            prompt_contract_blocks=prompt_contract_blocks,
             context_mode=context_mode,
             pruned_context=pruned_context,
             full_context_stats=full_context_stats,

@@ -874,6 +874,7 @@ class AIWriter:
             system_prompt=system_prompt,
             user_prompt=prompt_result.prompt,
             prompt_sections=prompt_result.prompt_sections,
+            prompt_contract_blocks=prompt_result.prompt_contract_blocks,
             context_mode=prompt_result.context_mode,
             pruned_context=prompt_result.pruned_context,
             full_context_stats=prompt_result.full_context_stats,
