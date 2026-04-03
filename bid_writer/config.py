@@ -513,6 +513,20 @@ class Config:
         return self._get_bool(('context_pruning', 'debug_dump'), default=False)
 
     @property
+    def context_pruning_mode(self) -> str:
+        """章节裁剪模式。"""
+        value = self._get_first_defined(('context_pruning', 'mode'), default='legacy_rule')
+        normalized = str(value).strip().lower() if value is not None else 'legacy_rule'
+        return normalized if normalized in {'legacy_rule', 'hybrid_extract'} else 'legacy_rule'
+
+    @property
+    def context_pruning_unavailable_policy(self) -> str:
+        """新模式不可用时的处理策略。"""
+        value = self._get_first_defined(('context_pruning', 'unavailable_policy'), default='fallback_legacy')
+        normalized = str(value).strip().lower() if value is not None else 'fallback_legacy'
+        return normalized if normalized in {'fallback_legacy', 'fail_fast'} else 'fallback_legacy'
+
+    @property
     def context_pruning_local_outline_include_ancestors(self) -> bool:
         """局部大纲是否保留祖先链。"""
         return self._get_bool(('context_pruning', 'local_outline', 'include_ancestors'), default=True)
@@ -533,9 +547,46 @@ class Config:
         return self._get_bool(('context_pruning', 'scoring', 'enabled'), default=True)
 
     @property
+    def context_pruning_scoring_mode(self) -> str:
+        """评分标准提炼模式。"""
+        value = self._get_first_defined(
+            ('context_pruning', 'scoring', 'mode'),
+            default=self.context_pruning_mode,
+        )
+        normalized = str(value).strip().lower() if value is not None else self.context_pruning_mode
+        return normalized if normalized in {'legacy_rule', 'hybrid_extract'} else self.context_pruning_mode
+
+    @property
+    def context_pruning_scoring_parse_mode(self) -> str:
+        """评分标准解析模式。"""
+        value = self._get_first_defined(('context_pruning', 'scoring', 'parse_mode'), default='auto')
+        normalized = str(value).strip().lower() if value is not None else 'auto'
+        return normalized if normalized in {'auto', 'table_only', 'text_only'} else 'auto'
+
+    @property
     def context_pruning_scoring_max_rows(self) -> int:
         """评分项路由最多保留的评分行数。"""
         return self._get_int(('context_pruning', 'scoring', 'max_rows'), default=4)
+
+    @property
+    def context_pruning_requirements_mode(self) -> str:
+        """采购需求提炼模式。"""
+        value = self._get_first_defined(
+            ('context_pruning', 'requirements', 'mode'),
+            default=self.context_pruning_mode,
+        )
+        normalized = str(value).strip().lower() if value is not None else self.context_pruning_mode
+        return normalized if normalized in {'legacy_rule', 'hybrid_extract'} else self.context_pruning_mode
+
+    @property
+    def context_pruning_requirements_max_quotes(self) -> int:
+        """采购需求摘录最多保留条数。"""
+        return self._get_int(('context_pruning', 'requirements', 'max_quotes'), default=4)
+
+    @property
+    def context_pruning_requirements_max_quote_chars(self) -> int:
+        """采购需求单条摘录最大字符数。"""
+        return self._get_int(('context_pruning', 'requirements', 'max_quote_chars'), default=220)
 
     @property
     def context_pruning_requirements_brief_enabled(self) -> bool:
@@ -547,6 +598,152 @@ class Config:
         """需求摘要失败时的回退策略。"""
         value = self._get_first_defined(('context_pruning', 'requirements_brief', 'fallback'), default='rule_only')
         return str(value).strip() if value is not None else 'rule_only'
+
+    @property
+    def context_pruning_retrieval_lexical_enabled(self) -> bool:
+        """是否启用 lexical retrieval。"""
+        return self._get_bool(('context_pruning', 'retrieval', 'lexical_enabled'), default=True)
+
+    @property
+    def context_pruning_retrieval_vector_enabled(self) -> bool:
+        """是否启用向量召回。"""
+        return self._get_bool(('context_pruning', 'retrieval', 'vector_enabled'), default=False)
+
+    @property
+    def context_pruning_retrieval_rerank_enabled(self) -> bool:
+        """是否启用二次重排或校验。"""
+        return self._get_bool(('context_pruning', 'retrieval', 'rerank_enabled'), default=False)
+
+    @property
+    def context_pruning_rerank_or_verify_enabled(self) -> bool:
+        """统一判断是否启用候选精排 / 校验。"""
+        return bool(
+            self.context_pruning_retrieval_rerank_enabled
+            or self.context_pruning_extraction_llm_verify_enabled
+        )
+
+    @property
+    def context_pruning_retrieval_top_k_lexical(self) -> int:
+        """lexical retrieval 候选数。"""
+        return self._get_int(('context_pruning', 'retrieval', 'top_k_lexical'), default=20)
+
+    @property
+    def context_pruning_retrieval_top_k_vector(self) -> int:
+        """vector retrieval 候选数。"""
+        return self._get_int(('context_pruning', 'retrieval', 'top_k_vector'), default=20)
+
+    @property
+    def context_pruning_retrieval_top_k_fused(self) -> int:
+        """融合排序候选数。"""
+        return self._get_int(('context_pruning', 'retrieval', 'top_k_fused'), default=30)
+
+    @property
+    def context_pruning_retrieval_top_k_final(self) -> int:
+        """最终进入摘录阶段的候选数。"""
+        return self._get_int(('context_pruning', 'retrieval', 'top_k_final'), default=6)
+
+    @property
+    def context_pruning_retrieval_min_fused_score(self) -> float:
+        """最终候选最小得分。"""
+        return self._get_float(('context_pruning', 'retrieval', 'min_fused_score'), default=0.0)
+
+    @property
+    def context_pruning_extraction_quote_only(self) -> bool:
+        """是否只允许原文摘录。"""
+        return self._get_bool(('context_pruning', 'extraction', 'quote_only'), default=True)
+
+    @property
+    def context_pruning_extraction_return_ids_only(self) -> bool:
+        """辅助模型是否只返回片段 ID。"""
+        return self._get_bool(('context_pruning', 'extraction', 'return_ids_only'), default=True)
+
+    @property
+    def context_pruning_extraction_llm_verify_enabled(self) -> bool:
+        """是否启用候选校验。"""
+        return self._get_bool(('context_pruning', 'extraction', 'llm_verify_enabled'), default=False)
+
+    @property
+    def context_pruning_extraction_llm_verify_max_candidates(self) -> int:
+        """辅助校验最多接收候选数。"""
+        return self._get_int(('context_pruning', 'extraction', 'llm_verify_max_candidates'), default=8)
+
+    @property
+    def embedding_api_base_url(self) -> str:
+        """embedding 服务地址，只从环境变量读取。"""
+        return self._get_env_str('BID_WRITER_EMBEDDING_API_BASE_URL') or ''
+
+    @property
+    def embedding_api_key(self) -> str:
+        """embedding 服务密钥，只从环境变量读取。"""
+        return self._get_env_str('BID_WRITER_EMBEDDING_API_KEY') or ''
+
+    @property
+    def embedding_model(self) -> str:
+        """embedding 模型名称。"""
+        value = self._get_first_defined(('context_pruning', 'retrieval', 'embedding', 'model'), default='text-embedding-3-small')
+        return str(value).strip() if value is not None else 'text-embedding-3-small'
+
+    @property
+    def embedding_batch_size(self) -> int:
+        """embedding 批大小。"""
+        return self._get_int(('context_pruning', 'retrieval', 'embedding', 'batch_size'), default=64)
+
+    @property
+    def embedding_cache_dir(self) -> str:
+        """embedding 本地缓存目录。"""
+        value = self._get_first_defined(('context_pruning', 'retrieval', 'embedding', 'cache_dir'), default='./output/_embedding_cache')
+        return str(self._resolve_path(str(value).strip()))
+
+    @property
+    def embedding_rebuild_on_source_change(self) -> bool:
+        """源文变化时是否重建 embedding 缓存。"""
+        return self._get_bool(('context_pruning', 'retrieval', 'embedding', 'rebuild_on_source_change'), default=True)
+
+    @property
+    def embedding_query_prefix(self) -> str:
+        """查询文本 embedding 前缀。"""
+        value = self._get_first_defined(('context_pruning', 'retrieval', 'embedding', 'query_prefix'), default='')
+        return str(value).strip() if value is not None else ''
+
+    @property
+    def embedding_document_prefix(self) -> str:
+        """文档文本 embedding 前缀。"""
+        value = self._get_first_defined(('context_pruning', 'retrieval', 'embedding', 'document_prefix'), default='')
+        return str(value).strip() if value is not None else ''
+
+    @property
+    def embedding_is_configured(self) -> bool:
+        """embedding 服务连接参数是否齐全。"""
+        return bool(self.embedding_api_base_url and self.embedding_api_key)
+
+    def validate_context_pruning_runtime(self, raise_on_error: bool = True) -> list[str]:
+        """校验当前 hybrid_extract v1 是否具备运行条件。"""
+        errors: list[str] = []
+        hybrid_requested = (
+            self.context_pruning_enabled
+            and (
+                self.context_pruning_mode == 'hybrid_extract'
+                or self.context_pruning_scoring_mode == 'hybrid_extract'
+                or self.context_pruning_requirements_mode == 'hybrid_extract'
+            )
+        )
+        if not hybrid_requested:
+            return errors
+
+        if not self.context_pruning_retrieval_lexical_enabled:
+            errors.append('hybrid_extract v1 要求 lexical_enabled=true')
+        if self.context_pruning_retrieval_vector_enabled:
+            if not self.embedding_is_configured:
+                errors.append('启用 vector_enabled=true 时，必须在 .env.local 中配置 BID_WRITER_EMBEDDING_API_BASE_URL 和 BID_WRITER_EMBEDDING_API_KEY')
+        if self.context_pruning_rerank_or_verify_enabled:
+            if not self.pruning_api_is_configured:
+                errors.append('启用 rerank/verify 时，必须先配置章节裁剪辅助模型 BID_WRITER_PRUNING_*')
+            if not self.context_pruning_extraction_return_ids_only:
+                errors.append('启用 rerank/verify 时，当前要求 return_ids_only=true 以保证原文回填')
+
+        if raise_on_error and errors:
+            raise ValueError('；'.join(errors))
+        return errors
 
     @property
     def pruning_api_base_url(self) -> str:

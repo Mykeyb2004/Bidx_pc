@@ -80,6 +80,11 @@ BID_WRITER_API_KEY=your-api-key
 BID_WRITER_PRUNING_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_PRUNING_MODEL=gpt-4o-mini
 BID_WRITER_PRUNING_API_KEY=your-api-key
+
+# 可选：向量召回 embedding 服务
+# 这里写服务根路径，不要直接写到 /embeddings
+BID_WRITER_EMBEDDING_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_EMBEDDING_API_KEY=your-api-key
 ```
 
 至少需要配置：
@@ -88,6 +93,7 @@ BID_WRITER_PRUNING_API_KEY=your-api-key
 - `BID_WRITER_API_KEY`：写入 `.env.local` 的 API Key
 - `BID_WRITER_MODEL`：写入 `.env.local` 的模型名称
 - `BID_WRITER_PRUNING_API_BASE_URL` / `BID_WRITER_PRUNING_API_KEY`：可选的章节裁剪辅助模型敏感配置，建议仅写入 `.env.local`
+- `BID_WRITER_EMBEDDING_API_BASE_URL` / `BID_WRITER_EMBEDDING_API_KEY`：可选的向量召回 embedding 服务敏感配置，建议仅写入 `.env.local`
 - `inputs.outline_file`：Markdown 大纲文件
 - `inputs.bid_requirements_file` 或 `inputs.bid_requirements`：招标需求
 - `inputs.scoring_criteria_file` 或 `inputs.scoring_criteria`：评分标准

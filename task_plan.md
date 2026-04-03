@@ -173,3 +173,266 @@
 - `AIWriter.build_prompt()` 在 `context_pruning.enabled=true` 时，已切换为注入局部大纲、命中评分项和需求 seed/brief，而不是完整大纲、完整需求和完整评分表。
 - 对 `2.9.2 数据资料保密管理制度` 的 prompt 进行对比：裁剪版长度 `2778`，关闭裁剪后的旧版长度 `9317`，减少 `6539` 个字符。
 - 将辅助模型指向不可用地址时，`requirement_brief` 会安静回退为空字符串，主 prompt 继续使用 `命中需求片段`，不影响章节生成流程。
+
+---
+
+# Hybrid Extract 检索摘录模式规划
+
+## 目标
+- 在保留现有 `legacy_rule` 规则裁剪链路的前提下，新增 `hybrid_extract` 检索摘录模式，通过配置开关切换。
+- 让采购需求与评分标准都支持“准确匹配 + 原文摘录”，避免自由摘要改写。
+- 覆盖“评分标准不是 Markdown 表格，而是 Markdown 文字”的场景。
+- 保持 prompt 输出面基本不变，继续向模型提供 `评分关注` 与 `需求要点`，为后续提示词优化提供稳定输入合同。
+- 将 embedding 连接敏感信息限制在 `.env.local`，不写入 `config_xxx.yaml`。
+
+## 阶段
+- [x] 确认业务目标从“需求/评分提炼摘要”转为“基于证据的检索摘录”
+- [x] 评估纯规则分块、全文 LLM 提炼、hybrid retrieval 三类方案的复杂度与收益
+- [x] 确定配置边界：`.env.local` 仅承载 embedding 连接参数，`config_xxx.yaml` 保留 `embedding.model` 与检索业务参数
+- [x] 确定新旧模式并存：`legacy_rule` 保留，`hybrid_extract` 通过配置开关启用
+- [x] 确定新模式第一版优先顺序：结构化分段 -> lexical retrieval -> 向量召回 -> rerank/verify
+- [x] 在 `Config` 中补齐 `context_pruning.mode`、`scoring.mode`、`requirements.mode`、`retrieval.*`、`embedding.*` 访问器与运行时校验
+- [x] 在 `context_pruner.py` 中加入模式分发：`legacy_rule` / `hybrid_extract`
+- [x] 新增 `SourceUnit` 统一分段模型，覆盖采购需求、评分表格行、评分文字段落
+- [x] 实现非表格评分标准解析，输出统一 `SourceUnit`
+- [x] 实现 lexical-only 的 `hybrid_extract v1`，先不依赖 embedding 和 LLM
+- [x] 接入 embedding 缓存和向量召回
+- [x] 接入可选 rerank/verify，并限定为“返回片段 ID，由程序回填原文”
+- [x] 扩展 trace/debug_dump，记录新模式命中与回退信息
+
+## 关键决策
+- 不移除现有规则链路；`legacy_rule` 继续可用，降低回归风险。
+- `hybrid_extract` 不让模型自由总结采购需求或评分标准，而是以“结构化切分 + 检索 + 原文回填”为核心。
+- 评分标准不再假设一定是 Markdown 表格；表格和文字都统一切成 `SourceUnit`。
+- 新模式下模型若参与，只负责选 `unit_id` 或做候选校验，不直接生成摘录文本。
+- 最终进入 prompt 的内容必须来自源文原文，不允许模型改写后再注入。
+- `.env.local` 仅承载 `BID_WRITER_EMBEDDING_API_BASE_URL`、`BID_WRITER_EMBEDDING_API_KEY`；`embedding.model` 留在 `config_xxx.yaml`。
+- 第一版实现顺序先偏稳妥：先做 lexical-only，新模式可在不依赖 embedding/LLM 的情况下落地验证。
+- prompt 拼接层尽量不改，避免把“检索方式切换”耦合进 prompt 合同。
+
+## 风险
+- 非表格评分标准的文本解析如果切分过粗，会影响后续召回精度；切分过细又可能丢失上下文。
+- `SourceUnit` 建模若未统一表格/文字/列表的路径信息，后续原文回填和 trace 会变得脆弱。
+- 启用向量召回后会引入本地缓存、重建策略和一致性问题，需要明确定义“源文变化后何时失效”。
+- rerank/verify 若直接返回文本而不是 ID，会破坏“原文摘录”这一核心约束。
+- 新旧模式并存后，调试面需要清晰区分“命中不足”“配置缺失”“主动回退”三种情况。
+
+## 复杂度与收益评估
+- 纯规则增强版：中低复杂度，高收益，重点价值在于补齐“非表格评分标准”缺口。
+- lexical-only `hybrid_extract`：中等复杂度，中高收益，可先验证结构化分段是否明显优于当前空行切块。
+- 加入 embedding 的 vector retrieval：中等复杂度，中高收益，主要提升同义表达和跨段落召回。
+- 加入 rerank/verify：中高复杂度，最高收益，但应放到候选集合较小、输出受控的后置阶段。
+- 单章时延判断：规则/检索阶段通常可控制在亚秒级；若再加一次辅助模型筛选，通常会额外增加秒级等待。
+- token 成本判断：embedding 的一次性成本通常远低于逐章 LLM 校验成本，因此后续成本控制重点在“哪些章节真的需要 rerank/verify”。
+
+## 错误记录
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `planning-with-files` 提示的 catchup 脚本默认路径在当前环境不存在 | 2 | 继续沿用项目根目录已有 `task_plan.md`、`findings.md`、`progress.md` 作为持久上下文，并把本轮规划直接写回这些文件。 |
+
+## 当前产出
+- 已形成 `hybrid_extract` 的配置边界、数据结构方向、模式切换方式和实施顺序。
+- 已明确第一版实现不依赖全文 LLM 提炼，而是优先补强结构化分段与 lexical retrieval。
+- 已明确 embedding 敏感连接参数进入 `.env.local`，不进入 `config_xxx.yaml`。
+- 已完成 `Phase 1-3` 的代码落地：`Config` 访问器、`SourceUnit`/解析器、`hybrid_extract v1`、文档和示例配置已同步更新。
+
+## 完整实施方案
+
+### 范围
+- 本次方案只覆盖“评分标准提炼”“采购需求提炼”“提示词拼接前的章节上下文构建”。
+- 不改变章节正文生成的 system/user messages 总体结构。
+- 不改变 GUI 主流程，只补充配置和调试可见性。
+
+### 非目标
+- 不在本轮把采购需求或评分标准改造成自由摘要工作流。
+- 不在本轮引入新的外部存储服务；默认优先使用本地缓存和本地索引。
+- 不在本轮重构全文生成流程或输出后处理。
+
+### 目标架构
+1. `Config` 提供新旧模式、retrieval、embedding、extraction 的统一配置入口。
+2. `ChapterContextPruner` 只做模式编排，不承载全部解析与检索细节。
+3. `SourceUnitParser` 负责把采购需求与评分标准切成统一 `SourceUnit`。
+4. `HybridRetriever` 负责 lexical / vector / fused retrieval。
+5. 可选 `Verifier/Reranker` 只在候选集上工作，输出 `unit_id`，不输出改写后的文本。
+6. `AIWriter` 继续消费 `ChapterContext`，保持 prompt 合同稳定。
+
+### 文件改动蓝图
+- `bid_writer/config.py`
+  - 新增 `context_pruning.mode`、`context_pruning.unavailable_policy`
+  - 新增 `scoring.mode`、`scoring.parse_mode`
+  - 新增 `requirements.mode`、`requirements.max_quotes`、`requirements.max_quote_chars`
+  - 新增 `retrieval.*`、`retrieval.embedding.*`
+  - 新增 `.env.local` 中 embedding 连接参数访问器与运行时校验
+- `bid_writer/context_pruner.py`
+  - 加入 `legacy_rule` / `hybrid_extract` 分发
+  - 保持 `ChapterContext` 对 prompt 层兼容
+  - 加入新模式命中信息和回退原因
+- `bid_writer/source_unit_parser.py`（新增）
+  - 统一解析采购需求、评分表格、评分文字段
+- `bid_writer/retrieval_models.py`（新增）
+  - 定义 `SourceUnit`、`RetrievedUnit`、`ExtractedQuote`
+- `bid_writer/hybrid_retriever.py`（新增）
+  - 实现 lexical、vector、fuse、select
+- `bid_writer/embedding_store.py`（新增，可后置）
+  - 管理 embedding 缓存、重建和查询
+- `bid_writer/generation_trace.py`
+  - 扩展记录 `mode`、候选数、selected ids、fallback reason
+- `docs/prompt_contract.md`
+  - 第二阶段后更新：明确 `legacy_rule` / `hybrid_extract` 两套上下文构建路径
+- `config_公共服务满意度.yaml`
+  - 增加新模式配置示例和中文注释
+
+### 分阶段执行
+
+#### Phase 1：配置与模式骨架
+- 目标
+  - 配置层支持 `legacy_rule` / `hybrid_extract`
+  - 缺失 embedding 连接参数时能按策略回退或报错
+- 交付
+  - `Config` 新访问器
+  - `context_pruner.build_context()` 分发骨架
+  - `debug_dump/trace` 最小模式字段
+- 验收
+  - 关闭新模式时行为与当前完全一致
+  - 打开新模式但未实现检索时，能稳定回退 `legacy_rule`
+
+#### Phase 2：统一分段模型
+- 目标
+  - 采购需求和评分标准都产出统一 `SourceUnit`
+  - 评分标准支持表格和非表格 Markdown 文字
+- 交付
+  - `SourceUnit` 数据结构
+  - `SourceUnitParser.parse_requirements()`
+  - `SourceUnitParser.parse_scoring()` / `parse_scoring_text_units()`
+- 验收
+  - 对同一输入文档可以稳定输出可追踪的 `unit_id`
+  - 非表格评分标准不再“整体失明”
+
+#### Phase 3：lexical-only hybrid_extract v1
+- 目标
+  - 在不接 embedding、不接 LLM 的情况下跑通新模式
+- 交付
+  - lexical retrieval
+  - fused selection 的占位实现
+  - requirements/scoring 原文回填
+- 验收
+  - `hybrid_extract` 能输出 `评分关注` 与 `需求要点`
+  - 样例章节下，命中质量不低于当前 `legacy_rule`
+
+#### Phase 4：embedding + vector retrieval
+- 目标
+  - 在 lexical 基础上补强同义表达和跨段落召回
+- 交付
+  - `.env.local` 读取 embedding 连接参数
+  - embedding 缓存
+  - vector retrieval
+  - lexical + vector 融合
+- 验收
+  - 文档未变化时命中缓存
+  - 文档变化时能自动重建或显式重建
+
+#### Phase 5：rerank / verify
+- 目标
+  - 仅在候选集上做精排或校验，提高最终摘录精度
+- 交付
+  - 可选 verifier/reranker
+  - 输出仅允许 `unit_id`
+  - 程序按 `unit_id` 回填 `source_text_exact`
+- 验收
+  - 无改写文本直接进入 prompt
+  - 候选不足或模型失败时可稳定回退上一层
+
+#### Phase 6：验证、文档、样例基线
+- 目标
+  - 固化手工验证样例、trace 输出和文档合同
+- 交付
+  - 更新 `docs/prompt_contract.md`
+  - 更新示例配置
+  - 样例章节前后对比说明
+- 验收
+  - 可清楚解释任一章节为何命中某些评分项和需求摘录
+
+### 验收口径
+- 功能验收
+  - `legacy_rule` 行为保持兼容
+  - `hybrid_extract` 可单独通过配置启用
+  - 非表格评分标准可被解析并命中
+  - 最终 prompt 中的摘录必须可回溯到源文
+- 质量验收
+  - 同一章节重复执行结果基本稳定
+  - trace/debug_dump 能解释召回、筛选、回退原因
+- 成本验收
+  - lexical-only 模式不引入额外模型成本
+  - vector 模式仅引入 embedding 成本
+  - rerank/verify 为可选开关，默认不强制启用
+
+### 建议默认实施顺序
+1. 先完成 Phase 1-3，交付一个可工作的 `hybrid_extract v1`
+2. 再进入 Phase 4，补上 embedding
+3. 最后做 Phase 5，按效果决定是否默认启用 rerank/verify
+
+## Phase 1-3 验证结果
+- `uv run python -m compileall bid_writer run.py` 通过。
+- `config_公共服务满意度.yaml` 经 YAML 解析校验通过。
+- 在 `config_公共服务满意度.yaml` 下，对 5 个基准章节开启 `hybrid_extract` 后，均成功返回：
+  - `retrieval_mode=scoring=hybrid_extract;requirements=hybrid_extract`
+  - `scoring_items=4`
+  - 非空 `selected_scoring_unit_ids`
+  - 非空 `selected_requirement_unit_ids`
+- 构造文本型评分标准样例后，`SourceUnitParser.parse_scoring(parse_mode='auto')` 已能正确解析：
+  - 带分值的文字评分项
+  - 不带分值但有标题+正文的评分段
+- 在强行配置 `vector_enabled=true` 的情况下，`hybrid_extract v1` 会按 `fallback_legacy` 自动回退，并给出明确 `fallback_reason`。
+
+## Phase 4-5 验证结果
+- 已将 `.env.local` 中的现有主 API 连接参数同步补齐为 `BID_WRITER_EMBEDDING_API_BASE_URL` / `BID_WRITER_EMBEDDING_API_KEY`，未把敏感值写入仓库文件。
+- 使用 `text-embedding-3-small` 对真实服务做最小 embedding 请求，返回维度 `1536`，说明 embedding 接口联通。
+- 在 `vector_enabled=true`、`rerank=false` 的情况下，`hybrid_extract` 可正常工作，`retrieval_mode` 会显示 `vector=on`，且无回退。
+- embedding 缓存目录 `output/_embedding_cache` 已生成缓存文件，说明本地缓存链路正常。
+- 在 `BID_WRITER_EMBEDDING_API_BASE_URL` 临时写成 `.../v1/embeddings` 的情况下，代码仍能成功请求，说明 base URL 归一化兼容逻辑生效。
+- 在 `rerank_enabled=true`、`llm_verify_enabled=true` 的情况下，候选 verifier 能正常返回已选 `unit_id`，并仍由程序回填原文。
+
+## 项目状态
+- `legacy_rule` 已保留并兼容。
+- `hybrid_extract` 已完整落地：
+  - 统一分段
+  - lexical retrieval
+  - vector retrieval
+  - 可选 rerank/verify
+  - trace/debug_dump 可观测性
+- 当前剩余工作只属于后续效果调优，不再属于“功能未完成”。
+- 收尾核对已完成：
+  - verifier 联通性验证完成
+  - `__pycache__` 噪音已清理
+  - `docs/prompt_contract.md` 与 `config_公共服务满意度.yaml` 已按最终实现校正
+
+## 待确认需求
+- [x] `hybrid_extract` 第一轮落地范围只做到 Phase 1-3，先不上 embedding 和 rerank/verify
+- [x] `hybrid_extract` 在 `config_公共服务满意度.yaml` 中先默认关闭，待验证通过后再手动开启
+- [x] lexical retrieval 第一版接受“不新增第三方依赖”，优先复用现有关键词/相似度逻辑实现
+- [x] 后续人工验收以 `config_公共服务满意度.yaml` 下 3-5 个代表章节作为基准样例；章节由当前方案直接指定
+
+## 推荐确认答案
+- `hybrid_extract` 第一轮范围：建议只做到 Phase 1-3
+- `config_公共服务满意度.yaml` 默认值：建议先保留 `legacy_rule`
+- lexical retrieval 依赖策略：建议先不新增依赖
+- 验收样例：建议由你指定 3-5 个章节，我据此做对比基线
+
+## 已确认答案
+- 第一轮交付范围锁定为 Phase 1-3：只做配置与模式骨架、统一分段模型、lexical-only `hybrid_extract v1`。
+- `config_公共服务满意度.yaml` 中的新模式先默认关闭，待样例验证通过后再手动开启。
+- lexical retrieval 首版不新增第三方依赖，优先复用现有关键词、标题链、最长公共子串等逻辑。
+- 验收样例由当前方案指定，不再等待用户补充章节。
+
+## 基准验收章节
+- `2.1.4 验收要求与成果应用理解`
+- `2.4.2 1.2万至1.5万个有效样本配置方案`
+- `2.9.2 数据资料保密管理制度`
+- `2.10.4 全流程真实性追溯机制`
+- `3.3.4 合同履约至2026年12月底保障计划`
+
+## Embedding 接入说明
+- 用户已提供一组待验证的 embedding 服务连接信息，但出于敏感信息保护，不写入 planning 文件和仓库文件。
+- 运行时应从 `.env.local` 读取 `BID_WRITER_EMBEDDING_API_BASE_URL`、`BID_WRITER_EMBEDDING_API_KEY`。
+- 若按 OpenAI 兼容客户端接入，`base_url` 更可能应为服务根路径，例如 `/v1`，而不是直接写到 `/v1/embeddings`；真正请求路径由客户端追加 `/embeddings`。
+- 若后续联通性测试失败，应优先尝试区分“客户端 base_url”和“HTTP 直连 endpoint”两种写法，再决定是否需要额外适配。

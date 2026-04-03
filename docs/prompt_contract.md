@@ -97,10 +97,32 @@
 
 ### 4.1 入口开关
 
-章节级提炼是否发生，只看 `context_pruning_enabled`。
+章节级提炼是否发生，先看 `context_pruning_enabled`。
 
 - `False`：不做章节级提炼，直接走 full-context 分支
 - `True`：尝试构建 `ChapterContext`
+
+在 pruned 分支内部，又分两层模式：
+
+- 总开关：`context_pruning.mode`
+- 组件开关：
+  - `context_pruning.scoring.mode`
+  - `context_pruning.requirements.mode`
+
+当前可用值：
+
+- `legacy_rule`
+- `hybrid_extract`
+
+但需要明确一点：
+
+- `hybrid_extract` 当前已经实现到两层：
+  - lexical retrieval
+  - 可选 vector retrieval
+- 还支持可选的 `rerank/verify`
+- 如果配置打开了某项能力，但运行所需连接参数未配置，代码会按 `context_pruning.unavailable_policy` 决定：
+  - `fallback_legacy`：回退到 `legacy_rule`
+  - `fail_fast`：直接报错
 
 需要特别注意：
 
@@ -125,14 +147,19 @@
 
 真正会影响 prompt 拼接的核心字段只有四类：
 
-- `local_outline`
+- `chapter_focus_terms`
 - `scoring_items`
 - `requirement_seed`
 - `requirement_brief`
 
+需要单独指出：
+
+- `response_labels` 不直接单独成段，但会影响 `## 评分关注` 的引导语句
+- `local_outline` 当前不会直接拼进 user prompt，只写入 debug/trace 侧产物
+
 ### 4.3 局部章节信号是怎么提取的
 
-在 `ChapterContextPruner._build_base_context()` 中，先构建章节自身的匹配信号：
+在 `ChapterContextPruner._build_signal_context()` 中，先构建章节自身的匹配信号：
 
 1. `response_labels`
 2. `chapter_focus_terms`
@@ -153,34 +180,53 @@
 
 评分标准的来源是 `Config.scoring_criteria`。
 
-当前实现不是自由文本语义理解，而是“先解析 Markdown 表格，再做规则匹配”：
+当前评分标准提炼有两条实现路径。
+
+#### `legacy_rule`
+
+`legacy_rule` 仍然是旧逻辑：
 
 1. 从 `scoring_criteria` 中解析 Markdown 表格
 2. 识别表头中的“子项/评分项/评审因素/项目/子项目”
 3. 识别表头中的“评审标准/评分标准/评审内容/标准”
 4. 可选识别“权重/分值/满分/分数”
 5. 每一行转成一个 `ScoringCriterion(subitem, standard, weight)`
+6. 通过 `_route_scoring_items()` 做关键词和焦点词匹配
 
-之后通过 `_route_scoring_items()` 计算每一行与当前章节的相关度：
+这条链路的限制没有变：
 
-- `response_labels` 与 `subitem` 的命中关系
-- `match_keywords` 与 `subitem + standard` 的命中关系
-- `chapter_focus_terms` 扩展后的焦点词加分
+- 它主要依赖 Markdown 表格
+- 如果 `scoring_criteria` 是纯 Markdown 文字段落，`评分关注` 很可能命不中
 
-只保留分数大于 0 的评分行，按分数倒序排序，最终截断为 `context_pruning_scoring_max_rows` 条。
+#### `hybrid_extract`
+
+`hybrid_extract` 是新增链路：
+
+1. 先把 `scoring_criteria` 解析成统一 `SourceUnit`
+2. `parse_mode=auto` 时，同时支持：
+   - Markdown 表格行
+   - Markdown 文字评分段
+3. 先做 lexical retrieval
+4. 如果 `context_pruning.retrieval.vector_enabled=True`，再做 vector retrieval
+5. lexical / vector 结果通过 rank-based 融合
+6. 如果开启 `rerank_enabled` 或 `llm_verify_enabled`，再对少量候选做可选校验
+7. 选中的候选再映射回 `ScoringCriterion`
 
 如果出现以下任一情况，user prompt 中就不会出现 `评分关注`：
 
 - `context_pruning_scoring_enabled=False`
 - `scoring_criteria` 为空
-- `scoring_criteria` 不是可解析的 Markdown 表格
-- 有表格，但没有匹配到当前章节的评分行
+- 当前模式没有命中评分项
 
 ### 4.5 采购需求提炼
 
 采购需求的来源是 `Config.bid_requirements`。
 
-当前实现也不是大模型摘要，而是规则分块和匹配：
+当前采购需求提炼也有两条实现路径。
+
+#### `legacy_rule`
+
+`legacy_rule` 仍然是旧逻辑：
 
 1. 将 `bid_requirements` 按空行切块
 2. 如果某个块看起来像标题块，会与下一块合并
@@ -191,12 +237,21 @@
 4. 对明显偏题的通用噪音块做降权
 5. 选出最相关的块
 
-选择上限是：
+#### `hybrid_extract`
 
-- 最多 5 个块
-- 总字符数大约不超过 1000
+`hybrid_extract` 会：
 
-如果一个相关块都没选出来，会退回到“取前几个非低价值块”的保底策略。
+1. 先把 `bid_requirements` 解析成统一 `SourceUnit`
+2. 先做 lexical retrieval
+3. 如果启用向量召回，再做 vector retrieval
+4. 如果启用 verifier，再在少量候选中只选择 `unit_id`
+5. 选中候选后，仍然只把原文块送入后续摘录逻辑
+
+也就是说：
+
+- 它不是摘要模型
+- 它不是自由生成
+- 它的改进点主要在“召回和路由”，不是“改写”
 
 ### 4.6 `requirement_seed` 和 `requirement_brief`
 
@@ -223,7 +278,8 @@
 - 不是对 `requirement_seed` 的改写
 - 它直接从已选中需求块中截取原文句子
 - 每个块最多取前 2 句
-- 最多保留 4 条
+- 最多保留 `context_pruning.requirements.max_quotes` 条
+- 单条最大长度受 `context_pruning.requirements.max_quote_chars` 控制
 
 因此当前实现里：
 
@@ -505,12 +561,23 @@ messages = [
 | `bid_requirements` | `Config.bid_requirements` | 项目采购需求原文 | 是，直接或间接 |
 | `scoring_criteria` | `Config.scoring_criteria` | 评分标准原文 | 是，直接或间接 |
 | `context_pruning_enabled` | `context_pruning.enabled` | 是否走章节级裁剪 | 是，决定分支 |
+| `context_pruning_mode` | `context_pruning.mode` | 章节裁剪主模式 | 间接进入，决定路由 |
+| `context_pruning_unavailable_policy` | `context_pruning.unavailable_policy` | 新模式不可用时回退还是报错 | 间接进入，决定路由 |
 | `context_pruning_scoring_enabled` | `context_pruning.scoring.enabled` | 是否启用评分项路由 | 是 |
+| `context_pruning_scoring_mode` | `context_pruning.scoring.mode` | 评分标准提炼模式 | 间接进入，决定路由 |
+| `context_pruning_scoring_parse_mode` | `context_pruning.scoring.parse_mode` | 评分标准按表格/文字如何解析 | 间接进入，决定路由 |
 | `context_pruning_scoring_max_rows` | `context_pruning.scoring.max_rows` | 最多保留几条评分项 | 是 |
+| `context_pruning_requirements_mode` | `context_pruning.requirements.mode` | 采购需求提炼模式 | 间接进入，决定路由 |
+| `context_pruning_requirements_max_quotes` | `context_pruning.requirements.max_quotes` | 最多保留几条需求摘录 | 是，影响 `requirement_brief` |
+| `context_pruning_requirements_max_quote_chars` | `context_pruning.requirements.max_quote_chars` | 单条需求摘录最长字符数 | 是，影响 `requirement_brief` |
 | `context_pruning_requirements_brief_enabled` | `context_pruning.requirements_brief.enabled` | 是否生成原文摘录版需求内容 | 是 |
-| `context_pruning_local_outline_include_ancestors` | `context_pruning.local_outline.include_ancestors` | 局部大纲是否带祖先标题 | 是 |
-| `context_pruning_local_outline_include_siblings` | `context_pruning.local_outline.include_siblings` | 局部大纲是否带同级标题 | 是 |
-| `context_pruning_local_outline_max_siblings` | `context_pruning.local_outline.max_siblings` | 最多保留几个同级标题 | 是 |
+| `context_pruning_retrieval_lexical_enabled` | `context_pruning.retrieval.lexical_enabled` | 是否启用 lexical retrieval | 间接进入，决定路由 |
+| `context_pruning_retrieval_vector_enabled` | `context_pruning.retrieval.vector_enabled` | 是否启用向量召回 | 间接进入，决定路由 |
+| `context_pruning_retrieval_rerank_enabled` | `context_pruning.retrieval.rerank_enabled` | 是否启用二次精排 | 间接进入，决定路由 |
+| `context_pruning_extraction_llm_verify_enabled` | `context_pruning.extraction.llm_verify_enabled` | 是否启用候选校验 | 间接进入，决定路由 |
+| `embedding_api_base_url` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_API_BASE_URL` | embedding 服务根地址 | 间接进入，影响 vector retrieval |
+| `embedding_api_key` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_API_KEY` | embedding 服务密钥 | 间接进入，影响 vector retrieval |
+| `embedding_model` | `context_pruning.retrieval.embedding.model` | 向量模型名称 | 间接进入，决定 vector retrieval |
 | `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
 | `prompt_output_format` | `prompt.output_format` | task card 中的输出方式描述 | 是 |
 | `prompt_first_line_template` | `prompt.first_line_template` | 是否追加首行要求，以及首行文本 | 是 |
@@ -529,6 +596,15 @@ messages = [
 | `scoring_items` | 评分路由结果 | pruned 分支中的 `评分关注` | 是 |
 | `requirement_seed` | 需求提炼结果 | 作为备用 `需求要点` 内容 | 是 |
 | `requirement_brief` | 需求摘录结果 | 优先作为 `需求要点` 内容 | 是 |
+| `pruning_api_base_url` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_API_BASE_URL` | 候选校验辅助模型地址 | 间接进入，影响 verifier |
+| `pruning_api_key` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_API_KEY` | 候选校验辅助模型密钥 | 间接进入，影响 verifier |
+| `pruning_model` | `context_pruning.api.model` 或环境变量 | 候选校验辅助模型名称 | 间接进入，影响 verifier |
+| `pruning_temperature` | `context_pruning.api.temperature` 或环境变量 | 候选校验辅助模型温度 | 间接进入，影响 verifier |
+| `pruning_max_tokens` | `context_pruning.api.max_tokens` 或环境变量 | 候选校验辅助模型输出上限 | 间接进入，影响 verifier |
+| `pruning_timeout_seconds` | `context_pruning.api.timeout_seconds` 或环境变量 | 候选校验辅助模型超时 | 间接进入，影响 verifier |
+| `pruning_max_retries` | `context_pruning.api.max_retries` 或环境变量 | 候选校验辅助模型重试次数 | 间接进入，影响 verifier |
+| `pruning_top_p` | `context_pruning.api.top_p` 或环境变量 | 候选校验辅助模型采样 top_p | 间接进入，影响 verifier |
+| `pruning_seed` | `context_pruning.api.seed` 或环境变量 | 候选校验辅助模型随机种子 | 间接进入，影响 verifier |
 
 ### 7.2 当前容易误判为“生效”，但实际上不影响这条链路的变量
 
@@ -536,15 +612,9 @@ messages = [
 |--------|----------|------|
 | `prompt_summary_title` | 不参与 prompt 拼接 | 当前只在生成后问题检测里用来判断是否允许“小结/总结”标题 |
 | `context_pruning_requirements_brief_fallback` | 当前未接入主流程 | 配置存在，但 `build_context()` / `build_prompt_result()` 没有使用它决定回退行为 |
-| `pruning_api_base_url` | 当前不参与章节提炼 | 这条链路里的需求/评分提炼仍是规则实现 |
-| `pruning_api_key` | 当前不参与章节提炼 | 同上 |
-| `pruning_model` | 当前不参与章节提炼 | 同上 |
-| `pruning_temperature` | 当前不参与章节提炼 | 同上 |
-| `pruning_max_tokens` | 当前不参与章节提炼 | 同上 |
-| `pruning_timeout_seconds` | 当前不参与章节提炼 | 同上 |
-| `pruning_max_retries` | 当前不参与章节提炼 | 同上 |
-| `pruning_top_p` | 当前不参与章节提炼 | 同上 |
-| `pruning_seed` | 当前不参与章节提炼 | 同上 |
+| `context_pruning_local_outline_include_ancestors` | 当前不影响 user prompt 拼接 | 只影响 `ChapterContext.local_outline`，而 `local_outline` 目前只写入 debug/trace |
+| `context_pruning_local_outline_include_siblings` | 当前不影响 user prompt 拼接 | 同上 |
+| `context_pruning_local_outline_max_siblings` | 当前不影响 user prompt 拼接 | 同上 |
 | `prompt_contract_blocks` | trace 专用 | 只给维护者看，不发给大模型 |
 
 ## 8. 优化 prompt 时的几个直接结论
@@ -554,8 +624,9 @@ messages = [
 3. 如果要改“采购需求和评分标准怎么提炼成章节上下文”，应改 `context_pruner.py`
 4. 如果要降低 prompt 长度，最有效的开关是 `context_pruning_enabled`
 5. 如果要提升需求贴合度，优先关注 `requirement_brief` 与 `requirement_seed` 的选择逻辑
-6. 如果要提升评分命中率，优先关注 `response_labels`、`match_keywords`、`_route_scoring_items()`
-7. 如果发现同一配置下有时是精简 prompt、有时突然变成长 prompt，优先排查是否发生了 pruned 分支异常回退
+6. 如果要提升评分命中率，优先关注 `response_labels`、`match_keywords`、`_route_scoring_items()` 和 `hybrid_extract` 的分段质量
+7. 如果要提升同义表达、弱关键词场景下的召回，优先关注 `vector_enabled`
+8. 如果发现同一配置下有时是精简 prompt、有时突然变成长 prompt，优先排查是否发生了 pruned 分支异常回退
 
 ## 9. 执行流程图
 

@@ -89,3 +89,63 @@
 - 在未配置或调用失败的辅助模型场景下，`requirement_brief` 会返回空串，主 prompt 自动回退到规则提取的 `requirement_seed`，不会抛异常或阻塞生成。
 - `context_pruning.debug_dump=true` 时，`AIWriter.build_prompt()` 会把当前章节的局部大纲、命中评分项、需求 seed、需求 brief 和 prompt 长度统计写入输出目录下的 `_context_pruning_debug/*.md` sidecar 文件。
 - 为了提升需求 seed 的可解释性，关键词匹配已增加标题/评分语句的变体提取和 generic suffix 剥离，例如可从“数据资料保密管理制度”派生出“数据资料保密”等更短关键词。
+
+## Hybrid Extract 规划相关发现
+- 当前 `context_pruner.py` 中评分标准路由仍强依赖 Markdown 表格解析；如果 `scoring_criteria` 是 Markdown 文字段落，现有 `评分关注` 基本不会命中。
+- 当前采购需求和评分标准虽然都在做“原文摘录”方向的尝试，但前置召回仍然是规则分块 + 关键词打分，因此核心瓶颈在召回而不是摘录动作本身。
+- 对“准确匹配 + 原文摘抄”场景，更稳的工程路线是 `结构化切分 -> lexical/vector 检索 -> 候选重排 -> 程序回填原文`，而不是“让 LLM 读整份文档做自由提炼”。
+- 如果让模型直接输出摘录文本，即使再做字符串校验，也不如“模型只返回片段 ID，程序按 ID 回填原文”稳。
+- 评分标准应统一建模成 `SourceUnit`，覆盖表格行、标题+正文块、列表项和文字评分段；否则表格评分和文字评分会形成两套后处理链路。
+- prompt 输出层最好继续只认 `scoring_items`、`requirement_brief`、`requirement_seed` 这几个字段，避免新检索模式把 prompt 合同搅乱。
+- 当前 `Config` 已会按配置文件目录顺序加载 `.env` 和 `.env.local`，因此 embedding 连接参数进入 `.env.local` 不需要重做环境加载机制。
+- embedding 的 `model` 不属于敏感信息，更适合保留在 `config_xxx.yaml`；连接参数 `API_BASE_URL`、`API_KEY` 才应放 `.env.local`。
+- `hybrid_extract` 的第一版可以先不接 embedding、不接 LLM，仅靠结构化分段 + lexical retrieval 就能先验证收益，并降低实现复杂度。
+- 成本视角下，embedding 一次性成本通常远低于逐章 rerank/verify；后续真正需要精控的是“哪些章节才值得做辅助模型校验”。
+
+## Hybrid Extract 规划默认假设
+- 默认把 `hybrid_extract` 视为新增模式，而不是替换现有模式。
+- 默认第一轮实现只交付到 lexical-only，不把 embedding 和 rerank 作为首批阻塞项。
+- 默认不新增检索依赖包，优先使用现有规则链路里的关键词、最长公共子串、标题链信号扩展出 lexical retrieval。
+- 默认最终 prompt 仍然只暴露 `评分关注` 和 `需求要点`，不把 `SourceUnit`、候选分数等内部概念直接暴露给模型。
+- 默认人工验收需要一组代表性章节样例，否则很难客观比较 `legacy_rule` 和 `hybrid_extract` 的得失。
+
+## Hybrid Extract 已确认结论
+- 第一轮实现范围已经锁定为 Phase 1-3，不把 embedding 与 rerank/verify 作为首批交付阻塞项。
+- `config_公共服务满意度.yaml` 中新模式先保持关闭，等基准章节验证通过后再人工开启。
+- lexical retrieval 第一版明确不新增第三方依赖。
+- 基准验收章节已定为：
+  - `2.1.4 验收要求与成果应用理解`
+  - `2.4.2 1.2万至1.5万个有效样本配置方案`
+  - `2.9.2 数据资料保密管理制度`
+  - `2.10.4 全流程真实性追溯机制`
+  - `3.3.4 合同履约至2026年12月底保障计划`
+- 用户提供了待验证的 embedding 服务连接信息，但该信息不应进入 planning 文件、yaml 配置或普通命令日志。
+- 对 OpenAI 兼容客户端而言，embedding `base_url` 更可能是服务根路径，真正的 `/embeddings` 路径由客户端追加；若直接把 `/v1/embeddings` 当作 `base_url`，有较高概率会拼接错误。
+
+## Hybrid Extract Phase 1-3 实现后的确认
+- `Config` 已新增 `context_pruning.mode`、`scoring.mode`、`requirements.mode`、`retrieval.*`、`embedding.*` 访问器，以及 `validate_context_pruning_runtime()`。
+- `bid_writer/source_unit_parser.py` 已落地，采购需求、评分表格行、评分文字段已统一解析成 `SourceUnit`。
+- `bid_writer/hybrid_retriever.py` 已落地，当前实现为 lexical-only 的 `hybrid_extract v1`。
+- `bid_writer/context_pruner.py` 已支持评分标准和采购需求分别按 `legacy_rule` / `hybrid_extract` 路由，并会把 `retrieval_mode`、`fallback_reason`、selected ids 写进 `ChapterContext`。
+- `hybrid_extract v1` 当前不会调用 embedding，也不会调用辅助模型；若配置提前打开 `vector_enabled` 或 `rerank_enabled`，会按策略回退或报错。
+- 对公共服务满意度项目的 5 个基准章节，`hybrid_extract` 均已成功生成非空 `selected_scoring_unit_ids` 和 `selected_requirement_unit_ids`。
+- 对纯 Markdown 文字评分样例，`SourceUnitParser.parse_scoring(parse_mode='auto')` 已能解析出带分值和标题+正文的评分项。
+
+## Hybrid Extract Phase 4-5 实现后的确认
+- `bid_writer/embedding_store.py` 已落地，支持：
+  - embedding base URL 归一化
+  - 文档向量缓存
+  - query embedding
+  - cosine similarity 检索
+- `bid_writer/llm_verifier.py` 已落地，支持在少量候选上调用辅助模型，只返回 `selected_ids`，不直接输出摘录文本。
+- `bid_writer/hybrid_retriever.py` 现在支持 lexical + vector 两路召回，并通过 rank-based 融合排序。
+- `bid_writer/context_pruner.py` 已把 vector retrieval 与 verifier 接入到 scoring / requirements 两条 `hybrid_extract` 路径。
+- embedding 实测可用：最小请求返回 `1536` 维向量。
+- embedding `base_url` 即使被配置成 `.../v1/embeddings`，代码也会自动归一化到服务根路径后再请求。
+- 在 verifier 打开的情况下，最终进入 prompt 的仍然是源文原文，因为 verifier 只允许返回候选 `unit_id`。
+
+## 收尾核对补充发现
+- `ChapterContext.local_outline` 当前只用于 debug dump 和 trace 侧上下文记录，没有被 `AIWriter.build_prompt_result()` 直接拼进 user prompt。
+- `prompt_contract.md` 中若把 `local_outline` 视为 prompt 输入、或把 `BID_WRITER_PRUNING_*` 视为“当前不参与章节提炼”，都会与现状不符。
+- 当前 `BID_WRITER_EMBEDDING_*` 在 `vector_enabled=true` 时已经会参与章节检索；`BID_WRITER_PRUNING_*` 在 `llm_verify_enabled=true` 或 `rerank_enabled=true` 时已经会参与候选校验。
+- `AIWriter._build_prompt_contract_blocks()` 的 `chapter_scope.source_context` 原先把 `pruned_context.local_outline` 记成了 prompt 来源；现已改成真实来源 `HeadingNode.parent/title/siblings`，避免 trace 解释偏差。

@@ -284,6 +284,8 @@ class GenerationTraceSession:
         if self.pruned_context is not None:
             lines.extend(
                 [
+                    f"- retrieval_mode: {self.pruned_context.retrieval_mode or '（无）'}",
+                    f"- fallback_reason: {self.pruned_context.fallback_reason or '（无）'}",
                     f"- response_labels: {', '.join(self.pruned_context.response_labels) if self.pruned_context.response_labels else '（无）'}",
                     f"- scoring_items: {len(self.pruned_context.scoring_items)}",
                     f"- requirement_blocks: {len(self.pruned_context.requirement_blocks)}",

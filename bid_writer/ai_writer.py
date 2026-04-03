@@ -556,8 +556,9 @@ class AIWriter:
                 "source_context": [
                     "context_mode",
                     "HeadingNode.parent",
+                    "HeadingNode.title",
                     "HeadingNode.siblings",
-                    "pruned_context.local_outline" if pruned_context is not None else "outline_file",
+                    "outline_file" if pruned_context is None else "",
                 ],
             },
             {

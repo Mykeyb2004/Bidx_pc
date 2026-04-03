@@ -48,3 +48,49 @@
 - 已验证 prompt 长度缩减：同一章节在公共服务满意度配置下，裁剪版 prompt 长度为 `2778`，旧版为 `9317`。
 - 已进一步补充 `context_pruning.debug_dump`：启用后会在输出目录生成 `_context_pruning_debug` sidecar 文件，记录章节裁剪结果和 prompt 长度统计。
 - 已再次验证公共服务满意度基准配置下的两个章节样例，确认 prompt 构造仍然正常，且 `debug_dump` 文件可以成功落盘。
+
+## 2026-04-03
+- 用户将讨论重点收敛到“系统角色提示词、采购需求+评分标准提炼、提示词拼接、最终输入大模型内容”，并要求以这部分为后续 prompt 优化的准备基线。
+- 已重写 `docs/prompt_contract.md`，使其严格对齐当前业务代码，只描述 system prompt、章节级提炼、prompt 拼接和最终 messages。
+- 已为 `config_公共服务满意度.yaml` 中关键字段补充中文注释，并验证 YAML 仍可正确解析。
+- 已与用户确认：当前“评分标准提炼”和“采购需求提炼”主链路都不是 LLM 提炼，而是规则分块/匹配。
+- 已检索并评估“准确匹配 + 原文摘抄”场景的最佳实践，形成结论：不宜改成全文 LLM 提炼，而应走 `结构化切分 + 检索 + 原文回填`。
+- 已与用户确认新旧模式并存的方向：保留现有 `legacy_rule`，新增 `hybrid_extract`，通过配置开关切换。
+- 已与用户确认评分标准不总是 Markdown 表格，因此新模式必须支持 Markdown 文字评分段落。
+- 已完成复杂度/收益/时延/成本的定性评估，并收敛出实施顺序：先做结构化分段与 lexical-only，再逐步加入 embedding 与 rerank。
+- 已与用户确认 embedding 配置边界：`.env.local` 仅承载 `BID_WRITER_EMBEDDING_API_BASE_URL`、`BID_WRITER_EMBEDDING_API_KEY`，`config_xxx.yaml` 保留 `embedding.model` 和检索业务参数。
+- 用户显式调用 `planning-with-files`；已读取现有 `task_plan.md`、`findings.md`、`progress.md` 续接上下文，并将本轮 `hybrid_extract` 规划写回这些文件。
+- 本轮未修改业务代码，当前产出为可实施的规划基线，下一步可直接进入配置层和模式分发实现。
+- 用户要求把 `planning-with-files` 方案补充完整，并提前列出所有需要确认的需求。
+- 已将 `hybrid_extract` 方案扩展为完整实施蓝图，补充了阶段拆分、文件改动蓝图、验收口径、默认实施顺序和待确认需求。
+- 用户已确认 4 项关键决策：第一轮只做到 Phase 1-3；新模式默认关闭；lexical 首版不新增依赖；基准验收章节由当前方案指定。
+- 已从公共服务满意度项目大纲中选定 5 个代表章节，覆盖验收成果、样本量硬指标、保密、真实性追溯、合同履约进度五类场景。
+- 用户额外提供了一组 embedding 服务连接信息用于后续联通性验证；出于敏感信息保护，本轮未把该信息写入任何 planning 文件或仓库文件。
+- 已实现 `bid_writer/retrieval_models.py`、`bid_writer/source_unit_parser.py`、`bid_writer/hybrid_retriever.py`。
+- 已修改 `bid_writer/config.py`，补充 `hybrid_extract v1` 所需配置访问器、embedding 预留配置和运行时校验。
+- 已修改 `bid_writer/context_pruner.py`，加入 `legacy_rule` / `hybrid_extract` 模式分发，并把 lexical-only 检索结果回填为现有 `scoring_items`、`requirement_seed`、`requirement_brief`。
+- 已修改 `config_公共服务满意度.yaml`，加入新模式配置字段，默认仍保持 `legacy_rule`。
+- 已修改 `docs/prompt_contract.md`，同步当前已有 `hybrid_extract v1`、其边界以及未实现项的准确描述。
+- 已修改 `bid_writer/generation_trace.py`，在摘要中补充 `retrieval_mode` 和 `fallback_reason`。
+- 已完成验证：
+- `uv run python -m compileall bid_writer run.py`
+- `config_公共服务满意度.yaml` YAML 解析
+- 5 个基准章节在 `hybrid_extract` 下的 prompt 构造
+- 文字评分标准样例解析
+- `vector_enabled=true` 时的自动回退行为
+- 已新增 `bid_writer/embedding_store.py`，完成 embedding 缓存、向量生成和余弦相似度检索。
+- 已新增 `bid_writer/llm_verifier.py`，完成候选校验器，只返回 `selected_ids`。
+- 已修改 `bid_writer/hybrid_retriever.py`，从 lexical-only 升级为 lexical + vector + rank-based fuse。
+- 已修改 `bid_writer/context_pruner.py`，将 vector retrieval 和可选 verifier 接入 `hybrid_extract` 主链路。
+- 已修改 `.env.example` 与 `README.md`，补充 `BID_WRITER_EMBEDDING_*` 用法说明，并强调 base URL 应写服务根路径。
+- 已在本地 `.env.local` 中补齐 embedding 环境变量，来源于现有主 API 配置，未把敏感值写入仓库文件。
+- 已完成 embedding 联通性验证：最小请求成功返回 1536 维向量。
+- 已完成 `/v1/embeddings` 形式 base URL 的兼容性验证：归一化后仍可成功请求。
+- 已完成可选 verifier 验证：开启 `rerank_enabled=true` 后，章节上下文仍能稳定返回，并由程序回填原文。
+- 当前 `hybrid_extract` 功能链路已完整落地；后续只剩效果调优，不再是功能缺口。
+- 已清理 `bid_writer/__pycache__` 的编译缓存噪音，确保工作区只保留源码、文档和 planning 变更。
+- 已复核 `docs/prompt_contract.md` 与真实代码链路，修正两处关键偏差：
+  - `local_outline` 当前不直接进入 user prompt
+  - `BID_WRITER_EMBEDDING_*` / `BID_WRITER_PRUNING_*` 在启用对应能力时已实际参与章节提炼
+- 已修正 `bid_writer/ai_writer.py` 中 `prompt_contract_blocks` 的 `chapter_scope.source_context`，使 trace 元数据与真实 prompt 来源一致。
+- 已同步修正 `config_公共服务满意度.yaml` 中与 Phase 注释相关的过时表述，避免示例配置误导后续调试。

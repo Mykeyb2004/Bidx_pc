@@ -52,22 +52,51 @@ prompt: # 提示词拼接相关配置
 context_pruning: # 章节级上下文裁剪配置，用于从大纲/采购需求/评分标准中提炼当前章节上下文
   enabled: true # 是否启用章节级裁剪；关闭后直接把完整需求与评分标准放入 user prompt
   debug_dump: true # 是否输出裁剪调试文件到 output/_context_pruning_debug
+  mode: "legacy_rule" # 章节裁剪主模式：legacy_rule=现有规则模式，hybrid_extract=新检索摘录模式
+  unavailable_policy: "fallback_legacy" # 新模式不可用时的处理策略：fallback_legacy=回退旧模式，fail_fast=直接报错
   local_outline: # 局部大纲裁剪配置
     include_ancestors: true # 局部大纲中是否保留当前章节的祖先标题链
     include_siblings: true # 局部大纲中是否保留当前章节的同级标题
     max_siblings: 8 # 局部大纲最多保留多少个同级标题
   scoring: # 评分标准路由配置
     enabled: true # 是否从评分标准中筛选与当前章节最相关的评分项
+    mode: "legacy_rule" # 评分标准提炼模式；首轮保持 legacy_rule，后续可切到 hybrid_extract
+    parse_mode: "auto" # 评分标准解析模式：auto=自动识别表格/文字，table_only=只解析表格，text_only=只解析文字
     max_rows: 4 # 最多保留多少条命中评分项进入 user prompt
+  requirements: # 采购需求检索摘录配置
+    mode: "legacy_rule" # 采购需求提炼模式；首轮保持 legacy_rule，后续可切到 hybrid_extract
+    max_quotes: 4 # 最多保留多少条采购需求原文摘录
+    max_quote_chars: 220 # 单条采购需求原文摘录最大字符数
   requirements_brief: # 采购需求原文摘录配置
     enabled: true # 是否生成 requirement_brief；开启后优先把原文摘录作为“需求要点”发给模型
     fallback: "rule_only" # 需求摘录失败时的回退策略配置项；当前主链路未实际使用
-  api: # 章节裁剪辅助模型配置；当前采购需求/评分提炼主链路仍以规则实现为主
-    model: "gpt-5.4-mini" # 预留的章节裁剪辅助模型名称
-    temperature: 0.2 # 预留的章节裁剪辅助模型温度
-    max_tokens: 1200 # 预留的章节裁剪辅助模型最大 token 数
-    timeout_seconds: 60 # 预留的章节裁剪辅助模型超时秒数
-    max_retries: 2 # 预留的章节裁剪辅助模型最大重试次数
+  retrieval: # hybrid_extract 检索配置；当前支持 lexical、vector 以及可选 rerank/verify
+    lexical_enabled: true # 是否启用 lexical retrieval；hybrid_extract v1 要求为 true
+    vector_enabled: false # 是否启用向量召回；开启时需在 .env.local 配置 BID_WRITER_EMBEDDING_*
+    rerank_enabled: false # 是否启用候选重排；与 llm_verify_enabled 一起决定是否进入候选精排/校验链路
+    top_k_lexical: 20 # lexical retrieval 保留的候选数
+    top_k_vector: 20 # 向量召回候选数；仅在 vector_enabled=true 时生效
+    top_k_fused: 30 # lexical/vector 融合排序后的候选数
+    top_k_final: 6 # 最终进入摘录阶段的候选数
+    min_fused_score: 0.0 # 最终候选最低得分；小于该值的候选会被过滤
+    embedding: # embedding 业务参数；连接敏感信息放在 .env.local
+      model: "text-embedding-3-small" # 向量模型名称；vector_enabled=true 时实际调用
+      batch_size: 64 # 批量生成 embedding 的批大小
+      cache_dir: "./output/_embedding_cache" # embedding 本地缓存目录
+      rebuild_on_source_change: true # 源文变化时是否重建 embedding 缓存
+      query_prefix: "" # 查询文本 embedding 前缀；默认留空
+      document_prefix: "" # 文档文本 embedding 前缀；默认留空
+  extraction: # 检索摘录阶段输出控制
+    quote_only: true # 是否只允许原文摘录，不允许摘要改写
+    return_ids_only: true # 若后续启用模型重排，仅返回片段 ID，再由程序回填原文
+    llm_verify_enabled: false # 是否启用辅助模型对候选做校验；开启时只返回 unit_id，不直接输出摘录文本
+    llm_verify_max_candidates: 8 # 最多送入辅助模型校验的候选数
+  api: # 章节裁剪辅助模型配置；仅供 rerank/verify 阶段选择候选 ID，不直接生成摘录文本
+    model: "gpt-5.4-mini" # 章节裁剪辅助模型名称
+    temperature: 0.2 # 章节裁剪辅助模型温度
+    max_tokens: 1200 # 章节裁剪辅助模型最大 token 数
+    timeout_seconds: 60 # 章节裁剪辅助模型超时秒数
+    max_retries: 2 # 章节裁剪辅助模型最大重试次数
 
 generation_trace: # 章节生成 trace 日志配置
   enabled: true # 是否启用 trace 产物落盘

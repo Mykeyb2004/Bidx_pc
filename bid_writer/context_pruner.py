@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config
+from .embedding_store import EmbeddingStore
+from .hybrid_retriever import HybridRetriever
+from .llm_verifier import LLMVerifier
 from .outline_parser import HeadingNode
+from .retrieval_models import RetrievedUnit
+from .source_unit_parser import SourceUnitParser
 
 
 _RESPONSE_LABEL_RE = re.compile(r'(?:响应|对应评分标准)\s*[:：]\s*([^）)]+)')
@@ -95,6 +100,10 @@ class ChapterContext:
     requirement_brief: str = ""
     requirement_brief_status: str = ""
     requirement_brief_error: str = ""
+    retrieval_mode: str = ""
+    fallback_reason: str = ""
+    selected_requirement_unit_ids: list[str] = field(default_factory=list)
+    selected_scoring_unit_ids: list[str] = field(default_factory=list)
 
 
 class ChapterContextPruner:
@@ -102,10 +111,81 @@ class ChapterContextPruner:
 
     def __init__(self, config: Config):
         self.config = config
+        self.source_unit_parser = SourceUnitParser()
+        self.hybrid_retriever = HybridRetriever()
+        self.embedding_store = EmbeddingStore(config) if config.embedding_is_configured else None
+        self.llm_verifier = LLMVerifier(config) if config.pruning_api_is_configured else None
 
     def build_context(self, heading: HeadingNode) -> ChapterContext:
         """构建当前章节的局部上下文。"""
-        context = self._build_base_context(heading)
+        context = self._build_signal_context(heading)
+        scoring_focus_terms = self._expand_focus_terms(context.chapter_focus_terms)
+        scoring_mode = self.config.context_pruning_scoring_mode
+        requirements_mode = self.config.context_pruning_requirements_mode
+        fallback_reasons: list[str] = []
+
+        runtime_errors = self.config.validate_context_pruning_runtime(raise_on_error=False)
+        if runtime_errors:
+            if self.config.context_pruning_unavailable_policy == "fail_fast":
+                raise ValueError("；".join(runtime_errors))
+            if scoring_mode == "hybrid_extract":
+                scoring_mode = "legacy_rule"
+            if requirements_mode == "hybrid_extract":
+                requirements_mode = "legacy_rule"
+            fallback_reasons.extend(runtime_errors)
+
+        if scoring_mode == "hybrid_extract":
+            try:
+                (
+                    context.scoring_items,
+                    context.scoring_candidates,
+                    context.selected_scoring_unit_ids,
+                ) = self._route_scoring_items_hybrid(
+                    heading,
+                    context.response_labels,
+                    context.match_keywords,
+                    scoring_focus_terms,
+                )
+            except Exception as exc:
+                if self.config.context_pruning_unavailable_policy == "fail_fast":
+                    raise
+                fallback_reasons.append(f"评分标准 hybrid_extract 失败，回退 legacy_rule: {exc}")
+                scoring_mode = "legacy_rule"
+
+        if scoring_mode == "legacy_rule":
+            context.scoring_items, context.scoring_candidates = self._route_scoring_items(
+                heading,
+                context.response_labels,
+                context.match_keywords,
+                scoring_focus_terms,
+            )
+
+        if requirements_mode == "hybrid_extract":
+            try:
+                (
+                    context.requirement_seed,
+                    context.requirement_blocks,
+                    context.selected_requirement_unit_ids,
+                ) = self._build_requirement_seed_hybrid(
+                    heading,
+                    context.response_labels,
+                    context.match_keywords,
+                    scoring_focus_terms,
+                )
+            except Exception as exc:
+                if self.config.context_pruning_unavailable_policy == "fail_fast":
+                    raise
+                fallback_reasons.append(f"采购需求 hybrid_extract 失败，回退 legacy_rule: {exc}")
+                requirements_mode = "legacy_rule"
+
+        if requirements_mode == "legacy_rule":
+            context.requirement_seed, context.requirement_blocks = self._build_requirement_seed(
+                heading,
+                context.response_labels,
+                context.match_keywords,
+                scoring_focus_terms,
+            )
+
         if self.config.context_pruning_requirements_brief_enabled:
             (
                 context.requirement_brief,
@@ -115,39 +195,26 @@ class ChapterContextPruner:
         else:
             context.requirement_brief_status = "disabled"
 
+        context.retrieval_mode = (
+            f"scoring={scoring_mode};requirements={requirements_mode};"
+            f"vector={'on' if self.config.context_pruning_retrieval_vector_enabled else 'off'};"
+            f"rerank={'on' if self.config.context_pruning_rerank_or_verify_enabled else 'off'}"
+        )
+        context.fallback_reason = "；".join(reason for reason in fallback_reasons if reason).strip()
         return context
 
-    def _build_base_context(self, heading: HeadingNode) -> ChapterContext:
-        """构建不含 requirement_brief 的基础上下文。"""
+    def _build_signal_context(self, heading: HeadingNode) -> ChapterContext:
+        """构建章节级匹配信号，不包含具体命中结果。"""
         response_labels = self._extract_response_labels(heading)
         chapter_focus_terms = self._build_focus_terms(heading)
         match_keywords = self._build_match_keywords(heading, response_labels)
-        scoring_focus_terms = self._expand_focus_terms(chapter_focus_terms)
-        scoring_items, scoring_candidates = self._route_scoring_items(
-            heading,
-            response_labels,
-            match_keywords,
-            scoring_focus_terms,
-        )
-        requirement_seed, requirement_blocks = self._build_requirement_seed(
-            heading,
-            response_labels,
-            match_keywords,
-            scoring_focus_terms,
-        )
 
-        context = ChapterContext(
+        return ChapterContext(
             local_outline=self._build_local_outline(heading),
             response_labels=response_labels,
             chapter_focus_terms=chapter_focus_terms,
             match_keywords=match_keywords,
-            scoring_items=scoring_items,
-            scoring_candidates=scoring_candidates,
-            requirement_seed=requirement_seed,
-            requirement_blocks=requirement_blocks,
         )
-
-        return context
 
     def _build_requirement_brief_with_cache(
         self,
@@ -156,6 +223,180 @@ class ChapterContextPruner:
     ) -> tuple[str, str, str]:
         """根据当前章节命中的采购需求原文，生成只含摘录的 requirement_brief。"""
         return self._build_requirement_brief(heading, context)
+
+    def _route_scoring_items_hybrid(
+        self,
+        heading: HeadingNode,
+        response_labels: list[str],
+        match_keywords: list[str],
+        focus_terms: list[str],
+    ) -> tuple[list[ScoringCriterion], list[ScoringCriterion], list[str]]:
+        if not self.config.context_pruning_scoring_enabled:
+            return [], [], []
+
+        query_text = self.hybrid_retriever.build_query(heading, response_labels, match_keywords)
+        units = self.source_unit_parser.parse_scoring(
+            self.config.scoring_criteria,
+            parse_mode=self.config.context_pruning_scoring_parse_mode,
+        )
+        hits = self.hybrid_retriever.retrieve(
+            query_text,
+            units,
+            response_labels=response_labels,
+            keywords=match_keywords,
+            focus_terms=focus_terms,
+            top_k_lexical=self.config.context_pruning_retrieval_top_k_lexical,
+            top_k_vector=self.config.context_pruning_retrieval_top_k_vector,
+            top_k_fused=self.config.context_pruning_retrieval_top_k_fused,
+            embedding_store=self.embedding_store if self.config.context_pruning_retrieval_vector_enabled else None,
+        )
+        selected_hits = self.hybrid_retriever.select_final(
+            hits,
+            top_k_final=min(
+                self.config.context_pruning_scoring_max_rows,
+                self.config.context_pruning_retrieval_top_k_final,
+            ),
+            min_score=self.config.context_pruning_retrieval_min_fused_score,
+        )
+        selected_hits = self._verify_hits_if_needed(
+            heading=heading,
+            response_labels=response_labels,
+            focus_terms=focus_terms,
+            hits=hits,
+            selected_hits=selected_hits,
+        )
+        selected_ids = [hit.unit.unit_id for hit in selected_hits]
+        scoring_items = [self._to_scoring_criterion(hit) for hit in selected_hits]
+        scoring_candidates = [self._to_scoring_criterion(hit) for hit in hits[:_TRACE_MAX_SCORING_CANDIDATES]]
+        return scoring_items, scoring_candidates, selected_ids
+
+    def _build_requirement_seed_hybrid(
+        self,
+        heading: HeadingNode,
+        response_labels: list[str],
+        match_keywords: list[str],
+        focus_terms: list[str],
+    ) -> tuple[str, list[RequirementBlockMatch], list[str]]:
+        text = self.config.bid_requirements.strip()
+        if not text:
+            return "", [], []
+
+        query_text = self.hybrid_retriever.build_query(heading, response_labels, match_keywords)
+        units = [
+            unit
+            for unit in self.source_unit_parser.parse_requirements(text)
+            if not self._is_low_value_requirement_block(unit.source_text_exact or unit.source_text)
+        ]
+        hits = self.hybrid_retriever.retrieve(
+            query_text,
+            units,
+            response_labels=response_labels,
+            keywords=match_keywords,
+            focus_terms=focus_terms,
+            top_k_lexical=self.config.context_pruning_retrieval_top_k_lexical,
+            top_k_vector=self.config.context_pruning_retrieval_top_k_vector,
+            top_k_fused=self.config.context_pruning_retrieval_top_k_fused,
+            embedding_store=self.embedding_store if self.config.context_pruning_retrieval_vector_enabled else None,
+        )
+        selected_hits = self.hybrid_retriever.select_final(
+            hits,
+            top_k_final=min(
+                _MAX_SELECTED_REQUIREMENT_BLOCKS,
+                self.config.context_pruning_retrieval_top_k_final,
+            ),
+            min_score=self.config.context_pruning_retrieval_min_fused_score,
+        )
+        selected_hits = self._verify_hits_if_needed(
+            heading=heading,
+            response_labels=response_labels,
+            focus_terms=focus_terms,
+            hits=hits,
+            selected_hits=selected_hits,
+        )
+
+        if not selected_hits:
+            selected_hits = [
+                RetrievedUnit(unit=unit, lexical_score=0.0, fused_score=0.0)
+                for unit in units[:3]
+            ]
+
+        selected_ids = [hit.unit.unit_id for hit in selected_hits]
+        selected_blocks = [hit.unit.source_text_exact or hit.unit.source_text for hit in selected_hits]
+        trace_blocks: list[RequirementBlockMatch] = []
+
+        if hits:
+            for hit in hits[:_TRACE_MAX_REQUIREMENT_BLOCKS]:
+                block = hit.unit.source_text_exact or hit.unit.source_text
+                trace_blocks.append(
+                    RequirementBlockMatch(
+                        index=hit.unit.order_index,
+                        score=int(hit.fused_score),
+                        selected=hit.unit.unit_id in selected_ids,
+                        chars=len(block),
+                        block=block,
+                    )
+                )
+        else:
+            for hit in selected_hits[: min(len(selected_hits), 4)]:
+                block = hit.unit.source_text_exact or hit.unit.source_text
+                trace_blocks.append(
+                    RequirementBlockMatch(
+                        index=hit.unit.order_index,
+                        score=0,
+                        selected=True,
+                        chars=len(block),
+                        block=block,
+                    )
+                )
+
+        return self._summarize_requirement_blocks(selected_blocks), trace_blocks, selected_ids
+
+    @staticmethod
+    def _to_scoring_criterion(hit: RetrievedUnit) -> ScoringCriterion:
+        standard = hit.unit.source_text_exact or hit.unit.source_text
+        title = hit.unit.title or hit.unit.section_path or hit.unit.unit_id
+        return ScoringCriterion(
+            subitem=title,
+            standard=standard,
+            weight=hit.unit.weight_text,
+            match_score=int(hit.rerank_score or hit.fused_score or hit.lexical_score),
+        )
+
+    def _verify_hits_if_needed(
+        self,
+        *,
+        heading: HeadingNode,
+        response_labels: list[str],
+        focus_terms: list[str],
+        hits: list[RetrievedUnit],
+        selected_hits: list[RetrievedUnit],
+    ) -> list[RetrievedUnit]:
+        if not hits or not self.config.context_pruning_rerank_or_verify_enabled:
+            return selected_hits
+        if self.llm_verifier is None:
+            return selected_hits
+
+        verify_candidates = hits[: self.config.context_pruning_extraction_llm_verify_max_candidates]
+        result = self.llm_verifier.verify(
+            heading_path=heading.full_path,
+            heading_title=heading.title,
+            response_labels=response_labels,
+            focus_terms=focus_terms,
+            candidates=verify_candidates,
+            limit=self.config.context_pruning_extraction_llm_verify_max_candidates,
+        )
+        if not result.selected_ids:
+            return selected_hits
+
+        selected_map = {hit.unit.unit_id: hit for hit in verify_candidates}
+        verified_hits: list[RetrievedUnit] = []
+        for unit_id in result.selected_ids:
+            hit = selected_map.get(unit_id)
+            if hit is None:
+                continue
+            hit.rerank_score = max(hit.rerank_score, hit.fused_score)
+            verified_hits.append(hit)
+        return verified_hits or selected_hits
 
     @staticmethod
     def _heading_chain(heading: HeadingNode) -> list[HeadingNode]:
@@ -761,6 +1002,8 @@ class ChapterContextPruner:
             f"# 章节上下文调试 - {heading.title}",
             "",
             f"- full_path: {heading.full_path}",
+            f"- retrieval_mode: {context.retrieval_mode or '（无）'}",
+            f"- fallback_reason: {context.fallback_reason or '（无）'}",
             f"- response_labels: {', '.join(context.response_labels) if context.response_labels else '（无）'}",
             f"- match_keywords: {', '.join(context.match_keywords) if context.match_keywords else '（无）'}",
             f"- local_outline_chars: {len(context.local_outline)}",
@@ -770,6 +1013,8 @@ class ChapterContextPruner:
             f"- requirement_seed_chars: {len(context.requirement_seed)}",
             f"- requirement_brief_chars: {len(context.requirement_brief)}",
             f"- requirement_brief_status: {context.requirement_brief_status or '（无）'}",
+            f"- selected_scoring_unit_ids: {', '.join(context.selected_scoring_unit_ids) if context.selected_scoring_unit_ids else '（无）'}",
+            f"- selected_requirement_unit_ids: {', '.join(context.selected_requirement_unit_ids) if context.selected_requirement_unit_ids else '（无）'}",
             f"- prompt_chars: {len(prompt)}",
             "",
             "## 局部大纲",
@@ -831,16 +1076,20 @@ class ChapterContextPruner:
         if not selected_blocks:
             return "", "skipped_empty_blocks", ""
 
+        max_quotes = max(self.config.context_pruning_requirements_max_quotes, 1)
+        max_quote_chars = max(self.config.context_pruning_requirements_max_quote_chars, 40)
         excerpt_lines: list[str] = []
         seen: set[str] = set()
         for block in selected_blocks:
             excerpt = self._extract_requirement_excerpt(block)
+            if len(excerpt) > max_quote_chars:
+                excerpt = excerpt[: max_quote_chars - 3].rstrip("，、；;：: ") + "..."
             normalized = self._normalize_text(excerpt)
             if not excerpt or not normalized or normalized in seen:
                 continue
             seen.add(normalized)
             excerpt_lines.append(f"{len(excerpt_lines) + 1}. {excerpt}")
-            if len(excerpt_lines) >= 4:
+            if len(excerpt_lines) >= max_quotes:
                 break
 
         if not excerpt_lines:
