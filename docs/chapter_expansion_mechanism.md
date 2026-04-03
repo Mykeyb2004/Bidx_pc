@@ -291,6 +291,8 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 因此当前的 `requirements_brief` 更接近“原文摘录”而不是“智能总结”。
 
+但在最终发给模型的 `user prompt` 中，这部分仍以“需求要点”标题呈现，以保持和任务卡里的“根据下方评分关注和需求要点组织内容”一致，避免前后指代漂移。
+
 ### 4.8 调试输出
 
 当 `context_pruning.debug_dump` 开启时，`dump_debug()` 会在输出目录下写入 `_context_pruning_debug` 调试文件，便于维护者检查：
