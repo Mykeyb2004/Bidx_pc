@@ -232,15 +232,43 @@
 - [x] 梳理项目配置文件、README 推荐写法与 `Config` 实际加载逻辑
 - [x] 识别配置结构中的重复、别名、路径基座问题和未接线字段
 - [x] 形成分阶段优化建议与推荐落地顺序
+- [x] 记录并落地新的 canonical schema：`project / writing / processing / models / runtime`
+- [x] 在 `Config` 中实现新 schema 读取、旧 schema 兼容与路径解析分层
+- [x] 将业务代码切换到新的 `processing.path` 三路径模型
+- [x] 迁移示例/项目配置、测试夹具与文档
+- [x] 完成回归验证并记录兼容说明
 
 ## 关键决策
 - 优化重点放在“定义 canonical schema + 收敛变体 + 增加校验”，不建议直接一次性推翻全部字段命名。
 - 继续保留旧写法兼容层，但新文档、新项目模板和后续重构都应只围绕一套推荐结构展开。
 - 对当前这类“同一项目仅切换上下文模式”的场景，优先解决配置变体复制问题，而不是继续复制整份 YAML。
+- 新 schema 按“信息性质”而不是“实现模块”分层：
+  - `project`：项目固有信息与输入资源
+  - `writing`：写作规范与提示词约束
+  - `processing`：业务处理路径与链路参数
+  - `models`：模型与推理参数
+  - `runtime`：运行、落盘、调试与观测参数
+- `processing` 只保留 3 条 canonical 路径：
+  - `full_context`
+  - `legacy_rule`
+  - `hybrid_extract`
+- 新 schema 不再把“评分标准”和“采购需求”的主链路模式暴露为可自由混搭的项目级参数；两者必须跟随同一条 `processing.path`。
 
 ## 风险
 - 如果直接移除根级旧字段和 inline-path 兼容逻辑，会影响现有项目文件与测试夹具。
 - 如果只整理注释、不处理变体复用和校验机制，配置文件仍会继续膨胀并再次失控。
+- 如果实现时让业务代码完全依赖新 schema 而不保留旧 accessor 兼容，会放大回归范围。
+- 旧 schema 理论上允许“评分标准”和“采购需求”走不同模式；新 schema 不再鼓励这种混搭，需要在兼容层明确兜底策略。
+
+## 验证结果
+- `uv run python -m compileall bid_writer run.py tests` 通过。
+- `uv run pytest -q` 通过，当前共 `7` 个测试全部通过。
+- 4 份公共服务满意度项目配置已切到新 schema，并能成功实例化 `Config`：
+  - `config_公共服务满意度.yaml` -> `processing_path=legacy_rule`
+  - `config_公共服务满意度_full_context.yaml` -> `processing_path=full_context`
+  - `config_公共服务满意度_hybrid_extract.yaml` -> `processing_path=hybrid_extract`
+  - `config_公共服务满意度_hybrid_extract_full.yaml` -> `processing_path=hybrid_extract`
+- 新增 `docs/roles/公共服务满意度_role.md` 后，项目配置中的长角色设定已抽离出 YAML。
 - 纯规则增强版：中低复杂度，高收益，重点价值在于补齐“非表格评分标准”缺口。
 - lexical-only `hybrid_extract`：中等复杂度，中高收益，可先验证结构化分段是否明显优于当前空行切块。
 - 加入 embedding 的 vector retrieval：中等复杂度，中高收益，主要提升同义表达和跨段落召回。
@@ -459,3 +487,53 @@
 - 运行时应从 `.env.local` 读取 `BID_WRITER_EMBEDDING_API_BASE_URL`、`BID_WRITER_EMBEDDING_API_KEY`。
 - 若按 OpenAI 兼容客户端接入，`base_url` 更可能应为服务根路径，例如 `/v1`，而不是直接写到 `/v1/embeddings`；真正请求路径由客户端追加 `/embeddings`。
 - 若后续联通性测试失败，应优先尝试区分“客户端 base_url”和“HTTP 直连 endpoint”两种写法，再决定是否需要额外适配。
+
+---
+
+# 配置编辑器界面与线框方案
+
+## 目标
+- 基于当前 canonical schema，为桌面端设计一套可视化配置编辑界面，支持加载、编辑、校验、预览和保存 `config*.yaml`。
+- 配置界面只编辑项目 YAML，不直接编辑 `.env.local` 中的敏感信息。
+- 在不鼓励旧 schema 的前提下，兼容加载 legacy 配置，并在保存时归一到 canonical schema。
+
+## 阶段
+- [x] 复核现有 GUI 的配置入口、工具栏布局和弹窗风格
+- [x] 按 `project / writing / processing / models / runtime` 完成字段分组和交互归类
+- [x] 形成界面结构、保存策略、校验策略和线框图文档
+- [x] 实现 GUI、canonical 保存逻辑和测试
+
+## 关键决策
+- 主窗口工具栏新增 `编辑配置`，打开一个大号 `Toplevel` 配置工作台，而不是再加一个零碎小弹窗。
+- 编辑器内部使用 canonical view model；`processing.path` 是主开关，决定展示 `full_context / legacy_rule / hybrid_extract` 对应参数面板。
+- 采购需求、评分标准和大纲在界面中按“项目文件路径”编辑，不直接在配置器里编辑大段正文内容。
+- generation / pruning / embedding 的连接信息只显示 `.env.local` 配置状态，不进入 YAML 表单。
+- 保存默认输出 canonical schema；如果读取的是旧 schema，保存后即完成结构标准化。
+
+## 风险
+- 现有 PyYAML 链路不保留原 YAML 注释和字段顺序，首版需要明确“保存即规范化”的行为边界。
+- `hybrid_extract` 参数较多，若没有“基础 / 高级”折叠，界面会显得拥挤。
+- 对历史配置中的 inline 文本型输入，界面需要给出迁移提示，避免用户误以为可以在配置器中直接维护长文档正文。
+
+## 验证结果
+- 已新增 `bid_writer/config_editor.py`，负责：
+  - legacy / canonical 配置加载
+  - editor view model 归一化
+  - YAML 标准化导出
+  - 保存与备份
+  - 连接状态探测
+  - 运行前校验
+- 已新增 `bid_writer/config_editor_dialog.py`，提供可视化配置编辑窗口。
+- 已新增 `bid_writer/config_editor_tooltips.py`，提供配置字段悬停提示文案。
+- 已在 `bid_writer/gui.py` 中接入：
+  - 工具栏 `编辑配置`
+  - 菜单 `编辑当前配置...`
+  - 保存后自动重载 / 切换配置
+- 已新增 `tests/test_config_editor.py`，覆盖：
+  - 旧 schema 标准化
+  - generation 连接字段保留
+  - mixed-mode 保存前校验
+  - hybrid_extract + vector 的 embedding 校验
+- 已新增 `tests/test_config_editor_tooltips.py`，覆盖关键字段 tip 文案存在性。
+- `uv run pytest -q` 通过，当前共 `11` 个测试通过。
+- `uv run python -m compileall bid_writer tests run.py` 通过。

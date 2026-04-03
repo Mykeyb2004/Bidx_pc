@@ -9,6 +9,12 @@
 3. user 提示词如何按固定顺序拼接
 4. 最终实际发送给大模型的内容长什么样
 
+说明：
+
+- 本文描述的是代码里的“真实解析结果”和 prompt 装配合同，不强行等同于某一版 YAML 表面字段
+- 从 2026-04 起，推荐 YAML schema 已切到 `project / writing / processing / models / runtime`
+- 旧 `prompt.*`、`context_pruning.*`、`generation_trace.*` 等字段仍兼容；`Config` 会先把它们解析成当前代码使用的逻辑参数，再进入本文描述的 prompt 链路
+
 本文不讨论以下内容：
 
 - GUI 交互

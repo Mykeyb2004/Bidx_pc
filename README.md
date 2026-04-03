@@ -96,10 +96,10 @@ BID_WRITER_EMBEDDING_API_KEY=your-api-key
 - `BID_WRITER_MODEL`：写入 `.env.local` 的模型名称
 - `BID_WRITER_PRUNING_API_BASE_URL` / `BID_WRITER_PRUNING_API_KEY`：可选的章节裁剪辅助模型敏感配置，建议仅写入 `.env.local`
 - `BID_WRITER_EMBEDDING_API_BASE_URL` / `BID_WRITER_EMBEDDING_API_KEY`：可选的向量召回 embedding 服务敏感配置，建议仅写入 `.env.local`
-- `inputs.outline_file`：Markdown 大纲文件
-- `inputs.bid_requirements_file` 或 `inputs.bid_requirements`：招标需求
-- `inputs.scoring_criteria_file` 或 `inputs.scoring_criteria`：评分标准
-- `output.directory`：输出目录
+- `project.inputs.outline_file`：Markdown 大纲文件
+- `project.inputs.bid_requirements_file` 或 `project.inputs.bid_requirements`：招标需求
+- `project.inputs.scoring_criteria_file` 或 `project.inputs.scoring_criteria`：评分标准
+- `project.output_dir`：输出目录
 
 ### 4. 启动程序
 
@@ -135,43 +135,47 @@ uv run bid-writer --config config_chatgpt.yaml
 
 ## 配置说明
 
-项目同时兼容两种配置写法：
+项目当前推荐使用按“信息性质”分层的 canonical schema：
 
-- 推荐新写法：将输入资源放在 `inputs` 下
-- 兼容旧写法：`outline_file`、`bid_requirements`、`scoring_criteria` 也可以直接写在根级
+- `project`：项目固有信息、输入资源、输出目录
+- `writing`：角色设定、写作规范、提示词约束、字数要求
+- `processing`：业务处理路径与章节级提炼参数
+- `models`：主模型、辅助模型、embedding 的非敏感参数
+- `runtime`：stream、trace、debug、输出细节与合并行为
+
+旧写法仍然兼容，包括：
+
+- 根级 `outline_file` / `bid_requirements` / `scoring_criteria`
+- `inputs.*`
+- `prompt.*`
+- `context_pruning.*`
+- `generation_trace.*`
+- `api.*`
 
 一个可直接参考的配置示例如下：
 
 ```yaml
-api:
-  # API 配置从 .env / .env.local 自动读取
+project:
+  root_dir: "/path/to/bid-project"
+  bidder_name: "示例投标主体名称"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./项目要求/项目采购需求.md"
+    scoring_criteria_file: "./项目要求/评分标准.md"
+  output_dir: "./output"
 
-role: |
-  你是一位专业的标书撰写专家。
-
-inputs:
-  outline_file: "./outline.md"
-  bid_requirements_file: "./项目要求/项目采购需求.md"
-  scoring_criteria_file: "./项目要求/评分标准.md"
-  # 也支持直接写全文：
-  # bid_requirements: |
-  #   这里直接写招标需求正文
-  # scoring_criteria: |
-  #   这里直接写评分标准正文
-
-generation:
-  default_min_words: 3000
-  min_words_min: 100
-  min_words_max: 15000
-  min_words_step: 100
-  stream: true
-
-prompt:
+writing:
+  role: |
+    你是一位专业的标书撰写专家。
+  min_words:
+    default: 3000
+    min: 100
+    max: 15000
+    step: 100
   output_format: "纯正文"
   first_line_template: ""
   allow_markdown_headings: false
   allow_english_terms: false
-  bidder_name: "示例投标主体名称"
   max_tables_per_section: 4
   summary_title: "章节小结"
   hard_constraints:
@@ -181,71 +185,93 @@ prompt:
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范"
 
-# prompt 字段说明
-# - output_format: 写入任务卡，明确正文组织方式
-# - first_line_template: 非空时强制首行模板
-# - allow_markdown_headings: false 时自动禁止输出 # 标题
-# - allow_english_terms: false 时自动禁止不必要的英文、中英对照
-# - max_tables_per_section: 大于 0 时要求章节插入 1 至 N 个 Markdown 表格；为 0 时禁止输出 Markdown 表格
-# - summary_title: 为空时不另设总结；非空时指定总结标题名称
-# - bidder_name: 写入任务卡和 system 强约束
-# - hard_constraints: 注入 system 的最高优先级规则
-# - extra_rules: 注入 user prompt 的“其他写作要求”段落
-
-context_pruning:
-  enabled: false
-  debug_dump: false
-  local_outline:
+processing:
+  path: "legacy_rule" # full_context / legacy_rule / hybrid_extract
+  context_view:
     include_ancestors: true
     include_siblings: true
     max_siblings: 8
-  scoring:
-    enabled: true
-    max_rows: 4
-  requirements_brief:
-    enabled: false
-    fallback: "rule_only"
-  api:
+  legacy_rule:
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: false
+  hybrid_extract:
+    unavailable_policy: "fallback_legacy"
+    scoring_parse_mode: "auto"
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: true
+    retrieval:
+      lexical_enabled: true
+      vector_enabled: false
+      verify_enabled: false
+      top_k_lexical: 20
+      top_k_vector: 20
+      top_k_fused: 30
+      top_k_final: 6
+      min_fused_score: 0.0
+    quote_only: true
+    return_ids_only: true
+    verify_max_candidates: 8
+
+models:
+  # generation.* / pruning.* / embedding.* 的敏感值仍建议放在 .env.local
+  pruning:
     model: "gpt-4o-mini"
     temperature: 0.2
     max_tokens: 1200
     timeout_seconds: 60
     max_retries: 2
+  embedding:
+    model: "text-embedding-3-small"
+    batch_size: 64
+    cache_dir: "./output/_embedding_cache"
 
-generation_trace:
-  enabled: false
-  mode: "full"
-  write_prompt: true
-  write_output: true
-  write_context: true
-  write_summary: true
-  redact_sensitive: true
-
-output:
-  directory: "./output"
-  prefix: ""
-  include_title_header: true
-  overwrite_existing: true
-  normalize_soft_line_breaks_on_merge: false
-  filename_max_length: 100
-  empty_filename_fallback: "untitled"
+runtime:
+  stream:
+    enabled: true
+    idle_timeout_seconds: 12
+  trace:
+    enabled: false
+    mode: "full"
+    write_prompt: true
+    write_output: true
+    write_context: true
+    write_summary: true
+    redact_sensitive: true
+  debug:
+    context_pruning_dump: false
+  output:
+    prefix: ""
+    include_title_header: true
+    overwrite_existing: true
+    filename_max_length: 100
+    empty_filename_fallback: "untitled"
+  merge:
+    normalize_soft_line_breaks: false
 ```
 
 ### 配置项补充说明
 
-- `api.base_url` 不限于 OpenAI 官方地址，只要接口兼容 OpenAI Chat Completions 即可
+- `models.generation.base_url` 不限于 OpenAI 官方地址，只要接口兼容 OpenAI Chat Completions 即可；同名环境变量优先级更高
 - 程序会先读取配置文件同目录下的 `.env`，再读取 `.env.local`；`.env.local` 可覆盖 `.env`，但不会覆盖你外部 shell 已显式设置的环境变量
 - 最简单的用法是把整组 API 参数都写进 `.env.local`
-- `inputs.*_file` 路径会按“相对于配置文件所在目录”解析
-- `bid_requirements`、`scoring_criteria` 支持直接写长文本，也兼容“内容字段里只写一个文件路径”的旧配置
-- `prompt.first_line_template` 支持 `{title}` 和 `{full_path}` 占位符
-- `prompt.first_line_template` 设为空字符串时，模型将直接输出正文而不重复当前章节标题
-- `prompt.allow_markdown_headings` 控制是否允许模型输出 Markdown 标题符号 `#`
-- `prompt.bidder_name` 用于统一约束投标主体名称
-- `prompt.hard_constraints` 用于配置高优先级输出强约束，程序会注入到 system prompt
-- `context_pruning.*` 用于配置章节级上下文裁剪；当前主要用于局部大纲、评分路由和需求 brief 的参数约束
-- `context_pruning.api.base_url` / `context_pruning.api.api_key` 不建议写入 YAML；请使用 `.env.local` 中的 `BID_WRITER_PRUNING_*` 环境变量提供敏感信息
-- `generation_trace.*` 用于记录单次章节扩写的完整 trace；默认输出到 `output/_generation_traces/`
+- `project.root_dir` 用于声明项目资料的根目录；`project.inputs.*` 和 `project.output_dir` 默认相对它解析
+- `project.inputs.*_file` 支持路径；`project.inputs.bid_requirements`、`project.inputs.scoring_criteria` 也支持直接写长文本
+- `writing.role_file` 可把大段角色设定单独存成文件，减少多个项目配置重复粘贴
+- `writing.first_line_template` 支持 `{title}` 和 `{full_path}` 占位符
+- `processing.path` 是当前项目唯一的章节处理路径入口：
+  - `full_context`
+  - `legacy_rule`
+  - `hybrid_extract`
+- canonical schema 不再推荐把“评分标准”和“采购需求”拆成两条可自由混搭的主链路；旧 mixed-mode 仅保留兼容
+- `models.pruning.*` / `models.embedding.*` 只放非敏感参数；密钥和真实服务地址仍建议放 `.env.local`
+- `runtime.trace.*` 用于记录单次章节扩写的完整 trace；默认输出到仓库下的 `log/generation_traces`
+- 旧 `prompt.*` / `context_pruning.*` / `generation_trace.*` / `api.*` 写法仍兼容，但新项目建议只写 canonical schema
+- 详细 schema 说明与迁移原则见 [docs/config_schema.md](./docs/config_schema.md)
+- 配置字段或默认行为有变更时，请同步更新 [docs/config_schema.md](./docs/config_schema.md) 与 [config.example.yaml](./config.example.yaml)
 
 ### Prompt Contract 维护说明
 

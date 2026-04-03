@@ -1,28 +1,34 @@
-api:
-  base_url: "https://example.com/v1"
-  api_key: "test-key"
-  model: "test-model"
-  temperature: 0.3
-  max_tokens: 2400
+models:
+  generation:
+    base_url: "https://example.com/v1"
+    api_key: "test-key"
+    model: "test-model"
+    temperature: 0.3
+    max_tokens: 2400
+  pruning:
+    model: "test-model"
+    temperature: 0.2
+    max_tokens: 800
+    timeout_seconds: 30
+    max_retries: 1
 
-role: |
-  你是一位专业的标书撰写专家。
+project:
+  bidder_name: "测试投标主体"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+  output_dir: "./output"
 
-inputs:
-  outline_file: "./outline.md"
-  bid_requirements_file: "./bid_requirements.md"
-  scoring_criteria_file: "./scoring_criteria.md"
-
-generation:
-  stream: false
-  default_min_words: 1200
-
-prompt:
+writing:
+  role: |
+    你是一位专业的标书撰写专家。
+  min_words:
+    default: 1200
   output_format: "纯正文"
   first_line_template: ""
   allow_markdown_headings: false
   allow_english_terms: false
-  bidder_name: "测试投标主体"
   max_tables_per_section: 2
   summary_title: "章节小结"
   hard_constraints:
@@ -31,35 +37,44 @@ prompt:
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范。"
 
-context_pruning:
-  enabled: false
-  debug_dump: false
-  local_outline:
+processing:
+  path: "full_context"
+  context_view:
     include_ancestors: true
     include_siblings: true
     max_siblings: 8
-  scoring:
-    enabled: true
-    max_rows: 4
-  requirements_brief:
+  legacy_rule:
+    scoring_max_rows: 4
+    requirement_brief_enabled: false
+  hybrid_extract:
+    unavailable_policy: "fallback_legacy"
+    scoring_parse_mode: "auto"
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: false
+    retrieval:
+      lexical_enabled: true
+      vector_enabled: false
+      verify_enabled: false
+      top_k_lexical: 20
+      top_k_vector: 20
+      top_k_fused: 30
+      top_k_final: 6
+      min_fused_score: 0.0
+    quote_only: true
+    return_ids_only: true
+    verify_max_candidates: 8
+
+runtime:
+  stream:
     enabled: false
-    fallback: "rule_only"
-  api:
-    model: "test-model"
-    temperature: 0.2
-    max_tokens: 800
-    timeout_seconds: 30
-    max_retries: 1
-
-generation_trace:
-  enabled: true
-  directory: "./trace-output"
-  mode: "full"
-  write_prompt: true
-  write_output: true
-  write_context: true
-  write_summary: true
-  redact_sensitive: true
-
-output:
-  directory: "./output"
+  trace:
+    enabled: true
+    directory: "./trace-output"
+    mode: "full"
+    write_prompt: true
+    write_output: true
+    write_context: true
+    write_summary: true
+    redact_sensitive: true

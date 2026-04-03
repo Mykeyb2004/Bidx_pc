@@ -1,42 +1,30 @@
 # 自动标书撰写系统配置文件
 # 用途：公共服务满意度项目的 hybrid_extract 测试版
-# 特点：评分标准与采购需求都切到 hybrid_extract，但只启用 lexical retrieval，不依赖 embedding / verifier 环境变量
+# 处理路径：hybrid_extract（仅 lexical，不依赖 embedding / verifier 环境变量）
 
-role: | # system prompt 中的角色设定，多行文本会直接进入模型的 system 消息
-  你现在扮演“公共文化服务满意度测评领域投标文本专家”，专门服务于杭州菲尔德咨询参与政府采购项目文本编制。
+project:
+  bidder_name: "杭州菲尔德咨询"
+  root_dir: "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目"
+  inputs:
+    outline_file: "./投标大纲.md"
+    bid_requirements_file: "./采购需求.md"
+    scoring_criteria_file: "./评分标准.md"
+  output_dir: "./output"
 
-  一、角色要求
-   你熟悉公共文化服务现代化建设、基本公共文化服务标准化均等化、公共文化设施体系建设、数字文化服务、群众文化需求表达、满意度测评、第三方评估和政府采购文本写作，了解宣传文化和文旅系统政策语境、评审逻辑、验收要求及基层公共文化服务实际场景。
-
-  二、任务要求
-   围绕公共文化服务满意度测评类项目，准确拆解采购需求，编写或优化项目理解、需求分析、实施方案、技术路线、指标体系构建、调查组织、质量控制、风险防控、进度计划、成果交付和验收支撑等内容。
-
-  三、能力要求
-   能够准确识别采购目标、评分重点、关键交付物和实质性条款；能够将政策要求转化为测评逻辑和实施路径；能够围绕服务供给、设施布局、空间使用、数字建设、运行管理、治理保障和群众感知构建指标体系；具备省域范围、多层级调查项目的统筹实施能力，能够围绕样本设计、执行调度、现场管理、质量控制和成果归集等关键环节建立规范统一、衔接顺畅的工作体系，确保调查过程可控、标准一致、结果真实可靠；能够综合运用文案研究、深度访谈、结构化问卷、电话调查和统计分析等方法形成完整技术链条；能够建立覆盖组织管理、过程督导、数据复核、档案归集和验收衔接的项目管理体系。
-
-  四、写作原则
-   始终围绕招标文件和采购需求写作，不偏题、不漏项；始终在公共文化服务现代化建设和高质量发展框架下表达，不偏离政策口径；始终把指标体系构建、调查组织实施、质量控制、数据分析和成果输出作为主线；始终体现“前期研究—指标设计—调查实施—质量复核—数据分析—成果形成—验收交付”的完整闭环；始终做到可执行、可督导、可检查、可追溯、可核验、可验收。
-
-  五、语言要求
-   使用机关化、研究型、政府采购风格表达，要求政策性强、逻辑严密、结构清楚、措辞稳妥。优先使用“围绕”“聚焦”“立足”“依托”“构建”“细化”“强化”“形成”“推动”“确保”等表述。严禁使用宣传式、营销式、口号式语言，严禁出现“行业领先”“全面赋能”“高质量高标准完成”等空泛表述。
-
-generation: # 生成阶段的通用参数
-  default_min_words: 1500 # 默认章节最低字数
-  min_words_min: 100 # 界面或调用侧允许设置的最低字数下限
-  min_words_max: 12000 # 界面或调用侧允许设置的最低字数上限
-  min_words_step: 100 # 字数调节步长
-  stream: true # 是否以流式方式接收模型输出
-  stream_idle_timeout_seconds: 12 # 流式输出在最后一个 token 后的静默收尾超时秒数
-
-prompt: # 提示词拼接相关配置
-  output_format: "纯正文" # 写入章节任务卡的“输出方式”文案
-  first_line_template: "" # 首行模板；为空则不追加“首行要求”区块
-  allow_markdown_headings: false # 是否允许模型输出 Markdown 标题符号（#）
-  allow_english_terms: false # 是否允许输出必要英文术语
-  bidder_name: "杭州菲尔德咨询" # 投标主体统一名称
-  max_tables_per_section: 2 # 每个章节允许插入的 Markdown 表格上限
-  summary_title: "" # 章节总结标题名；当前主要用于生成后检测而非提示词拼接
-  hard_constraints: # system prompt 中追加的高优先级强约束列表
+writing:
+  role_file: "./docs/roles/公共服务满意度_role.md"
+  min_words:
+    default: 1500
+    min: 100
+    max: 12000
+    step: 100
+  output_format: "纯正文"
+  first_line_template: ""
+  allow_markdown_headings: false
+  allow_english_terms: false
+  max_tables_per_section: 2
+  summary_title: ""
+  hard_constraints:
     - "章节结构如需分层展开，必须使用正式层级序号，第一层级到第四层级分别为：一、（一）1. （1）。"
     - "如果层级序号后面带标题文字，则该行只写“序号 + 标题”，下一行另起正文。"
     - "正文中的段内枚举或并列说明，不视为章节层级，可使用“第一……、第二……”或“一是……；二是……；三是……”。"
@@ -51,75 +39,68 @@ prompt: # 提示词拼接相关配置
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范，满足对评分标准高响应、高得分的要求"
 
-context_pruning: # 章节级上下文裁剪配置
-  enabled: true
-  debug_dump: true
-  mode: "hybrid_extract" # 总模式切到 hybrid_extract
-  unavailable_policy: "fail_fast" # 测试新模式时建议 fail_fast，避免悄悄回退 legacy_rule
-  local_outline:
+processing:
+  path: "hybrid_extract"
+  context_view:
     include_ancestors: true
     include_siblings: true
     max_siblings: 8
-  scoring:
-    enabled: true
-    mode: "hybrid_extract" # 评分标准也显式切到 hybrid_extract
-    parse_mode: "auto"
-    max_rows: 4
-  requirements:
-    mode: "hybrid_extract" # 采购需求也显式切到 hybrid_extract
-    max_quotes: 4
-    max_quote_chars: 220
-  requirements_brief:
-    enabled: true
-    fallback: "rule_only"
-  retrieval:
-    lexical_enabled: true # hybrid_extract 当前要求必须为 true
-    vector_enabled: false # 纯测试版先不开向量，不依赖 BID_WRITER_EMBEDDING_*
-    rerank_enabled: false # 纯测试版先不开 verifier，不依赖 BID_WRITER_PRUNING_*
-    top_k_lexical: 20
-    top_k_vector: 20
-    top_k_fused: 30
-    top_k_final: 6
-    min_fused_score: 0.0
-    embedding:
-      model: "text-embedding-3-small"
-      batch_size: 64
-      cache_dir: "./output/_embedding_cache"
-      rebuild_on_source_change: true
-      query_prefix: ""
-      document_prefix: ""
-  extraction:
+  legacy_rule:
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: true
+  hybrid_extract:
+    unavailable_policy: "fail_fast"
+    scoring_parse_mode: "auto"
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: true
+    retrieval:
+      lexical_enabled: true
+      vector_enabled: false
+      verify_enabled: false
+      top_k_lexical: 20
+      top_k_vector: 20
+      top_k_fused: 30
+      top_k_final: 6
+      min_fused_score: 0.0
     quote_only: true
     return_ids_only: true
-    llm_verify_enabled: false
-    llm_verify_max_candidates: 8
-  api:
+    verify_max_candidates: 8
+
+models:
+  pruning:
     model: "gpt-5.4-mini"
     temperature: 0.2
     max_tokens: 1200
     timeout_seconds: 60
     max_retries: 2
+  embedding:
+    model: "text-embedding-3-small"
+    batch_size: 64
+    cache_dir: "./output/_embedding_cache"
+    rebuild_on_source_change: true
+    query_prefix: ""
+    document_prefix: ""
 
-generation_trace:
-  enabled: true
-  directory: "./log/generation_traces"
-  mode: "full"
-  write_prompt: true
-  write_output: true
-  write_context: true
-  write_summary: true
-  redact_sensitive: true
-
-bid_requirements: |
-  "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/采购需求.md"
-
-scoring_criteria: |
-  "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/评分标准.md"
-
-outline_file: |
-  "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/投标大纲.md"
-
-output:
-  directory: "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/output"
-  prefix: ""
-  normalize_soft_line_breaks_on_merge: true
+runtime:
+  stream:
+    enabled: true
+    idle_timeout_seconds: 12
+  trace:
+    enabled: true
+    directory: "./log/generation_traces"
+    mode: "full"
+    write_prompt: true
+    write_output: true
+    write_context: true
+    write_summary: true
+    redact_sensitive: true
+  debug:
+    context_pruning_dump: true
+  output:
+    prefix: ""
+  merge:
+    normalize_soft_line_breaks: true

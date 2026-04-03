@@ -6,6 +6,26 @@
 - 已对照 `bid_writer/config.py`、`README.md`、`docs/prompt_contract.md` 和 4 份公共服务满意度配置，确认当前混乱主要来自双轨写法、变体复制、路径基座不合适和部分字段语义不清。
 - 已用 `uv run python` 对 4 份项目配置做扁平差异比较，确认它们在 69 个叶子字段里最多只差 7 项，适合收敛为“基座配置 + 轻量变体”。
 - 已整理出推荐优化方向：canonical schema、`project_root` 路径基座、`extends/preset` 变体机制、显式校验与有效配置导出。
+- 用户已进一步确认：`processing` 应只保留 3 条 canonical 路径 `full_context / legacy_rule / hybrid_extract`，不再把评分标准和采购需求主链路拆成可自由混搭的项目级参数。
+- 已重新执行 `planning-with-files` 的 catchup 命令；当前环境仍缺少对应脚本，继续按项目根目录现有 planning 文件续接。
+- 已将新的参数改造方案写入 `task_plan.md` 与 `findings.md`，下一步直接进入配置层与业务代码适配。
+- 已重构 `bid_writer/config.py`：
+  - 新增 `project / writing / processing / models / runtime` 五层 canonical schema 读取
+  - 保留旧 `role` / `inputs.*` / `prompt.*` / `context_pruning.*` / `generation_trace.*` / `api.*` 兼容
+  - 新增 `processing_path`，并把 `project.root_dir` / 配置目录两套路径解析边界分开
+- 已调整 `bid_writer/context_pruner.py`，让新 schema 下的评分标准与采购需求默认跟随同一条 `processing.path`，旧 mixed-mode 则走兼容分支。
+- 已迁移 `tests/fixtures/current_prompt_config.yaml` 到新 schema，并新增 `tests/test_config_schema.py` 覆盖：
+  - 新 schema 项目根目录解析
+  - 旧 schema full-context 兼容
+  - 旧 mixed-mode 兼容
+- 已新增 `config.example.yaml`、`docs/config_schema.md` 与 `docs/roles/公共服务满意度_role.md`。
+- 已将 4 份公共服务满意度项目配置迁移到新 schema，并抽离重复角色 prompt。
+- 已更新 `README.md`、`docs/extraction_modes_and_config.md`、`docs/prompt_contract.md`，补充 canonical schema 与旧字段兼容说明。
+- 已进一步补充配置文档维护约定：`docs/config_schema.md` 增加维护说明与变更检查清单，`AGENTS.md` 和 `README.md` 也已加入同步更新提醒。
+- 已完成验证：
+  - `uv run python -m compileall bid_writer run.py tests`
+  - `uv run pytest -q`
+  - 4 份公共服务满意度项目配置实例化与 `processing_path` 推导
 
 ## 2026-03-15
 - 读取并分析了 `file_saver.py`、`gui.py`、`gui_adapter.py` 的文件名相关逻辑。
@@ -57,6 +77,58 @@
 - 已再次验证公共服务满意度基准配置下的两个章节样例，确认 prompt 构造仍然正常，且 `debug_dump` 文件可以成功落盘。
 
 ## 2026-04-03
+- 新任务：基于新的 canonical schema 设计一个可视化配置编辑界面，支持用户在桌面端设置并保存 `config*.yaml`，先出方案和线框预览，不立即实现。
+- 已再次读取 `task_plan.md`、`findings.md`、`progress.md` 与 `$planning-with-files` 技能说明，按 file-based planning 继续记录本轮工作。
+- 已检查当前 GUI 中与配置相关的 4 个关键位置：
+  - `ConfigSelectionDialog`
+  - 主工具栏配置按钮区域
+  - `select_and_switch_config()` 切换流程
+  - 生成参数弹窗样式
+- 已检查 `bid_writer/config.py` 中 canonical schema 访问器、`processing_path` 推导和 `validate_context_pruning_runtime()`，确认现有配置层已经具备支撑可视化编辑器的字段读取和运行时校验基础。
+- 已确定配置编辑器的核心交互方向：
+  - 在工具栏新增 `编辑配置`
+  - 使用大号 `Toplevel` 配置工作台
+  - 按 `project / writing / processing / models / runtime` 分组
+  - 以 `processing.path` 作为主切换开关
+  - `.env.local` secrets 仅展示状态，不进入 YAML 表单
+- 已新增 `docs/config_editor_ui_plan.md`，写入界面目标、字段分组、保存策略、校验策略、实施阶段和线框图。
+- 已同步更新 `task_plan.md` 与 `findings.md`，记录本轮配置编辑器设计结论和实现边界。
+- 用户确认开始实现后，已新增 `bid_writer/config_editor.py`：
+  - 负责 editor view model
+  - 负责 legacy -> canonical 标准化
+  - 负责 YAML 预览 / 保存 / 备份
+  - 负责连接状态探测与保存前校验
+- 已新增 `bid_writer/config_editor_dialog.py`，实现 Tkinter 配置编辑器窗口：
+  - 左侧分组导航
+  - 中间分区表单
+  - 右侧连接状态、摘要、校验和 YAML 预览
+  - 支持保存、另存为、未保存变更提醒
+- 已修改 `bid_writer/gui.py`，接入：
+  - 文件菜单 `编辑当前配置...`
+  - 工具栏 `编辑配置`
+  - 保存后自动重载当前配置
+  - 另存为后可选择切换到新配置
+- 已新增 `tests/test_config_editor.py`，验证旧 schema 标准化、连接字段保留、mixed-mode 校验和 hybrid_extract embedding 校验。
+- 已完成验证：
+  - `uv run pytest -q` -> `10 passed`
+  - `uv run python -m compileall bid_writer tests run.py`
+  - `uv run python -c "from bid_writer.gui import MainWindow; from bid_writer.config_editor_dialog import ConfigEditorDialog; print('ok')"` -> `ok`
+- 用户进一步提出“参数很多，用户可能不懂，希望鼠标悬停出现 tip”。
+- 已新增 `bid_writer/config_editor_tooltips.py`，集中维护配置字段说明文案。
+- 已在 `bid_writer/config_editor_dialog.py` 中加入通用 `HoverTooltip` 组件，并为主要字段标签、输入框、开关、单选按钮接入悬停提示。
+- 已新增 `tests/test_config_editor_tooltips.py`，覆盖关键字段 tip 文案存在性。
+- 已再次验证：
+- `uv run pytest -q` -> `11 passed`
+- `uv run python -m compileall bid_writer tests run.py`
+- 用户在真实 GUI 中反馈关闭配置编辑器后出现 `_tkinter.TclError: bad window path name`，定位到 `ScrollableSection._on_mousewheel()` 的全局滚轮回调残留。
+- 已修改 `bid_writer/config_editor_dialog.py`：
+  - 为滚轮绑定增加销毁解绑
+  - 为 `_on_mousewheel()` 增加 `winfo_exists()` / `TclError` 兜底
+  - 在控件销毁后主动停止残留回调
+- 已新增 `tests/test_config_editor_dialog.py`，覆盖“已销毁控件收到滚轮事件”和“`winfo_ismapped()` 抛 `TclError`”两种场景。
+- 已再次验证：
+  - `uv run pytest -q` -> `13 passed`
+  - `uv run python -m compileall bid_writer tests run.py`
 - 用户将讨论重点收敛到“系统角色提示词、采购需求+评分标准提炼、提示词拼接、最终输入大模型内容”，并要求以这部分为后续 prompt 优化的准备基线。
 - 已重写 `docs/prompt_contract.md`，使其严格对齐当前业务代码，只描述 system prompt、章节级提炼、prompt 拼接和最终 messages。
 - 已为 `config_公共服务满意度.yaml` 中关键字段补充中文注释，并验证 YAML 仍可正确解析。

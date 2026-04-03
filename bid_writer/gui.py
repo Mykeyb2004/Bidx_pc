@@ -612,6 +612,7 @@ class MainWindow(tk.Tk):
         # 文件菜单
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="选择配置文件...", command=self.select_and_switch_config)
+        file_menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
         file_menu.add_separator()
         file_menu.add_command(label="重载大纲", command=self.reload_outline)
         file_menu.add_command(label="扫描输出状态", command=self.refresh_status)
@@ -658,6 +659,15 @@ class MainWindow(tk.Tk):
             **_bootstyle_kwargs("secondary")
         )
         self.btn_config.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.btn_edit_config = ttk.Button(
+            self.utility_frame,
+            text="编辑配置",
+            command=self.open_config_editor,
+            padding=(12, 8),
+            **_bootstyle_kwargs("secondary")
+        )
+        self.btn_edit_config.pack(side=tk.LEFT, padx=6)
 
         self.btn_reload = ttk.Button(
             self.utility_frame,
@@ -1501,6 +1511,7 @@ class MainWindow(tk.Tk):
         button_state = tk.DISABLED if self.is_generating else tk.NORMAL
         for widget in (
             self.btn_config,
+            self.btn_edit_config,
             self.btn_reload,
             self.btn_refresh,
             self.btn_tree_expand,
@@ -1603,6 +1614,17 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"当前已在使用配置: {selected_path.name}")
             return
 
+        self._switch_to_config_path(selected_path)
+
+    def _switch_to_config_path(self, selected_path: Path, *, force_reload: bool = False) -> bool:
+        """切换到指定配置文件；必要时可对同一路径强制重载。"""
+        selected_path = selected_path.expanduser().resolve()
+        current_path = self.bid_writer.config.config_path.resolve()
+
+        if selected_path == current_path and not force_reload:
+            self.status_text.set(f"当前已在使用配置: {selected_path.name}")
+            return False
+
         self.status_text.set(f"正在切换配置: {selected_path.name}")
         self.update_idletasks()
 
@@ -1624,7 +1646,29 @@ class MainWindow(tk.Tk):
         self.bid_writer = next_bid_writer
         self.adapter = GUIAdapter(next_bid_writer)
         self._sync_loaded_outline(reset_tree_view=True)
-        self.status_text.set(f"已切换配置: {selected_path.name}")
+        if selected_path == current_path:
+            self.status_text.set(f"已重载配置: {selected_path.name}")
+        else:
+            self.status_text.set(f"已切换配置: {selected_path.name}")
+        return True
+
+    def open_config_editor(self):
+        """打开当前配置的可视化编辑器。"""
+        from .config_editor_dialog import ConfigEditorDialog
+
+        dialog = ConfigEditorDialog(self, self.bid_writer.config.config_path)
+        self.wait_window(dialog)
+
+        apply_path = dialog.result.get("apply_path")
+        if not apply_path:
+            return
+
+        apply_resolved = Path(apply_path).expanduser().resolve()
+        current_resolved = self.bid_writer.config.config_path.resolve()
+        self._switch_to_config_path(
+            apply_resolved,
+            force_reload=(apply_resolved == current_resolved),
+        )
 
     def batch_generate(self):
         """批量生成选中的标题"""

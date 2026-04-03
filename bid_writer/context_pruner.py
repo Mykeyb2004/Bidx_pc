@@ -120,8 +120,13 @@ class ChapterContextPruner:
         """构建当前章节的局部上下文。"""
         context = self._build_signal_context(heading)
         scoring_focus_terms = self._expand_focus_terms(context.chapter_focus_terms)
-        scoring_mode = self.config.context_pruning_scoring_mode
-        requirements_mode = self.config.context_pruning_requirements_mode
+        processing_path = self.config.processing_path
+        if processing_path in {"legacy_rule", "hybrid_extract"}:
+            scoring_mode = processing_path
+            requirements_mode = processing_path
+        else:
+            scoring_mode = self.config.context_pruning_scoring_mode
+            requirements_mode = self.config.context_pruning_requirements_mode
         fallback_reasons: list[str] = []
 
         runtime_errors = self.config.validate_context_pruning_runtime(raise_on_error=False)
@@ -195,11 +200,18 @@ class ChapterContextPruner:
         else:
             context.requirement_brief_status = "disabled"
 
-        context.retrieval_mode = (
-            f"scoring={scoring_mode};requirements={requirements_mode};"
-            f"vector={'on' if self.config.context_pruning_retrieval_vector_enabled else 'off'};"
-            f"rerank={'on' if self.config.context_pruning_rerank_or_verify_enabled else 'off'}"
-        )
+        if processing_path in {"full_context", "legacy_rule", "hybrid_extract"}:
+            context.retrieval_mode = (
+                f"path={processing_path};"
+                f"vector={'on' if self.config.context_pruning_retrieval_vector_enabled else 'off'};"
+                f"verify={'on' if self.config.context_pruning_rerank_or_verify_enabled else 'off'}"
+            )
+        else:
+            context.retrieval_mode = (
+                f"scoring={scoring_mode};requirements={requirements_mode};"
+                f"vector={'on' if self.config.context_pruning_retrieval_vector_enabled else 'off'};"
+                f"verify={'on' if self.config.context_pruning_rerank_or_verify_enabled else 'off'}"
+            )
         context.fallback_reason = "；".join(reason for reason in fallback_reasons if reason).strip()
         return context
 

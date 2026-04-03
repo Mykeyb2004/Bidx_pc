@@ -48,6 +48,7 @@ uv sync
 - Automatic numbered suffix for conflicts
 - 测试脚本文件在 /tests 中
 - 功能说明性文档在 /docs 中，开发过程中分析性、说明性文档保存在此处，并在功能变动时维护这些文档。有相关功能的变动也先参考一下对应文档
+- 配置结构相关变更时，需同步维护 `/docs/config_schema.md`、`/config.example.yaml`、相关 `config_*.yaml` 与对应测试夹具
 - 调试日志放到 /log 中
 
 ### Error Handling

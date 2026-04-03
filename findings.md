@@ -11,6 +11,29 @@
 - `Config` 通过大量逐字段 property + 默认回退支撑兼容层，非法枚举和值大多会静默回退到默认值，缺少“显式 schema 校验 + 未知字段告警”。
 - README、YAML 内联注释和代码默认值共同承担“配置说明”职责，已经出现“文档说明”和“实际默认行为”分散的问题。
 
+## 新 schema 设计决议
+- canonical schema 采用 `project / writing / processing / models / runtime` 五层，而不是继续把配置结构贴着实现模块命名。
+- `processing` 已与用户确认收敛为 3 条业务路径：
+  - `full_context`：采购需求和评分标准都不做章节级处理
+  - `legacy_rule`：两者都走现有规则链路
+  - `hybrid_extract`：两者都走检索摘录链路
+- 新 schema 中不再推荐、也不再显式暴露“评分标准走一条链路、采购需求走另一条链路”的项目级混搭配置。
+- 旧 schema 的 mixed-mode 兼容仍需要保留一层内部兜底，否则存在潜在回归风险；但 canonical schema 不把它作为正式能力继续推广。
+- `processing` 顶层应先表达“当前项目跑哪条链路”，再在链路内部挂各自参数，而不是继续平铺一堆开关组合。
+- `context_pruning.retrieval.rerank_enabled` 与 `context_pruning.extraction.llm_verify_enabled` 在新 schema 中更适合收敛为单一的 `verify_enabled` 概念。
+- `role` 在旧 schema 中承担了领域背景、写作规范和风格约束的混合职责；本轮实现先迁移到 `writing.role` / `writing.role_file`，不强行再拆得更细。
+- `project.root_dir` 是必要补充：只有引入项目根目录，项目输入资源和输出目录才不必继续写成长绝对路径。
+
+## 本轮实现后补充发现
+- 新 schema 下，`project.inputs.*` 与 `project.output_dir` 现在相对 `project.root_dir` 解析，已经能显著缩短真实项目配置里的长绝对路径。
+- `runtime.trace.directory` 与 `models.embedding.cache_dir` 最终保留为“相对配置文件目录”解析，更符合仓库内 `/log` 与工具运行缓存的使用边界。
+- `Config.processing_path` 已成为新的主链路入口；新 schema 下业务代码默认要求评分标准与采购需求跟随同一条处理路径。
+- 对旧 schema 的 mixed-mode，`Config.processing_path` 会返回 `mixed`，`ChapterContextPruner` 则回退到旧的分开路由逻辑，避免回归。
+- 现有业务代码主体基本不需要大改；只要 `Config` 兼容输出旧 accessor，GUI、AIWriter、trace、embedding、verifier 都能平滑承接新 schema。
+- 将公共服务满意度角色设定抽出为 `docs/roles/公共服务满意度_role.md` 后，4 份项目配置已经不再重复粘贴整段角色 prompt。
+- `docs/config_schema.md` 现在已补充“维护约定”和“变更检查清单”，可以作为后续配置变更的单一说明入口。
+- 仓库约定也已补充到 `AGENTS.md`：配置结构相关变更时，需要同步维护 `docs/config_schema.md`、`config.example.yaml`、相关 `config_*.yaml` 和测试夹具。
+
 ## 当前实现
 - `bid_writer/file_saver.py` 中 `sanitize_filename()` 采用替换式清洗，不是可逆编码。
 - `bid_writer/gui.py` 预览时直接按清洗后的标题拼文件路径。
@@ -160,3 +183,24 @@
 - `prompt_contract.md` 中若把 `local_outline` 视为 prompt 输入、或把 `BID_WRITER_PRUNING_*` 视为“当前不参与章节提炼”，都会与现状不符。
 - 当前 `BID_WRITER_EMBEDDING_*` 在 `vector_enabled=true` 时已经会参与章节检索；`BID_WRITER_PRUNING_*` 在 `llm_verify_enabled=true` 或 `rerank_enabled=true` 时已经会参与候选校验。
 - `AIWriter._build_prompt_contract_blocks()` 的 `chapter_scope.source_context` 原先把 `pruned_context.local_outline` 记成了 prompt 来源；现已改成真实来源 `HeadingNode.parent/title/siblings`，避免 trace 解释偏差。
+
+## 配置编辑器设计相关发现
+- 当前 GUI 只有“切换配置文件”，还没有“编辑配置内容”的入口；现有配置对话框更适合保留为快速切换器，而不是继续扩展成复杂表单。
+- 当前 GUI 的交互风格以工具栏按钮 + `Toplevel` 模态窗口为主，新增配置编辑器时应延续这一风格，避免引入完全不同的导航模型。
+- 当前 canonical schema 的 5 个一级分组已经足够稳定，适合直接成为配置编辑器的一级导航：`project / writing / processing / models / runtime`。
+- `processing.path` 是最重要的业务开关，配置编辑器应先让用户选 `full_context / legacy_rule / hybrid_extract`，再展示链路参数；否则参数很多但缺乏主线。
+- `project.inputs.*` 在真实项目里更适合作为“文件路径”来维护，不适合在配置器里直接编辑长篇采购需求或评分标准正文。
+- `writing.role` 需要保留“文件路径”和“内嵌文本”两种能力，但界面应推荐 `role_file`，以减少大段 prompt 重复粘贴。
+- `Config` 已提供足够多的 canonical accessor 和 `validate_context_pruning_runtime()`，说明配置编辑器后端不必从头设计字段解释层，主要缺的是 editor view model 和保存逻辑。
+- `.env.local` 已经承载 generation / pruning / embedding 的敏感连接信息；配置编辑器更适合展示“是否已配置”的状态，而不是把 secrets 拉回到 YAML 表单里。
+- 由于当前保存链路基于 PyYAML，若后续直接写回 YAML，默认不会保留原注释和字段顺序；这意味着配置编辑器首版应明确“保存即标准化”的产品语义。
+
+## 配置编辑器实现后的补充发现
+- 采用“canonical 可视化编辑 + preserved extras 回填”的保存策略后，可以在标准化输出的同时保留 `models.generation.base_url`、`api_key` 这类当前界面未直接编辑的连接字段，降低首版数据丢失风险。
+- mixed-mode 旧配置无法直接映射到新的三路径模型，首版编辑器通过 `processing.path=mixed` 的过渡态显式报错，要求用户先做业务决策，再允许保存。
+- `project.inputs.bid_requirements` / `scoring_criteria` 和 `writing.role` 的旧式 inline 文本仍可通过“文件 / 内嵌文本”双模式编辑，不会因为标准化 UI 被直接抹掉。
+- 把配置编辑器拆成 `config_editor.py` 与 `config_editor_dialog.py` 两层后，YAML 导出与校验逻辑可以独立测试，不需要依赖 Tk 界面才能验证核心行为。
+- 当前首版列表型字段采用“每行一条”的文本编辑方式，复杂度明显低于自定义列表控件，同时已足够覆盖 `hard_constraints` 和 `extra_rules` 的主要维护场景。
+- 对“用户可能不懂参数”的问题，最直接有效的改法不是再挪分组，而是给字段本身补悬停解释；这样用户在编辑现场就能获得解释，不需要来回翻文档。
+- 将 tip 文案单独抽到 `config_editor_tooltips.py` 后，后续可以独立维护字段说明，而不必反复改动 Tk 布局代码。
+- `ScrollableSection` 若直接对每个分区使用 `bind_all("<MouseWheel>")`，在窗口关闭后容易残留全局滚轮回调；这类问题必须在回调里兜底 `TclError`，并在销毁时主动解绑。

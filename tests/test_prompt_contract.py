@@ -36,7 +36,9 @@ def _prepare_config_workspace(tmp_path: Path, config_name: str) -> Config:
     config_path = workspace / config_name
     config = Config(str(config_path))
     config._config.setdefault("generation_trace", {})["directory"] = str(workspace / "trace-output")
+    config._config.setdefault("runtime", {}).setdefault("trace", {})["directory"] = str(workspace / "trace-output")
     config._config.setdefault("output", {})["directory"] = str(workspace / "output")
+    config._config.setdefault("project", {})["output_dir"] = str(workspace / "output")
     return config
 
 
@@ -107,6 +109,7 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
 
 def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "legacy_rule"
     config._config.setdefault("context_pruning", {})["enabled"] = True
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")

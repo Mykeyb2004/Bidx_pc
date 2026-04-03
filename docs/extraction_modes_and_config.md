@@ -4,6 +4,16 @@
 
 本文只说明“项目采购需求”和“评分标准”这两类源文，在章节生成前如何被摘录/提炼，以及相关配置参数当前的真实作用。
 
+说明：
+
+- 从 2026-04 这轮配置改造开始，YAML 推荐写法已切到 canonical schema：`project / writing / processing / models / runtime`
+- 本文后续提到的 `context_pruning.*`，更多是在描述“逻辑参数”和旧 schema 兼容字段
+- 新 schema 下，章节提炼主路径统一由 `processing.path` 控制：
+  - `full_context`
+  - `legacy_rule`
+  - `hybrid_extract`
+- 旧 `context_pruning.*` 写法仍兼容，但不再是新项目推荐写法
+
 本文重点回答四个问题：
 
 1. 目前有哪些提炼模式
@@ -28,16 +38,17 @@
 
 ## 2. 总体结构
 
-当前“摘录提炼”属于章节级上下文裁剪的一部分，统一挂在 `context_pruning` 下。
+当前“摘录提炼”在实现上仍属于章节级上下文裁剪的一部分；在 canonical schema 中，主入口位于 `processing.path`。
 
 整体流程如下：
 
 ```text
-context_pruning.enabled
+processing.path
   -> build_context(heading)
     -> 构建章节信号（response_labels / chapter_focus_terms / match_keywords）
-    -> 评分标准按 scoring.mode 选择 legacy_rule 或 hybrid_extract
-    -> 采购需求按 requirements.mode 选择 legacy_rule 或 hybrid_extract
+    -> full_context: 不进入章节级摘录提炼
+    -> legacy_rule: 评分标准与采购需求都走规则链路
+    -> hybrid_extract: 评分标准与采购需求都走检索摘录链路
     -> 可选 requirement_brief 原文摘录
     -> 输出 ChapterContext
 ```

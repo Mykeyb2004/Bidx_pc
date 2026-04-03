@@ -1,0 +1,245 @@
+# 配置 Schema 说明
+
+## 1. 目标
+
+当前项目推荐使用按“信息性质”分层的 canonical schema，而不是直接沿着实现模块堆字段。
+
+推荐分层如下：
+
+- `project`
+  - 项目固有信息、输入资源、输出目录
+- `writing`
+  - 角色设定、写作规则、提示词约束、字数要求
+- `processing`
+  - 章节处理路径与业务提炼参数
+- `models`
+  - 主模型、辅助模型、 embedding 的非敏感参数
+- `runtime`
+  - stream、trace、debug、输出细节与合并行为
+
+## 1.1 维护约定
+
+这份文档是当前配置结构的单一说明入口。后续只要发生以下任一变更，都应同步更新本文档：
+
+- 新增、删除、重命名配置字段
+- 调整字段默认值、优先级或路径解析规则
+- 调整 `processing.path` 的业务路径语义
+- 调整旧 schema 的兼容范围
+- 调整示例配置的推荐写法
+
+与本文档需要一起维护的文件通常包括：
+
+- `config.example.yaml`
+- 项目级示例配置，如 `config_*.yaml`
+- `README.md` 中的配置说明入口
+- 涉及配置解析行为的测试夹具与测试用例
+
+## 2. `processing` 的 canonical 设计
+
+`processing` 只保留 3 条业务路径：
+
+- `full_context`
+  - 采购需求和评分标准都不做章节级处理，直接把完整原文送入主 prompt
+- `legacy_rule`
+  - 采购需求和评分标准都走现有规则链路
+- `hybrid_extract`
+  - 采购需求和评分标准都走检索摘录链路
+
+推荐写法：
+
+```yaml
+processing:
+  path: "legacy_rule" # full_context / legacy_rule / hybrid_extract
+```
+
+在 canonical schema 中，不再推荐把“评分标准”和“采购需求”的主链路拆成两条可自由混搭的项目级参数。
+
+旧 schema 理论上允许 mixed-mode：
+
+- `context_pruning.scoring.mode = legacy_rule`
+- `context_pruning.requirements.mode = hybrid_extract`
+
+当前代码仍保留兼容，但这只是兼容层，不再作为推荐写法继续推广。
+
+## 3. 推荐字段布局
+
+### 3.1 `project`
+
+```yaml
+project:
+  root_dir: "/path/to/bid-project"
+  bidder_name: "示例投标主体名称"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./采购需求.md"
+    scoring_criteria_file: "./评分标准.md"
+  output_dir: "./output"
+```
+
+说明：
+
+- `project.root_dir` 用于声明项目资料根目录
+- `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
+
+### 3.2 `writing`
+
+```yaml
+writing:
+  role_file: "./docs/roles/example_role.md"
+  min_words:
+    default: 1500
+    min: 100
+    max: 12000
+    step: 100
+  output_format: "纯正文"
+  first_line_template: ""
+  allow_markdown_headings: false
+  allow_english_terms: false
+  max_tables_per_section: 2
+  summary_title: ""
+  hard_constraints: []
+  extra_rules: []
+```
+
+说明：
+
+- `writing.role` 或 `writing.role_file` 用于角色设定
+- `writing.role_file` 适合多个项目配置复用同一段长 prompt
+
+### 3.3 `processing`
+
+```yaml
+processing:
+  path: "hybrid_extract"
+  context_view:
+    include_ancestors: true
+    include_siblings: true
+    max_siblings: 8
+  legacy_rule:
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: true
+  hybrid_extract:
+    unavailable_policy: "fail_fast"
+    scoring_parse_mode: "auto"
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: true
+    retrieval:
+      lexical_enabled: true
+      vector_enabled: false
+      verify_enabled: false
+      top_k_lexical: 20
+      top_k_vector: 20
+      top_k_fused: 30
+      top_k_final: 6
+      min_fused_score: 0.0
+    quote_only: true
+    return_ids_only: true
+    verify_max_candidates: 8
+```
+
+说明：
+
+- `processing.path` 决定当前项目跑哪条链路
+- 每条链路自己的参数挂在各自子块下
+- `verify_enabled` 统一表达原先 `rerank_enabled` / `llm_verify_enabled` 那条候选校验链路
+
+### 3.4 `models`
+
+```yaml
+models:
+  generation:
+    model: "gpt-4o-mini"
+    temperature: 0.7
+    max_tokens: 8000
+    timeout_seconds: 120
+    max_retries: 3
+  pruning:
+    model: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 1200
+    timeout_seconds: 60
+    max_retries: 2
+  embedding:
+    model: "text-embedding-3-small"
+    batch_size: 64
+    cache_dir: "./output/_embedding_cache"
+    rebuild_on_source_change: true
+    query_prefix: ""
+    document_prefix: ""
+```
+
+说明：
+
+- 敏感值仍建议放 `.env.local`
+- 非敏感模型参数留在 YAML
+
+### 3.5 `runtime`
+
+```yaml
+runtime:
+  stream:
+    enabled: true
+    idle_timeout_seconds: 12
+  trace:
+    enabled: true
+    directory: "./log/generation_traces"
+    mode: "full"
+    write_prompt: true
+    write_output: true
+    write_context: true
+    write_summary: true
+    redact_sensitive: true
+  debug:
+    context_pruning_dump: false
+  output:
+    prefix: ""
+    include_title_header: true
+    overwrite_existing: true
+    filename_max_length: 100
+    empty_filename_fallback: "untitled"
+  merge:
+    normalize_soft_line_breaks: false
+```
+
+说明：
+
+- `runtime.trace.directory`、`models.embedding.cache_dir` 这类运行产物路径默认相对配置文件目录解析
+- `project.output_dir` 这类项目输出路径默认相对 `project.root_dir` 解析
+
+## 4. 兼容策略
+
+当前代码仍兼容以下旧字段：
+
+- 根级 `outline_file` / `bid_requirements` / `scoring_criteria`
+- `inputs.*`
+- `role`
+- `generation.*`
+- `prompt.*`
+- `context_pruning.*`
+- `generation_trace.*`
+- `api.*`
+
+兼容原则：
+
+- 新 schema 优先级高于旧 schema
+- 旧字段继续可读，但不再作为推荐写法
+- 新项目、示例配置和文档都应优先采用 canonical schema
+
+## 5. 变更检查清单
+
+当你修改配置相关代码时，建议至少检查以下几项：
+
+1. `bid_writer/config.py` 中是否已经接入新字段或兼容逻辑
+2. `docs/config_schema.md` 是否反映了真实结构、优先级和路径规则
+3. `config.example.yaml` 是否仍是推荐写法
+4. 相关 `config_*.yaml` 项目配置是否需要同步迁移
+5. `README.md` 的配置入口说明是否仍准确
+6. 测试夹具与测试是否覆盖新的读取行为
+
+## 6. 相关文档
+
+- 配置结构的可视化编辑方案见 [配置编辑器界面方案](config_editor_ui_plan.md)
