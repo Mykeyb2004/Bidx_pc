@@ -1,224 +1,606 @@
 # Prompt Contract
 
-## Current prompt assembly path
+## 1. 文档目的
 
-Phase 1 keeps the prompt assembly skeleton code-defined in `bid_writer/ai_writer.py`.
-The current chapter prompt is assembled inside `AIWriter.build_prompt_result(...)` in this exact order:
+本文只覆盖四件事：
+
+1. system 角色提示词如何生成
+2. 项目采购需求与评分标准如何被提炼为章节级上下文
+3. user 提示词如何按固定顺序拼接
+4. 最终实际发送给大模型的内容长什么样
+
+本文不讨论以下内容：
+
+- GUI 交互
+- trace 展示层的维护者摘要视图
+- 生成完成后的正文后处理细节
+
+与本文直接相关的代码入口有三个：
+
+- `bid_writer/ai_writer.py`
+- `bid_writer/context_pruner.py`
+- `bid_writer/config.py`
+
+## 2. 真实调用链
+
+当前章节生成请求的 prompt 链路固定如下：
+
+1. `AIWriter.prepare_generation(heading, additional_requirements, min_words, stream)`
+2. `AIWriter.build_prompt_result(...)`
+3. 如果 `context_pruning_enabled=True`，则在 `build_prompt_result()` 内调用 `ChapterContextPruner.build_context(heading)`
+4. `AIWriter.build_system_prompt()`
+5. 组装 `messages = [{"role": "system", ...}, {"role": "user", ...}]`
+6. `_build_request_options(messages, stream)` 生成模型请求参数
+7. `expand_raw()` 调用大模型
+
+这意味着，真正进入大模型的提示词只有两段：
+
+- 一段 `system prompt`
+- 一段 `user prompt`
+
+没有第三段隐藏的 requirements prompt，也没有单独的 scoring prompt。
+
+## 3. System Prompt
+
+### 3.1 组成来源
+
+`system prompt` 由 `AIWriter.build_system_prompt()` 生成，来源只有两块：
+
+1. `Config.role`
+2. `AIWriter._build_hard_constraints()` 产出的高优先级强约束
+
+### 3.2 `Config.role`
+
+`Config.role` 是 system prompt 的第一段。如果配置里未设置，默认值是：
+
+```text
+你是一位专业的标书撰写专家。
+```
+
+### 3.3 高优先级强约束
+
+`_build_hard_constraints()` 会按顺序拼出以下约束，并做去重：
+
+1. 如果设置了 `prompt_bidder_name`，增加“投标主体统一使用该名称”的约束
+2. 如果 `prompt_allow_markdown_headings=False`，增加“严禁使用 Markdown 标题符号（#）”约束
+3. 如果 `prompt_allow_english_terms=False`，增加“禁止不必要英文/英文缩写/中英对照”约束
+4. 固定增加一条“默认使用正式层级序号组织正文”的约束
+5. 固定增加一条“只要正文形成多板块/多段/表格/清单，就必须继续用正式层级序号展开”的约束
+6. 追加 `prompt_hard_constraints`
+
+### 3.4 最终形态
+
+最终 `system prompt` 的文本结构如下：
+
+```text
+{role}
+
+【最高优先级输出强约束】
+以下规则优先级高于其他风格建议、默认模板和惯常表达；如有冲突，必须以本节规则为准。
+- ...
+- ...
+```
+
+### 3.5 重要边界
+
+以下内容当前不进入 `system prompt`：
+
+- `bid_requirements`
+- `scoring_criteria`
+- `prompt_output_format`
+- `prompt_first_line_template`
+- `additional_requirements`
+
+这些内容都在 `user prompt`。
+
+## 4. 项目采购需求与评分标准提炼
+
+### 4.1 入口开关
+
+章节级提炼是否发生，只看 `context_pruning_enabled`。
+
+- `False`：不做章节级提炼，直接走 full-context 分支
+- `True`：尝试构建 `ChapterContext`
+
+需要特别注意：
+
+- `build_prompt_result()` 里如果 `context_pruner.build_context(...)` 抛异常，会直接静默回退到 full-context 分支
+- 也就是说，只要裁剪失败，大模型看到的就会变成完整大纲、完整采购需求、完整评分标准
+
+### 4.2 `ChapterContext` 是什么
+
+`ChapterContext` 是章节级裁剪结果，包含：
+
+- `local_outline`
+- `response_labels`
+- `chapter_focus_terms`
+- `match_keywords`
+- `scoring_items`
+- `scoring_candidates`
+- `requirement_seed`
+- `requirement_blocks`
+- `requirement_brief`
+- `requirement_brief_status`
+- `requirement_brief_error`
+
+真正会影响 prompt 拼接的核心字段只有四类：
+
+- `local_outline`
+- `scoring_items`
+- `requirement_seed`
+- `requirement_brief`
+
+### 4.3 局部章节信号是怎么提取的
+
+在 `ChapterContextPruner._build_base_context()` 中，先构建章节自身的匹配信号：
+
+1. `response_labels`
+2. `chapter_focus_terms`
+3. `match_keywords`
+
+它们的来源分别是：
+
+- `response_labels`
+  - 从当前标题及祖先标题中，匹配 `响应:` 或 `对应评分标准:` 这类标记
+  - 例如标题里有 `（响应：项目理解、质量保障）`，会被拆成多个 label
+- `chapter_focus_terms`
+  - 从当前章节标题本身抽取关键词变体
+  - 会去掉常见通用后缀，例如“方案”“措施”“计划”等
+- `match_keywords`
+  - 把 `response_labels` 和整条标题链的关键词变体合并起来，作为统一匹配词集
+
+### 4.4 评分标准提炼
+
+评分标准的来源是 `Config.scoring_criteria`。
+
+当前实现不是自由文本语义理解，而是“先解析 Markdown 表格，再做规则匹配”：
+
+1. 从 `scoring_criteria` 中解析 Markdown 表格
+2. 识别表头中的“子项/评分项/评审因素/项目/子项目”
+3. 识别表头中的“评审标准/评分标准/评审内容/标准”
+4. 可选识别“权重/分值/满分/分数”
+5. 每一行转成一个 `ScoringCriterion(subitem, standard, weight)`
+
+之后通过 `_route_scoring_items()` 计算每一行与当前章节的相关度：
+
+- `response_labels` 与 `subitem` 的命中关系
+- `match_keywords` 与 `subitem + standard` 的命中关系
+- `chapter_focus_terms` 扩展后的焦点词加分
+
+只保留分数大于 0 的评分行，按分数倒序排序，最终截断为 `context_pruning_scoring_max_rows` 条。
+
+如果出现以下任一情况，user prompt 中就不会出现 `评分关注`：
+
+- `context_pruning_scoring_enabled=False`
+- `scoring_criteria` 为空
+- `scoring_criteria` 不是可解析的 Markdown 表格
+- 有表格，但没有匹配到当前章节的评分行
+
+### 4.5 采购需求提炼
+
+采购需求的来源是 `Config.bid_requirements`。
+
+当前实现也不是大模型摘要，而是规则分块和匹配：
+
+1. 将 `bid_requirements` 按空行切块
+2. 如果某个块看起来像标题块，会与下一块合并
+3. 对每个块按以下信号打分
+   - `response_labels`
+   - `match_keywords`
+   - `chapter_focus_terms`
+4. 对明显偏题的通用噪音块做降权
+5. 选出最相关的块
+
+选择上限是：
+
+- 最多 5 个块
+- 总字符数大约不超过 1000
+
+如果一个相关块都没选出来，会退回到“取前几个非低价值块”的保底策略。
+
+### 4.6 `requirement_seed` 和 `requirement_brief`
+
+从已选中的采购需求块，会派生出两种不同层次的结果。
+
+#### `requirement_seed`
+
+`requirement_seed` 是“压缩后的需求要点”：
+
+- 来自已选中需求块
+- 对内容做简短归纳
+- 最多 5 条
+- 每条最长约 120 个字符
+- 结果是 `- xxx` 形式的项目符号
+
+它更像“提炼后的章节需求摘要”。
+
+#### `requirement_brief`
+
+`requirement_brief` 是“原文摘录”：
+
+- 只在 `context_pruning_requirements_brief_enabled=True` 时生成
+- 不是辅助模型摘要
+- 不是对 `requirement_seed` 的改写
+- 它直接从已选中需求块中截取原文句子
+- 每个块最多取前 2 句
+- 最多保留 4 条
+
+因此当前实现里：
+
+- `requirement_seed` 是概括版
+- `requirement_brief` 是摘录版
+
+### 4.7 一个容易混淆但很关键的事实
+
+内部字段名虽然叫 `requirement_brief`，但它进入最终 `user prompt` 时，标题仍然写成：
+
+```text
+## 需求要点
+```
+
+原因不是它真的变成了“摘要”，而是为了和任务卡里的“写作依据：优先根据下方评分关注和需求要点组织内容”保持一致。
+
+也就是说：
+
+- 内部数据语义：`requirement_brief = 原文摘录`
+- 外部 prompt 展示标题：`需求要点`
+
+### 4.8 哪个需求段会进入 user prompt
+
+pruned 分支里，需求相关内容只会出现一个区块：
+
+1. 如果 `requirement_brief` 非空，优先使用它
+2. 否则如果 `requirement_seed` 非空，使用它
+3. 两者都空，则不拼需求区块
+
+不存在同时把 `requirement_brief` 和 `requirement_seed` 一起塞进 prompt 的情况。
+
+## 5. User Prompt 拼接规则
+
+### 5.1 固定顺序
+
+`AIWriter.build_prompt_result()` 按以下固定顺序拼接 `user prompt`：
 
 1. `task_card`
 2. `structure_contract`
-3. optional `first_line_rule`
-4. pruned-context branch:
-   - `scope_reference`
-   - optional `scoring_focus`
-   - `requirement_brief` or `requirement_points`
-5. full-context branch:
-   - `full_outline`
-   - optional `bid_requirements`
-   - optional `scoring_criteria`
-6. optional `additional_requirements`
-7. optional `extra_rules`
+3. 可选 `first_line_rule`
+4. 二选一上下文分支
+   - pruned-context 分支
+   - full-context 分支
+5. 可选 `additional_requirements`
+6. 可选 `extra_rules`
 
-The system prompt is assembled separately in `AIWriter.build_system_prompt()`. It combines:
+这个顺序是硬编码的，没有配置化。
 
-- `Config.role`
-- bidder naming constraints from `prompt_bidder_name`
-- heading and language constraints from `prompt_allow_markdown_headings` and `prompt_allow_english_terms`
-- additional hard constraints from `prompt_hard_constraints`
+### 5.2 低层 section 一览
 
-This means the final generation contract is already split into two prompt kinds:
+| Section id | 最终标题 | 何时出现 | 说明 |
+|------------|----------|----------|------|
+| `task_card` | `## 章节任务卡` | 总是出现 | 定义当前章节写作任务 |
+| `structure_contract` | `## 结构输出硬要求` | 总是出现 | 定义正文结构硬要求 |
+| `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
+| `scope_reference` | `## 章节边界参考` | pruned 分支 | 给出父标题/当前标题/同级标题 |
+| `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
+| `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
+| `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |
+| `full_outline` | `## 完整总大纲参考` | full 分支且 outline 有内容时 | 放完整 outline |
+| `bid_requirements` | `## 招标需求参考` | full 分支且有采购需求原文时 | 放完整采购需求 |
+| `scoring_criteria` | `## 评分标准参考` | full 分支且有评分标准原文时 | 放完整评分标准 |
+| `additional_requirements` | `## 用户附加要求` | 用户输入非空时 | 运营侧临时补充要求 |
+| `extra_rules` | `## 其他写作要求` | `prompt_extra_rules` 非空时 | 额外规则列表 |
 
-- system prompt: highest-priority role and hard constraints
-- user prompt: task card, structure guidance, context blocks, and optional user additions
+### 5.3 `task_card` 具体写了什么
 
-## Current low-level prompt sections
+`task_card` 当前固定包含以下字段：
 
-The current low-level section ids are the source-of-truth inputs for Phase 1 rollup:
+- 写作场景
+- 本章重点
+- 字数要求
+- 输出方式
+- 结构要求
+- 表格控制
+- 写作依据
 
-| Section id | Source | When it appears |
-|------------|--------|-----------------|
-| `task_card` | `AIWriter._build_task_card(...)` | always |
-| `structure_contract` | `AIWriter._build_structure_contract_section()` | always |
-| `first_line_rule` | `AIWriter._format_first_line(...)` | only when `prompt.first_line_template` is non-empty |
-| `scope_reference` | `AIWriter._build_scope_reference(...)` | pruned mode only |
-| `scoring_focus` | `AIWriter._build_scoring_focus_section(...)` | pruned mode and matched scoring items exist |
-| `requirement_brief` | `pruned_context.requirement_brief` | pruned mode and requirement brief exists |
-| `requirement_points` | `pruned_context.requirement_seed` | pruned mode when brief is absent but seed exists |
-| `full_outline` | `Config.get_outline_content()` | full-context mode only |
-| `bid_requirements` | `Config.bid_requirements` | full-context mode when requirements text exists |
-| `scoring_criteria` | `Config.scoring_criteria` | full-context mode when scoring text exists |
-| `additional_requirements` | end-user input | only when the operator enters extra requirements |
-| `extra_rules` | `AIWriter._build_extra_rules_section()` | only when `prompt.extra_rules` is non-empty |
+其中几个字段的真实来源要特别注意：
 
-The raw `prompt_sections` list is already captured during assembly and must remain available in Phase 1.
+- “本章重点”来自 `pruned_context.chapter_focus_terms`，如果没有 pruned context，则退回标题自身
+- “输出方式”只引用 `prompt_output_format` 这段配置文本
+- “表格控制”来自 `prompt_max_tables_per_section`
+- “写作依据”固定写成“优先根据下方评分关注和需求要点组织内容”
 
-## Current trace artifact surface
+### 5.4 `structure_contract` 具体写了什么
 
-The current trace contract is implemented by `GenerationTraceSession` in `bid_writer/generation_trace.py`.
+`structure_contract` 是面向正文结构的 user prompt 硬要求，当前固定包括：
 
-`GenerationTraceSession._build_context_payload()` currently writes:
+- 不接受整篇无序号散文式表达
+- 至少出现一个正式层级序号“一、”
+- 出现多个板块/自然段/表格/清单/流程/机制/并列措施时，必须继续展开层级
+- 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文
+- 表格前标题和引导性标题也必须纳入正式层级
+- 段内枚举不能替代章节层级序号
 
-- `context_mode`
-- `context_pruning_enabled`
-- `prompt_sections`
-- `prompt_lengths`
-- `pruned_context` or `full_context`
+### 5.5 `first_line_rule`
 
-Other current artifacts remain stable and are already documented in `docs/generation_trace.md`:
+当 `prompt_first_line_template` 非空时，会额外插入：
 
-- `manifest.json`
-- `01_heading.json`
-- `02_context_assembly.json`
-- `03_prompt_system.md`
-- `04_prompt_user.md`
-- `05_request_options.json`
-- `06_generation_output.md`
-- `07_summary.md`
+```text
+## 首行要求
+- 首行固定输出：{格式化后的首行}
+- 除首行外，不要再次重复当前标题。
+```
 
-The current maintainer workflow is:
+模板支持：
 
-1. open `07_summary.md`
-2. inspect `04_prompt_user.md`
-3. inspect `02_context_assembly.json`
-4. inspect `06_generation_output.md`
+- `{title}`
+- `{full_path}`
 
-Phase 1 must improve the primary maintainer view without removing this raw-layer workflow.
+### 5.6 pruned-context 分支
 
-## Current config compatibility surface
+当 `pruned_context` 成功构建后，user prompt 会追加以下内容：
 
-The active public config surface is broader than a single YAML shape and must stay compatible.
+1. `## 章节边界参考`
+2. 如果命中评分项，则追加 `## 评分关注`
+3. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
+4. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
 
-### Current public config families
+这条分支不会把完整 `bid_requirements` 和完整 `scoring_criteria` 直接放进 user prompt。
 
-- `prompt.*`
-- `context_pruning.*`
-- `generation_trace.*`
-- root-level `outline_file`
-- root-level `bid_requirements`
-- root-level `scoring_criteria`
-- root-level `bid_requirements_file`
-- root-level `scoring_criteria_file`
-- `inputs.*` fallbacks
+### 5.7 full-context 分支
 
-### Current compatibility behavior
+以下情况会进入 full-context 分支：
 
-`Config` uses `_get_first_defined(...)` and related helpers to support both current and older shapes.
-Important compatibility seams include:
+- `context_pruning_enabled=False`
+- `context_pruner.build_context(...)` 抛异常
 
-- `inputs.outline_file` and root-level `outline_file`
-- `inputs.bid_requirements` / `inputs.bid_requirements_file` and root-level alternatives
-- `inputs.scoring_criteria` / `inputs.scoring_criteria_file` and root-level alternatives
-- inline text and inline file-path detection via `_extract_inline_file_path(...)`
-- default values for `prompt.*`, `context_pruning.*`, and `generation_trace.*`
+在 full-context 分支中，会按顺序尝试放入：
 
-`README.md` and `config_公共服务满意度.yaml` together define the compatibility baseline that Phase 1 must preserve.
+1. `## 完整总大纲参考`
+2. `## 招标需求参考`
+3. `## 评分标准参考`
 
-## Phase 1 business blocks
+对应原文非空时，该 section 才会真正出现。
 
-Phase 1 introduces a summarized maintainer-facing contract with these exact block ids:
+也就是说，full 分支是“整段原文直塞”，不是章节级提炼。
 
-1. `system_constraints`
-2. `chapter_task`
-3. `structure_rules`
-4. `chapter_scope`
-5. `requirement_context`
-6. `scoring_context`
+### 5.8 拼接方式
 
-These are business-level blocks for maintainers. They do not replace the raw `prompt_sections` layer.
+每个 section 都通过 `_append_prompt_section()` 追加到 `prompt_parts`，最后执行：
 
-### Block intent
+```python
+prompt = "\n".join(prompt_parts)
+```
 
-| Block id | Prompt kind | Maintainer question it answers |
-|----------|-------------|--------------------------------|
-| `system_constraints` | system | Which hard constraints define the global writing contract? |
-| `chapter_task` | user | What chapter is being written and what operator-specific input applies? |
-| `structure_rules` | user | Which structural formatting rules shape the chapter output? |
-| `chapter_scope` | user | What outline boundary defines this chapter’s scope? |
-| `requirement_context` | user | Which requirement text or requirement-derived points feed this chapter? |
-| `scoring_context` | user | Which scoring items are being optimized for this chapter? |
+这意味着：
 
-## Rollup and provenance rules
+- section 顺序完全保留
+- 中间不会做二次重排
+- 中间不会做跨 section 去重
+- 最终 `user prompt` 就是这些 section 文本按顺序直接拼起来
 
-Phase 1 rollup is defined from existing section ids and system-prompt sources.
+## 6. 最终发给大模型的内容
 
-### `system_constraints`
+### 6.1 `messages` 结构
 
-- source: `AIWriter.build_system_prompt()`
-- source_context:
-  - `Config.role`
-  - `prompt_bidder_name`
-  - `prompt_allow_markdown_headings`
-  - `prompt_allow_english_terms`
-  - `prompt_hard_constraints`
+`prepare_generation()` 里最终组装的 `messages` 固定为：
 
-### `chapter_task`
+```python
+messages = [
+    {"role": "system", "content": system_prompt},
+    {"role": "user", "content": user_prompt},
+]
+```
 
-- section_names:
-  - `task_card`
-  - `additional_requirements`
-- source_context:
-  - current `HeadingNode`
-  - `min_words`
-  - operator `additional_requirements`
-  - `prompt.output_format`
-  - bidder name and focus-term derivation inputs
+因此，对大模型来说，真实输入就是：
 
-### `structure_rules`
+- `system_prompt = build_system_prompt()`
+- `user_prompt = build_prompt_result(...).prompt`
 
-- section_names:
-  - `structure_contract`
-  - `first_line_rule`
-  - `extra_rules`
-- source_context:
-  - `prompt.first_line_template`
-  - `prompt.extra_rules`
-  - structure-contract helper output
+### 6.2 pruned 分支下的大致形态
 
-### `chapter_scope`
+```text
+[system]
+{role}
 
-- section_names:
-  - `scope_reference` or `full_outline`
-- source_context:
-  - `context_mode`
-  - pruned local outline context or complete outline text
-  - current heading parent/sibling boundary information
+【最高优先级输出强约束】
+- ...
+- ...
 
-### `requirement_context`
+[user]
+## 章节任务卡
+...
 
-- section_names:
-  - `requirement_brief`
-  - `requirement_points`
-  - `bid_requirements`
-- source_context:
-  - `pruned_context.requirement_brief`
-  - `pruned_context.requirement_seed`
-  - `Config.bid_requirements`
-  - requirement selection mode implied by pruning/full-context branch
+## 结构输出硬要求
+...
 
-### `scoring_context`
+## 首行要求
+...
 
-- section_names:
-  - `scoring_focus`
-  - `scoring_criteria`
-- source_context:
-  - matched `pruned_context.scoring_items`
-  - `Config.scoring_criteria`
-  - current scoring routing branch
+## 章节边界参考
+...
 
-## Preservation rules
+## 评分关注
+...
 
-Phase 1 preserves the raw `prompt_sections` layer exactly as the low-level forensic record.
-The new summarized contract is an additive presentation layer:
+## 需求要点
+...
 
-- maintainers first see the six business blocks
-- low-level `prompt_sections` remains available unchanged
-- `source_context` must be shown for every business block
-- trace artifacts should expose both levels side by side rather than forcing one view
+## 用户附加要求
+...
 
-## Implementation guidance for Phase 1
+## 其他写作要求
+...
+```
 
-- Keep ordering, defaults, enablement conditions, and compatibility shims code-defined.
-- Do not externalize section topology in Phase 1.
-- Preserve current trace filenames and raw context payloads.
-- Add the summary layer conservatively so existing trace-inspection habits keep working.
-- Treat `README.md` and checked-in YAML configs as public compatibility contracts, not just examples.
+其中：
+
+- `首行要求` 可能没有
+- `评分关注` 可能没有
+- `需求要点` 可能来自 `requirement_brief`，也可能来自 `requirement_seed`
+- `用户附加要求` 和 `其他写作要求` 也可能没有
+
+### 6.3 full 分支下的大致形态
+
+```text
+[system]
+{role}
+
+【最高优先级输出强约束】
+- ...
+- ...
+
+[user]
+## 章节任务卡
+...
+
+## 结构输出硬要求
+...
+
+## 首行要求
+...
+
+## 完整总大纲参考
+...
+
+## 招标需求参考
+...
+
+## 评分标准参考
+...
+
+## 用户附加要求
+...
+
+## 其他写作要求
+...
+```
+
+其中：
+
+- `首行要求` 可能没有
+- `完整总大纲参考` 理论上也取决于 outline 原文是否为空
+- `招标需求参考` 和 `评分标准参考` 取决于对应原文是否为空
+- `用户附加要求` 和 `其他写作要求` 也可能没有
+
+### 6.4 除 prompt 外还会传什么
+
+模型请求参数由 `_build_request_options()` 生成，包含：
+
+- `model`
+- `messages`
+- `temperature`
+- `max_tokens`
+- `stream`
+- 可选 `top_p`
+- 可选 `seed`
+
+这些参数会影响采样行为，但不改变 prompt 文本内容。
+
+## 7. 调 prompt 时必须区分的变量
+
+### 7.1 直接影响模型输入的变量
+
+| 变量名 | 来源 | 含义 | 是否直接进入模型输入 |
+|--------|------|------|----------------------|
+| `role` | `Config.role` | system prompt 的角色设定 | 是 |
+| `bid_requirements` | `Config.bid_requirements` | 项目采购需求原文 | 是，直接或间接 |
+| `scoring_criteria` | `Config.scoring_criteria` | 评分标准原文 | 是，直接或间接 |
+| `context_pruning_enabled` | `context_pruning.enabled` | 是否走章节级裁剪 | 是，决定分支 |
+| `context_pruning_scoring_enabled` | `context_pruning.scoring.enabled` | 是否启用评分项路由 | 是 |
+| `context_pruning_scoring_max_rows` | `context_pruning.scoring.max_rows` | 最多保留几条评分项 | 是 |
+| `context_pruning_requirements_brief_enabled` | `context_pruning.requirements_brief.enabled` | 是否生成原文摘录版需求内容 | 是 |
+| `context_pruning_local_outline_include_ancestors` | `context_pruning.local_outline.include_ancestors` | 局部大纲是否带祖先标题 | 是 |
+| `context_pruning_local_outline_include_siblings` | `context_pruning.local_outline.include_siblings` | 局部大纲是否带同级标题 | 是 |
+| `context_pruning_local_outline_max_siblings` | `context_pruning.local_outline.max_siblings` | 最多保留几个同级标题 | 是 |
+| `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
+| `prompt_output_format` | `prompt.output_format` | task card 中的输出方式描述 | 是 |
+| `prompt_first_line_template` | `prompt.first_line_template` | 是否追加首行要求，以及首行文本 | 是 |
+| `prompt_allow_markdown_headings` | `prompt.allow_markdown_headings` | system prompt 中是否禁止 `#` 标题 | 是 |
+| `prompt_allow_english_terms` | `prompt.allow_english_terms` | system prompt 中是否禁止不必要英文 | 是 |
+| `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
+| `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
+| `prompt_extra_rules` | `prompt.extra_rules` | user prompt 中的其他写作要求 | 是 |
+| `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
+| `min_words` | 运行时入参 | 最低字数要求 | 是 |
+| `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
+| `HeadingNode.full_path` | 当前章节节点 | 当前章节完整路径 | 是 |
+| `response_labels` | 标题链解析结果 | 用于路由评分项和需求块 | 间接进入 |
+| `chapter_focus_terms` | 当前标题提词结果 | task card 的本章重点，也参与路由 | 间接进入 |
+| `match_keywords` | 标签与标题链关键词 | 用于匹配评分项和需求块 | 间接进入 |
+| `scoring_items` | 评分路由结果 | pruned 分支中的 `评分关注` | 是 |
+| `requirement_seed` | 需求提炼结果 | 作为备用 `需求要点` 内容 | 是 |
+| `requirement_brief` | 需求摘录结果 | 优先作为 `需求要点` 内容 | 是 |
+
+### 7.2 当前容易误判为“生效”，但实际上不影响这条链路的变量
+
+| 变量名 | 当前状态 | 说明 |
+|--------|----------|------|
+| `prompt_summary_title` | 不参与 prompt 拼接 | 当前只在生成后问题检测里用来判断是否允许“小结/总结”标题 |
+| `context_pruning_requirements_brief_fallback` | 当前未接入主流程 | 配置存在，但 `build_context()` / `build_prompt_result()` 没有使用它决定回退行为 |
+| `pruning_api_base_url` | 当前不参与章节提炼 | 这条链路里的需求/评分提炼仍是规则实现 |
+| `pruning_api_key` | 当前不参与章节提炼 | 同上 |
+| `pruning_model` | 当前不参与章节提炼 | 同上 |
+| `pruning_temperature` | 当前不参与章节提炼 | 同上 |
+| `pruning_max_tokens` | 当前不参与章节提炼 | 同上 |
+| `pruning_timeout_seconds` | 当前不参与章节提炼 | 同上 |
+| `pruning_max_retries` | 当前不参与章节提炼 | 同上 |
+| `pruning_top_p` | 当前不参与章节提炼 | 同上 |
+| `pruning_seed` | 当前不参与章节提炼 | 同上 |
+| `prompt_contract_blocks` | trace 专用 | 只给维护者看，不发给大模型 |
+
+## 8. 优化 prompt 时的几个直接结论
+
+1. 如果要改“角色与绝对规则”，应改 `build_system_prompt()` 或 `_build_hard_constraints()`
+2. 如果要改“章节任务卡、结构要求、需求/评分上下文如何对模型说”，应改 `build_prompt_result()`
+3. 如果要改“采购需求和评分标准怎么提炼成章节上下文”，应改 `context_pruner.py`
+4. 如果要降低 prompt 长度，最有效的开关是 `context_pruning_enabled`
+5. 如果要提升需求贴合度，优先关注 `requirement_brief` 与 `requirement_seed` 的选择逻辑
+6. 如果要提升评分命中率，优先关注 `response_labels`、`match_keywords`、`_route_scoring_items()`
+7. 如果发现同一配置下有时是精简 prompt、有时突然变成长 prompt，优先排查是否发生了 pruned 分支异常回退
+
+## 9. 执行流程图
+
+```mermaid
+flowchart TD
+    A[prepare_generation] --> B[build_prompt_result]
+    B --> C{context_pruning_enabled}
+    C -- 否 --> D[full-context 分支]
+    C -- 是 --> E[context_pruner.build_context]
+    E --> F{build_context 成功}
+    F -- 否 --> D
+    F -- 是 --> G[pruned-context 分支]
+
+    G --> G1[提取 response_labels chapter_focus_terms match_keywords]
+    G1 --> G2[路由 scoring_items]
+    G2 --> G3[选择 requirement_blocks]
+    G3 --> G4[生成 requirement_seed]
+    G4 --> G5{requirements_brief_enabled}
+    G5 -- 否 --> G6[不生成 requirement_brief]
+    G5 -- 是 --> G7[从已选需求块抽取 requirement_brief]
+
+    G6 --> H[拼接 user prompt]
+    G7 --> H
+    D --> H
+
+    H --> H1[task_card]
+    H1 --> H2[structure_contract]
+    H2 --> H3[first_line_rule 可选]
+    H3 --> H4{pruned 还是 full}
+    H4 -- pruned --> H5[scope_reference]
+    H5 --> H6[scoring_focus 可选]
+    H6 --> H7[requirement_brief 或 requirement_seed]
+    H4 -- full --> H8[full_outline]
+    H8 --> H9[bid_requirements 可选]
+    H9 --> H10[scoring_criteria 可选]
+    H7 --> H11[additional_requirements 可选]
+    H10 --> H11
+    H11 --> H12[extra_rules 可选]
+
+    B --> I[build_system_prompt]
+    I --> J[role + 最高优先级输出强约束]
+
+    H12 --> K[组装 messages]
+    J --> K
+    K --> L["messages = [system, user]"]
+    L --> M[_build_request_options]
+    M --> N[expand_raw 调用大模型]
+```

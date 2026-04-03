@@ -1,7 +1,6 @@
 # 自动标书撰写系统配置文件
 
-# 角色设定
-role: |
+role: | # system prompt 中的角色设定，多行文本会直接进入模型的 system 消息
   你现在扮演“公共文化服务满意度测评领域投标文本专家”，专门服务于杭州菲尔德咨询参与政府采购项目文本编制。
 
   一、角色要求
@@ -19,24 +18,23 @@ role: |
   五、语言要求
    使用机关化、研究型、政府采购风格表达，要求政策性强、逻辑严密、结构清楚、措辞稳妥。优先使用“围绕”“聚焦”“立足”“依托”“构建”“细化”“强化”“形成”“推动”“确保”等表述。严禁使用宣传式、营销式、口号式语言，严禁出现“行业领先”“全面赋能”“高质量高标准完成”等空泛表述。
 
+generation: # 生成阶段的通用参数
+  default_min_words: 1500 # 默认章节最低字数
+  min_words_min: 100 # 界面或调用侧允许设置的最低字数下限
+  min_words_max: 12000 # 界面或调用侧允许设置的最低字数上限
+  min_words_step: 100 # 字数调节步长
+  stream: true # 是否以流式方式接收模型输出
+  stream_idle_timeout_seconds: 12 # 流式输出在最后一个 token 后的静默收尾超时秒数
 
-generation:
-  default_min_words: 1500
-  min_words_min: 100
-  min_words_max: 12000
-  min_words_step: 100
-  stream: true
-  stream_idle_timeout_seconds: 12
-
-prompt:
-  output_format: "纯正文"
-  first_line_template: ""
-  allow_markdown_headings: false
-  allow_english_terms: false
-  bidder_name: "杭州菲尔德咨询"
-  max_tables_per_section: 2
-  summary_title: ""
-  hard_constraints:
+prompt: # 提示词拼接相关配置
+  output_format: "纯正文" # 写入章节任务卡的“输出方式”文案
+  first_line_template: "" # 首行模板；为空则不追加“首行要求”区块
+  allow_markdown_headings: false # 是否允许模型输出 Markdown 标题符号（#）
+  allow_english_terms: false # 是否允许输出必要英文术语
+  bidder_name: "杭州菲尔德咨询" # 投标主体统一名称
+  max_tables_per_section: 2 # 每个章节允许插入的 Markdown 表格上限
+  summary_title: "" # 章节总结标题名；当前主要用于生成后检测而非提示词拼接
+  hard_constraints: # system prompt 中追加的高优先级强约束列表
     - "章节结构如需分层展开，必须使用正式层级序号，第一层级到第四层级分别为：一、（一）1. （1）。"
     - "如果层级序号后面带标题文字，则该行只写“序号 + 标题”，下一行另起正文。"
     - "正文中的段内枚举或并列说明，不视为章节层级，可使用“第一……、第二……”或“一是……；二是……；三是……”。"
@@ -48,53 +46,49 @@ prompt:
     - "禁止段落结构千篇一律，不要机械套用总-分-总。"
     - "禁止中英文混杂、不必要的专业术语堆砌、不必要的术语英文解释。"
     - "禁止输出分割线。"
-  extra_rules:
+  extra_rules: # user prompt 末尾追加的“其他写作要求”列表
     - "内容要专业、严谨，符合标书撰写规范，满足对评分标准高响应、高得分的要求"
 
-context_pruning:
-  enabled: true
-  debug_dump: true
-  local_outline:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 8
-  scoring:
-    enabled: true
-    max_rows: 4
-  requirements_brief:
-    enabled: true
-    fallback: "rule_only"
-  api:
-    model: "gpt-5.4-mini"
-    temperature: 0.2
-    max_tokens: 1200
-    timeout_seconds: 60
-    max_retries: 2
+context_pruning: # 章节级上下文裁剪配置，用于从大纲/采购需求/评分标准中提炼当前章节上下文
+  enabled: true # 是否启用章节级裁剪；关闭后直接把完整需求与评分标准放入 user prompt
+  debug_dump: true # 是否输出裁剪调试文件到 output/_context_pruning_debug
+  local_outline: # 局部大纲裁剪配置
+    include_ancestors: true # 局部大纲中是否保留当前章节的祖先标题链
+    include_siblings: true # 局部大纲中是否保留当前章节的同级标题
+    max_siblings: 8 # 局部大纲最多保留多少个同级标题
+  scoring: # 评分标准路由配置
+    enabled: true # 是否从评分标准中筛选与当前章节最相关的评分项
+    max_rows: 4 # 最多保留多少条命中评分项进入 user prompt
+  requirements_brief: # 采购需求原文摘录配置
+    enabled: true # 是否生成 requirement_brief；开启后优先把原文摘录作为“需求要点”发给模型
+    fallback: "rule_only" # 需求摘录失败时的回退策略配置项；当前主链路未实际使用
+  api: # 章节裁剪辅助模型配置；当前采购需求/评分提炼主链路仍以规则实现为主
+    model: "gpt-5.4-mini" # 预留的章节裁剪辅助模型名称
+    temperature: 0.2 # 预留的章节裁剪辅助模型温度
+    max_tokens: 1200 # 预留的章节裁剪辅助模型最大 token 数
+    timeout_seconds: 60 # 预留的章节裁剪辅助模型超时秒数
+    max_retries: 2 # 预留的章节裁剪辅助模型最大重试次数
 
-generation_trace:
-  enabled: true
-  directory: "./log/generation_traces"
-  mode: "full"
-  write_prompt: true
-  write_output: true
-  write_context: true
-  write_summary: true
-  redact_sensitive: true
+generation_trace: # 章节生成 trace 日志配置
+  enabled: true # 是否启用 trace 产物落盘
+  directory: "./log/generation_traces" # trace 输出目录
+  mode: "full" # trace 模式；full 表示记录更完整的上下文与 prompt 信息
+  write_prompt: true # 是否落盘 system/user prompt 原文
+  write_output: true # 是否落盘模型最终生成正文
+  write_context: true # 是否落盘上下文拼接与裁剪详情
+  write_summary: true # 是否落盘摘要文件 07_summary.md
+  redact_sensitive: true # 是否对 trace 中的敏感信息做脱敏处理
 
-# 招标需求（指定文件路径）
-bid_requirements: |
+bid_requirements: | # 采购需求原文，当前这里填写的是文件路径文本，程序会按路径读取文件内容
   "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/采购需求.md"
 
-# 评分标准（指定文件路径）
-scoring_criteria: |
+scoring_criteria: | # 评分标准原文，当前这里填写的是文件路径文本，程序会按路径读取文件内容
   "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/评分标准.md"
 
-# 标书大纲文件路径
-outline_file:  |
+outline_file: | # 标书 Markdown 大纲文件路径，程序会读取完整大纲用于章节定位
   "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/投标大纲.md"
 
-# 输出配置
-output:
-  directory: "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/output"
-  prefix: ""
-  normalize_soft_line_breaks_on_merge: true
+output: # 输出文件配置
+  directory: "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/output" # 生成结果与调试文件输出目录
+  prefix: "" # 输出文件名前缀；为空表示不额外加前缀
+  normalize_soft_line_breaks_on_merge: true # 合并标书时是否归一化正文中的软回车
