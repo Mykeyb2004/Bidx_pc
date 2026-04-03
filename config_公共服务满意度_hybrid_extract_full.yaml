@@ -1,0 +1,126 @@
+# 自动标书撰写系统配置文件
+# 用途：公共服务满意度项目的 hybrid_extract 全能力测试版
+# 特点：评分标准与采购需求都切到 hybrid_extract，同时开启 vector retrieval 和 verifier
+# 运行前要求：.env.local 中已配置 BID_WRITER_EMBEDDING_* 与 BID_WRITER_PRUNING_*
+
+role: | # system prompt 中的角色设定，多行文本会直接进入模型的 system 消息
+  你现在扮演“公共文化服务满意度测评领域投标文本专家”，专门服务于杭州菲尔德咨询参与政府采购项目文本编制。
+
+  一、角色要求
+   你熟悉公共文化服务现代化建设、基本公共文化服务标准化均等化、公共文化设施体系建设、数字文化服务、群众文化需求表达、满意度测评、第三方评估和政府采购文本写作，了解宣传文化和文旅系统政策语境、评审逻辑、验收要求及基层公共文化服务实际场景。
+
+  二、任务要求
+   围绕公共文化服务满意度测评类项目，准确拆解采购需求，编写或优化项目理解、需求分析、实施方案、技术路线、指标体系构建、调查组织、质量控制、风险防控、进度计划、成果交付和验收支撑等内容。
+
+  三、能力要求
+   能够准确识别采购目标、评分重点、关键交付物和实质性条款；能够将政策要求转化为测评逻辑和实施路径；能够围绕服务供给、设施布局、空间使用、数字建设、运行管理、治理保障和群众感知构建指标体系；具备省域范围、多层级调查项目的统筹实施能力，能够围绕样本设计、执行调度、现场管理、质量控制和成果归集等关键环节建立规范统一、衔接顺畅的工作体系，确保调查过程可控、标准一致、结果真实可靠；能够综合运用文案研究、深度访谈、结构化问卷、电话调查和统计分析等方法形成完整技术链条；能够建立覆盖组织管理、过程督导、数据复核、档案归集和验收衔接的项目管理体系。
+
+  四、写作原则
+   始终围绕招标文件和采购需求写作，不偏题、不漏项；始终在公共文化服务现代化建设和高质量发展框架下表达，不偏离政策口径；始终把指标体系构建、调查组织实施、质量控制、数据分析和成果输出作为主线；始终体现“前期研究—指标设计—调查实施—质量复核—数据分析—成果形成—验收交付”的完整闭环；始终做到可执行、可督导、可检查、可追溯、可核验、可验收。
+
+  五、语言要求
+   使用机关化、研究型、政府采购风格表达，要求政策性强、逻辑严密、结构清楚、措辞稳妥。优先使用“围绕”“聚焦”“立足”“依托”“构建”“细化”“强化”“形成”“推动”“确保”等表述。严禁使用宣传式、营销式、口号式语言，严禁出现“行业领先”“全面赋能”“高质量高标准完成”等空泛表述。
+
+generation:
+  default_min_words: 1500
+  min_words_min: 100
+  min_words_max: 12000
+  min_words_step: 100
+  stream: true
+  stream_idle_timeout_seconds: 12
+
+prompt:
+  output_format: "纯正文"
+  first_line_template: ""
+  allow_markdown_headings: false
+  allow_english_terms: false
+  bidder_name: "杭州菲尔德咨询"
+  max_tables_per_section: 2
+  summary_title: ""
+  hard_constraints:
+    - "章节结构如需分层展开，必须使用正式层级序号，第一层级到第四层级分别为：一、（一）1. （1）。"
+    - "如果层级序号后面带标题文字，则该行只写“序号 + 标题”，下一行另起正文。"
+    - "正文中的段内枚举或并列说明，不视为章节层级，可使用“第一……、第二……”或“一是……；二是……；三是……”。"
+    - "正文中不得使用“首先、其次、再次、最后”组织内容。"
+    - "严禁使用Markdown标题符号（#）。"
+    - "严禁正文中出现类似“作为xx投标专家”之类的内容。严禁在正文中输出评论性、意图解释性的内容。"
+    - "禁止输出AI腔调，如“在当今数字化转型的大背景下...”“我们将秉承...的理念”等套话。"
+    - "禁止过度使用排比句、空洞的形容词、夸张的词语。"
+    - "禁止段落结构千篇一律，不要机械套用总-分-总。"
+    - "禁止中英文混杂、不必要的专业术语堆砌、不必要的术语英文解释。"
+    - "禁止输出分割线。"
+  extra_rules:
+    - "内容要专业、严谨，符合标书撰写规范，满足对评分标准高响应、高得分的要求"
+
+context_pruning:
+  enabled: true
+  debug_dump: true
+  mode: "hybrid_extract"
+  unavailable_policy: "fail_fast"
+  local_outline:
+    include_ancestors: true
+    include_siblings: true
+    max_siblings: 8
+  scoring:
+    enabled: true
+    mode: "hybrid_extract"
+    parse_mode: "auto"
+    max_rows: 4
+  requirements:
+    mode: "hybrid_extract"
+    max_quotes: 4
+    max_quote_chars: 220
+  requirements_brief:
+    enabled: true
+    fallback: "rule_only"
+  retrieval:
+    lexical_enabled: true
+    vector_enabled: true # 开启向量召回，要求 .env.local 中配置 BID_WRITER_EMBEDDING_*
+    rerank_enabled: true # 进入候选精排/校验链路，要求 .env.local 中配置 BID_WRITER_PRUNING_*
+    top_k_lexical: 20
+    top_k_vector: 20
+    top_k_fused: 30
+    top_k_final: 6
+    min_fused_score: 0.0
+    embedding:
+      model: "text-embedding-3-small"
+      batch_size: 64
+      cache_dir: "./output/_embedding_cache"
+      rebuild_on_source_change: true
+      query_prefix: ""
+      document_prefix: ""
+  extraction:
+    quote_only: true
+    return_ids_only: true # 开启 verifier 时必须保持 true
+    llm_verify_enabled: true
+    llm_verify_max_candidates: 8
+  api:
+    model: "gpt-5.4-mini"
+    temperature: 0.2
+    max_tokens: 1200
+    timeout_seconds: 60
+    max_retries: 2
+
+generation_trace:
+  enabled: true
+  directory: "./log/generation_traces"
+  mode: "full"
+  write_prompt: true
+  write_output: true
+  write_context: true
+  write_summary: true
+  redact_sensitive: true
+
+bid_requirements: |
+  "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/采购需求.md"
+
+scoring_criteria: |
+  "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/评分标准.md"
+
+outline_file: |
+  "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/投标大纲.md"
+
+output:
+  directory: "/Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目/output"
+  prefix: ""
+  normalize_soft_line_breaks_on_merge: true

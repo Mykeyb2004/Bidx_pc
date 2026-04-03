@@ -24,6 +24,10 @@ import sys
 
 
 DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
+CONFIG_DIALOG_MIN_WIDTH = 680
+CONFIG_DIALOG_MIN_HEIGHT = 260
+CONFIG_DIALOG_MAX_WIDTH = 920
+CONFIG_DIALOG_INFO_WRAP_PADDING = 60
 _TK_ENV_READY = False
 
 
@@ -137,7 +141,6 @@ class ConfigSelectionDialog(tk.Toplevel):
         self._config_map: dict[str, Path] = {}
 
         self.title("选择配置文件")
-        self.geometry("620x230")
         self.resizable(False, False)
         self._has_visible_parent = bool(
             parent is not None
@@ -155,6 +158,7 @@ class ConfigSelectionDialog(tk.Toplevel):
 
         self._create_widgets()
         self._load_config_choices(initial_path)
+        self._fit_to_content()
         self._center_window()
         self._show_dialog()
 
@@ -196,13 +200,14 @@ class ConfigSelectionDialog(tk.Toplevel):
             padding=(12, 6)
         ).pack(side=tk.LEFT, padx=(10, 0))
 
-        ttk.Label(
+        self.info_label = ttk.Label(
             container,
             textvariable=self.info_var,
             foreground="#555555",
             wraplength=560,
             justify=tk.LEFT
-        ).pack(anchor=tk.W, pady=(14, 20))
+        )
+        self.info_label.pack(anchor=tk.W, pady=(14, 20))
 
         button_frame = ttk.Frame(container)
         button_frame.pack(anchor=tk.E)
@@ -293,9 +298,11 @@ class ConfigSelectionDialog(tk.Toplevel):
         selected_path = self._config_map.get(selected_key)
         if not selected_path:
             self.info_var.set("未发现可用配置文件，请点击“浏览...”选择 YAML 配置。")
+            self._fit_to_content()
             return
 
         self.info_var.set(f"当前将使用：{selected_path}")
+        self._fit_to_content()
 
     def _on_confirm(self) -> None:
         selected_key = self.config_var.get().strip()
@@ -318,6 +325,25 @@ class ConfigSelectionDialog(tk.Toplevel):
         x = (self.winfo_screenwidth() // 2) - (width // 2)
         y = (self.winfo_screenheight() // 2) - (height // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _fit_to_content(self) -> None:
+        """根据当前内容调整对话框尺寸，避免路径换行时遮挡按钮。"""
+        self.update_idletasks()
+
+        current_width = max(self.winfo_width(), 1)
+        requested_width = max(self.winfo_reqwidth(), CONFIG_DIALOG_MIN_WIDTH)
+        target_width = min(max(requested_width, current_width), CONFIG_DIALOG_MAX_WIDTH)
+
+        self.info_label.configure(
+            wraplength=max(target_width - CONFIG_DIALOG_INFO_WRAP_PADDING, 400)
+        )
+        self.update_idletasks()
+
+        current_height = max(self.winfo_height(), 1)
+        requested_height = max(self.winfo_reqheight(), CONFIG_DIALOG_MIN_HEIGHT)
+        target_height = max(requested_height, current_height)
+
+        self.geometry(f"{target_width}x{target_height}")
 
     def _show_dialog(self) -> None:
         """确保对话框在 macOS 上可见并获得焦点"""
