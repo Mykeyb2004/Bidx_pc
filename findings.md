@@ -1,5 +1,16 @@
 # Findings
 
+## config 项目文件结构评估补充发现
+- README 已明确推荐把输入资源写在 `inputs` 下，但 `Config` 仍同时兼容根级 `outline_file` / `bid_requirements` / `scoring_criteria`，形成双轨写法。
+- 当前公共服务满意度项目配置仍使用根级旧写法，而且 `bid_requirements` / `scoring_criteria` / `outline_file` 采用“多行文本字段里只放一个路径”的兼容形态，可读性较差。
+- `Config._resolve_path()` 统一按“配置文件所在目录”解析相对路径；由于仓库内配置要引用仓库外项目资料，真实项目配置被迫写成长绝对路径。
+- 四份公共服务满意度配置本质上是同一项目的不同运行剖面；对 69 个叶子配置项做扁平比较后，`full_context` 版只比基准版少改 2 项，`hybrid_extract` 版只改 4 项，`hybrid_extract_full` 版只改 7 项，重复度很高。
+- `context_pruning.requirements_brief.fallback` 当前仍未接入主流程；用户可配置，但运行时不会按它决定回退行为。
+- `context_pruning.local_outline.*` 当前只影响 `ChapterContext.local_outline`，主要进入 debug/trace，不直接影响 user prompt 主链路。
+- `context_pruning.retrieval.rerank_enabled` 与 `context_pruning.extraction.llm_verify_enabled` 会共同决定是否进入同一条候选校验链路，概念上容易让人误以为是两个独立能力。
+- `Config` 通过大量逐字段 property + 默认回退支撑兼容层，非法枚举和值大多会静默回退到默认值，缺少“显式 schema 校验 + 未知字段告警”。
+- README、YAML 内联注释和代码默认值共同承担“配置说明”职责，已经出现“文档说明”和“实际默认行为”分散的问题。
+
 ## 当前实现
 - `bid_writer/file_saver.py` 中 `sanitize_filename()` 采用替换式清洗，不是可逆编码。
 - `bid_writer/gui.py` 预览时直接按清洗后的标题拼文件路径。

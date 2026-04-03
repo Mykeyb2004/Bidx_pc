@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-04-03
+- 新任务：评估 `config_公共服务满意度*.yaml` 项目文件的结构混乱来源，并给出优化方案。
+- 已读取现有 `task_plan.md`、`findings.md`、`progress.md` 续接上下文，按 `planning-with-files` 流程记录本轮分析。
+- 已对照 `bid_writer/config.py`、`README.md`、`docs/prompt_contract.md` 和 4 份公共服务满意度配置，确认当前混乱主要来自双轨写法、变体复制、路径基座不合适和部分字段语义不清。
+- 已用 `uv run python` 对 4 份项目配置做扁平差异比较，确认它们在 69 个叶子字段里最多只差 7 项，适合收敛为“基座配置 + 轻量变体”。
+- 已整理出推荐优化方向：canonical schema、`project_root` 路径基座、`extends/preset` 变体机制、显式校验与有效配置导出。
+
 ## 2026-03-15
 - 读取并分析了 `file_saver.py`、`gui.py`、`gui_adapter.py` 的文件名相关逻辑。
 - 确认当前项目没有使用 `full_path` 作为输出文件主键。

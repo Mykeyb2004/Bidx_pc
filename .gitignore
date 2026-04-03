@@ -2,7 +2,10 @@
 /杭博满意度投标/
 /output/
 /log/
-/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 .bid_writer_gui_state.json
 .DS_Store
 .env

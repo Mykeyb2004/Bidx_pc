@@ -7,8 +7,7 @@ Tkinter GUI 主界面
 import os
 import tkinter as tk
 from dataclasses import dataclass, field
-from tkinter import ttk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 from typing import List, Optional
 from pathlib import Path
 
@@ -24,11 +23,21 @@ import sys
 
 
 DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
+GUI_THEME_NAME = os.environ.get("BID_WRITER_GUI_THEME", "litera")
+GUI_FALLBACK_THEME = "clam"
 CONFIG_DIALOG_MIN_WIDTH = 680
 CONFIG_DIALOG_MIN_HEIGHT = 260
 CONFIG_DIALOG_MAX_WIDTH = 920
 CONFIG_DIALOG_INFO_WRAP_PADDING = 60
+MAIN_OUTLINE_DEFAULT_WIDTH = 520
+MAIN_OUTLINE_MIN_WIDTH = 360
+MAIN_WORKSPACE_MIN_WIDTH = 460
+POPUP_OUTLINE_DEFAULT_WIDTH = 320
+POPUP_OUTLINE_MIN_WIDTH = 240
+POPUP_CONTENT_MIN_WIDTH = 480
 _TK_ENV_READY = False
+_TTKBOOTSTRAP_READY: Optional[bool] = None
+_TTKBOOTSTRAP_MODULE = None
 
 
 @dataclass
@@ -99,6 +108,108 @@ def _display_path(path: Path, base_dir: Path) -> str:
         return str(path.relative_to(base_dir))
     except ValueError:
         return str(path)
+
+
+def _bootstyle_kwargs(bootstyle: Optional[str] = None) -> dict[str, str]:
+    """保留调用位，当前仍使用标准 ttk 控件。"""
+    if bootstyle:
+        return {}
+    return {}
+
+
+def _can_use_ttkbootstrap() -> bool:
+    """仅在 Pillow/Tk 桥接可用时启用 ttkbootstrap。"""
+    global _TTKBOOTSTRAP_READY, _TTKBOOTSTRAP_MODULE
+
+    if _TTKBOOTSTRAP_READY is not None:
+        return _TTKBOOTSTRAP_READY
+
+    try:
+        from PIL import _imagingtk  # noqa: F401
+        import ttkbootstrap as ttkbootstrap_module
+    except Exception:
+        _TTKBOOTSTRAP_READY = False
+        _TTKBOOTSTRAP_MODULE = None
+        return False
+
+    _TTKBOOTSTRAP_READY = True
+    _TTKBOOTSTRAP_MODULE = ttkbootstrap_module
+    return True
+
+
+def _safe_named_font(name: str) -> Optional[tkfont.Font]:
+    try:
+        return tkfont.nametofont(name)
+    except tk.TclError:
+        return None
+
+
+def _configure_named_fonts() -> None:
+    """统一调整 Tk 默认字体，保证 ttk 与原生控件观感一致。"""
+    font_updates = {
+        "TkDefaultFont": {"size": 11},
+        "TkTextFont": {"size": 11},
+        "TkMenuFont": {"size": 11},
+        "TkFixedFont": {"size": 11},
+        "TkHeadingFont": {"size": 12, "weight": "bold"},
+    }
+    for font_name, options in font_updates.items():
+        named_font = _safe_named_font(font_name)
+        if named_font is not None:
+            named_font.configure(**options)
+
+
+def setup_gui_theme(master: tk.Misc) -> ttk.Style:
+    """为当前 Tk 应用启用统一主题和基础控件样式。"""
+    root = master._root()
+    existing_style = getattr(root, "_bid_writer_style", None)
+    if existing_style is not None:
+        return existing_style
+
+    root.option_add("*tearOff", False)
+    _configure_named_fonts()
+
+    bootstrap_style = None
+    if _can_use_ttkbootstrap() and _TTKBOOTSTRAP_MODULE is not None:
+        try:
+            bootstrap_style = _TTKBOOTSTRAP_MODULE.Style(theme=GUI_THEME_NAME)
+        except Exception:
+            bootstrap_style = None
+
+    style = ttk.Style(master)
+    if bootstrap_style is None and GUI_FALLBACK_THEME in style.theme_names():
+        style.theme_use(GUI_FALLBACK_THEME)
+
+    muted_foreground = "#5f6b7a"
+    style.configure("TButton", padding=(12, 7))
+    style.configure("TEntry", padding=(6, 5))
+    style.configure("TCombobox", padding=(6, 5))
+    style.configure("TSpinbox", padding=(6, 5))
+    style.configure("Treeview", rowheight=28)
+    style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
+    style.configure("SummaryLabel.TLabel", font=("TkDefaultFont", 10, "bold"))
+    style.configure("SummaryValue.TLabel", font=("TkDefaultFont", 10))
+    style.configure("SectionTitle.TLabel", font=("TkDefaultFont", 11, "bold"))
+    style.configure("Muted.TLabel", foreground=muted_foreground)
+
+    setattr(root, "_bid_writer_bootstrap_style", bootstrap_style)
+    setattr(root, "_bid_writer_style", style)
+    return style
+
+
+def style_text_widget(widget: tk.Text) -> None:
+    """统一原生 Text 控件的观感。"""
+    widget.configure(
+        font=("TkFixedFont", 11),
+        relief=tk.FLAT,
+        borderwidth=0,
+        padx=10,
+        pady=8,
+        highlightthickness=1,
+        highlightbackground="#d7dee8",
+        highlightcolor="#3b82f6",
+        insertwidth=2,
+    )
 
 
 def discover_config_files(base_dir: Optional[Path] = None) -> list[Path]:
@@ -173,12 +284,13 @@ class ConfigSelectionDialog(tk.Toplevel):
         ttk.Label(
             container,
             text="请选择本次运行使用的配置文件",
-            font=("TkDefaultFont", 11, "bold")
+            style="SectionTitle.TLabel"
         ).pack(anchor=tk.W)
 
         ttk.Label(
             container,
             text="默认列出当前目录下的 config*.yaml，可点击“浏览...”选择其它 YAML 文件。",
+            style="Muted.TLabel",
         ).pack(anchor=tk.W, pady=(6, 16))
 
         select_frame = ttk.Frame(container)
@@ -197,15 +309,16 @@ class ConfigSelectionDialog(tk.Toplevel):
             select_frame,
             text="浏览...",
             command=self._browse_config_file,
-            padding=(12, 6)
+            padding=(12, 6),
+            **_bootstyle_kwargs("secondary")
         ).pack(side=tk.LEFT, padx=(10, 0))
 
         self.info_label = ttk.Label(
             container,
             textvariable=self.info_var,
-            foreground="#555555",
             wraplength=560,
-            justify=tk.LEFT
+            justify=tk.LEFT,
+            style="Muted.TLabel",
         )
         self.info_label.pack(anchor=tk.W, pady=(14, 20))
 
@@ -217,7 +330,8 @@ class ConfigSelectionDialog(tk.Toplevel):
             text="取消",
             command=self._on_cancel,
             width=10,
-            padding=(12, 6)
+            padding=(12, 6),
+            **_bootstyle_kwargs("secondary")
         ).pack(side=tk.LEFT, padx=6)
 
         ttk.Button(
@@ -225,7 +339,8 @@ class ConfigSelectionDialog(tk.Toplevel):
             text="确定",
             command=self._on_confirm,
             width=10,
-            padding=(12, 6)
+            padding=(12, 6),
+            **_bootstyle_kwargs("primary")
         ).pack(side=tk.LEFT)
 
     def _load_config_choices(self, initial_path: Optional[str]) -> None:
@@ -372,6 +487,7 @@ def choose_config_file(parent=None, initial_path: Optional[str] = None) -> Optio
 
     if dialog_parent is None:
         dialog_parent = tk.Tk()
+        setup_gui_theme(dialog_parent)
         dialog_parent.withdraw()
         owns_root = True
 
@@ -419,6 +535,7 @@ class MainWindow(tk.Tk):
     def __init__(self, bid_writer: BidWriter, outline_preloaded: bool = False):
         ensure_tk_runtime()
         super().__init__()
+        self.style = setup_gui_theme(self)
 
         self.bid_writer = bid_writer
         self.adapter = GUIAdapter(bid_writer)
@@ -432,6 +549,7 @@ class MainWindow(tk.Tk):
         self._responsive_layout_force = False
         self._action_layout_mode = ""
         self._control_layout_mode = ""
+        self._preserve_workspace_on_sync = False
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -475,8 +593,8 @@ class MainWindow(tk.Tk):
         """创建顶部信息项"""
         group = ttk.Frame(parent)
         group.pack(side=tk.LEFT, padx=padx)
-        ttk.Label(group, text=f"{label}:", font=("TkDefaultFont", 9, "bold")).pack(side=tk.LEFT)
-        ttk.Label(group, textvariable=textvariable).pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Label(group, text=f"{label}:", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
+        ttk.Label(group, textvariable=textvariable, style="SummaryValue.TLabel").pack(side=tk.LEFT, padx=(4, 0))
 
     def center_window(self):
         """居中窗口"""
@@ -504,7 +622,6 @@ class MainWindow(tk.Tk):
         # 操作菜单
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="生成所选", command=self.batch_generate)
-        action_menu.add_command(label="预览所选", command=self.preview_selected)
         action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
         action_menu.add_separator()
         action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
@@ -520,41 +637,13 @@ class MainWindow(tk.Tk):
 
     def create_tool_bar(self):
         """创建工具栏"""
-        toolbar = ttk.Frame(self, padding=(8, 8, 8, 4))
+        toolbar = ttk.Frame(self, padding=(12, 12, 12, 6))
         toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        summary_bar = ttk.Frame(toolbar)
-        summary_bar.pack(fill=tk.X, pady=(0, 8))
-        summary_metrics_bar = ttk.Frame(summary_bar)
-        summary_metrics_bar.pack(fill=tk.X)
-
         self.config_text = tk.StringVar(value="-")
-        self.output_text = tk.StringVar(value="-")
         self.selection_text = tk.StringVar(value="0")
         self.stats_text = tk.StringVar(value="0 / 0")
         self.status_text = tk.StringVar(value="就绪")
-
-        self._create_info_item(summary_metrics_bar, "配置", self.config_text)
-        self._create_info_item(summary_metrics_bar, "输出", self.output_text)
-        self._create_info_item(summary_metrics_bar, "已选", self.selection_text)
-        self._create_info_item(summary_metrics_bar, "已生成", self.stats_text)
-        self.summary_status_bar = ttk.Frame(summary_metrics_bar)
-        self.summary_status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.summary_status_bar.columnconfigure(1, weight=1)
-        self.summary_status_label = ttk.Label(
-            self.summary_status_bar,
-            text="状态:",
-            font=("TkDefaultFont", 9, "bold")
-        )
-        self.summary_status_label.grid(row=0, column=0, sticky="w")
-        self.summary_status_value = ttk.Label(
-            self.summary_status_bar,
-            textvariable=self.status_text,
-            justify=tk.LEFT,
-            anchor=tk.W,
-            font=("TkDefaultFont", 9)
-        )
-        self.summary_status_value.grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
         self.action_bar = ttk.Frame(toolbar)
         self.action_bar.pack(fill=tk.X)
@@ -565,7 +654,8 @@ class MainWindow(tk.Tk):
             self.utility_frame,
             text="切换配置",
             command=self.select_and_switch_config,
-            padding=(12, 8)
+            padding=(12, 8),
+            **_bootstyle_kwargs("secondary")
         )
         self.btn_config.pack(side=tk.LEFT, padx=(0, 6))
 
@@ -573,7 +663,8 @@ class MainWindow(tk.Tk):
             self.utility_frame,
             text="重载大纲",
             command=self.reload_outline,
-            padding=(12, 8)
+            padding=(12, 8),
+            **_bootstyle_kwargs("secondary")
         )
         self.btn_reload.pack(side=tk.LEFT, padx=6)
 
@@ -581,7 +672,8 @@ class MainWindow(tk.Tk):
             self.utility_frame,
             text="扫描输出状态",
             command=self.refresh_status,
-            padding=(12, 8)
+            padding=(12, 8),
+            **_bootstyle_kwargs("secondary")
         )
         self.btn_refresh.pack(side=tk.LEFT, padx=6)
 
@@ -589,7 +681,8 @@ class MainWindow(tk.Tk):
             self.utility_frame,
             text="展开全部▼",
             command=self.show_expand_menu,
-            padding=(12, 8)
+            padding=(12, 8),
+            **_bootstyle_kwargs("secondary")
         )
         self.btn_tree_expand.pack(side=tk.LEFT, padx=6)
 
@@ -597,25 +690,19 @@ class MainWindow(tk.Tk):
             self.utility_frame,
             text="打开输出目录",
             command=self.open_output_dir,
-            padding=(12, 8)
+            padding=(12, 8),
+            **_bootstyle_kwargs("info")
         )
         self.btn_output.pack(side=tk.LEFT, padx=(6, 0))
 
         self.action_frame = ttk.Frame(self.action_bar)
 
-        self.btn_preview = ttk.Button(
-            self.action_frame,
-            text="预览所选",
-            command=self.preview_selected,
-            padding=(12, 8)
-        )
-        self.btn_preview.pack(side=tk.LEFT, padx=6)
-
         self.btn_merge = ttk.Button(
             self.action_frame,
             text="整合标书",
             command=self.merge_generated_sections,
-            padding=(12, 8)
+            padding=(12, 8),
+            **_bootstyle_kwargs("info")
         )
         self.btn_merge.pack(side=tk.LEFT, padx=6)
 
@@ -624,7 +711,8 @@ class MainWindow(tk.Tk):
             text="生成所选 0",
             command=self.batch_generate,
             padding=(16, 8),
-            default=tk.ACTIVE
+            default=tk.ACTIVE,
+            **_bootstyle_kwargs("primary")
         )
         self.btn_generate.pack(side=tk.LEFT, padx=(6, 0))
 
@@ -633,7 +721,30 @@ class MainWindow(tk.Tk):
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
-        header_frame = ttk.Frame(main_frame)
+        self.main_paned_window = tk.PanedWindow(
+            main_frame,
+            orient=tk.HORIZONTAL,
+            sashwidth=8,
+            sashrelief=tk.RAISED,
+            relief=tk.FLAT,
+            bd=0,
+            opaqueresize=True,
+            background="#d7dee8",
+        )
+        self.main_paned_window.pack(fill=tk.BOTH, expand=True)
+
+        outline_panel = ttk.Frame(self.main_paned_window)
+        workspace_panel = ttk.Frame(self.main_paned_window)
+        self.main_paned_window.add(outline_panel, minsize=MAIN_OUTLINE_MIN_WIDTH)
+        self.main_paned_window.add(workspace_panel, minsize=MAIN_WORKSPACE_MIN_WIDTH)
+        self._set_paned_window_default_sash(
+            self.main_paned_window,
+            default_width=MAIN_OUTLINE_DEFAULT_WIDTH,
+            min_left_width=MAIN_OUTLINE_MIN_WIDTH,
+            min_right_width=MAIN_WORKSPACE_MIN_WIDTH,
+        )
+
+        header_frame = ttk.Frame(outline_panel)
         header_frame.pack(fill=tk.X, pady=(0, 8))
 
         title_group = ttk.Frame(header_frame)
@@ -641,12 +752,12 @@ class MainWindow(tk.Tk):
         ttk.Label(
             title_group,
             text="大纲结构",
-            font=("TkDefaultFont", 10, "bold")
+            style="SectionTitle.TLabel",
         ).pack(side=tk.LEFT)
         ttk.Label(
             title_group,
             text="仅四级标题支持多选生成",
-            foreground="#666666"
+            style="Muted.TLabel",
         ).pack(side=tk.LEFT, padx=(10, 0))
 
         self.control_group = ttk.Frame(header_frame)
@@ -681,7 +792,8 @@ class MainWindow(tk.Tk):
             self.selection_action_group,
             text="全选四级标题",
             command=self.select_all_leaf_titles,
-            padding=(10, 6)
+            padding=(10, 6),
+            **_bootstyle_kwargs("secondary")
         )
         self.btn_select_all.pack(side=tk.LEFT, padx=(0, 6))
 
@@ -689,12 +801,13 @@ class MainWindow(tk.Tk):
             self.selection_action_group,
             text="清空选择",
             command=self.clear_selection,
-            padding=(10, 6)
+            padding=(10, 6),
+            **_bootstyle_kwargs("secondary")
         )
         self.btn_clear_selection.pack(side=tk.LEFT)
 
         # 大纲树（支持多选）
-        tree_frame = ttk.Frame(main_frame)
+        tree_frame = ttk.Frame(outline_panel)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
         self.outline_tree = ttk.Treeview(
@@ -710,9 +823,7 @@ class MainWindow(tk.Tk):
         self.outline_tree.column("#0", width=680)
         self.outline_tree.column("status", width=110, anchor=tk.CENTER)
         self.outline_tree.column("progress", width=110, anchor=tk.CENTER)
-        self.outline_tree.tag_configure("completed", foreground="#1f7a4d")
-        self.outline_tree.tag_configure("partial", foreground="#8a5a00")
-        self.outline_tree.tag_configure("pending", foreground="#666666")
+        self._configure_heading_tree_tags(self.outline_tree)
 
         # 滚动条
         sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
@@ -726,6 +837,145 @@ class MainWindow(tk.Tk):
         self.outline_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.outline_tree.bind("<<TreeviewOpen>>", self.on_tree_open_close)
         self.outline_tree.bind("<<TreeviewClose>>", self.on_tree_open_close)
+
+        self._create_workspace_panel(workspace_panel)
+
+    def _create_workspace_panel(self, parent: tk.Misc) -> None:
+        """创建主窗口右侧正文工作区。"""
+        workspace_frame = ttk.Frame(parent, padding=(12, 12, 12, 12))
+        workspace_frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(workspace_frame, text="正文工作区", style="SectionTitle.TLabel").pack(anchor=tk.W)
+        self.workspace_heading_var = tk.StringVar(value="未选择章节")
+        self.workspace_meta_var = tk.StringVar(
+            value="选择单个四级标题后，这里会显示已生成正文；点击“生成所选”时，这里会实时显示当前扩写内容。"
+        )
+
+        self.workspace_heading_label = ttk.Label(
+            workspace_frame,
+            textvariable=self.workspace_heading_var,
+            style="SummaryLabel.TLabel",
+            justify=tk.LEFT,
+        )
+        self.workspace_heading_label.pack(fill=tk.X, anchor=tk.W, pady=(8, 4))
+
+        self.workspace_meta_label = ttk.Label(
+            workspace_frame,
+            textvariable=self.workspace_meta_var,
+            style="Muted.TLabel",
+            justify=tk.LEFT,
+        )
+        self.workspace_meta_label.pack(fill=tk.X, anchor=tk.W, pady=(0, 10))
+        self._bind_label_wrap_to_parent(self.workspace_heading_label, workspace_frame, min_width=280)
+        self._bind_label_wrap_to_parent(self.workspace_meta_label, workspace_frame, min_width=280)
+
+        text_frame = ttk.Frame(workspace_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.workspace_text = tk.Text(text_frame, wrap=tk.WORD)
+        style_text_widget(self.workspace_text)
+        self.workspace_text.configure(state=tk.DISABLED)
+
+        scrollbar = ttk.Scrollbar(text_frame, command=self.workspace_text.yview)
+        self.workspace_text.configure(yscrollcommand=scrollbar.set)
+        self.workspace_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._show_workspace_idle()
+
+    def _set_workspace_text(self, content: str, *, append: bool = False, scroll_to_end: bool = False) -> None:
+        """更新右侧正文工作区文本。"""
+        if not hasattr(self, "workspace_text"):
+            return
+
+        self.workspace_text.configure(state=tk.NORMAL)
+        if append:
+            self.workspace_text.insert(tk.END, content)
+        else:
+            self.workspace_text.delete("1.0", tk.END)
+            if content:
+                self.workspace_text.insert("1.0", content)
+
+        if scroll_to_end:
+            self.workspace_text.see(tk.END)
+        else:
+            self.workspace_text.see("1.0")
+        self.workspace_text.configure(state=tk.DISABLED)
+
+    def _show_workspace_message(self, heading_text: str, meta_text: str, body_text: str) -> None:
+        """显示正文工作区的标题、说明和正文内容。"""
+        self.workspace_heading_var.set(heading_text)
+        self.workspace_meta_var.set(meta_text)
+        self._set_workspace_text(body_text)
+
+    def _show_workspace_idle(self) -> None:
+        """正文工作区空状态。"""
+        self._show_workspace_message(
+            "未选择章节",
+            "选择单个四级标题后，右侧会直接显示已生成正文；批量生成时，这里会显示当前处理章节的实时输出。",
+            "可在左侧大纲树中选择一个四级标题查看正文，或多选后点击“生成所选”开始批量扩写。",
+        )
+
+    def _show_workspace_selection_summary(self, selected_count: int) -> None:
+        """多选时显示概览信息。"""
+        self._show_workspace_message(
+            f"已选择 {selected_count} 个章节",
+            "当前为多选模式。点击“生成所选”后，右侧会实时显示当前处理章节的正文内容。",
+            "若要查看某个章节的已生成正文，请只保留一个四级标题为选中状态。",
+        )
+
+    def _show_heading_preview_in_workspace(self, heading: HeadingNode) -> None:
+        """在主窗口右侧显示指定章节的已生成正文。"""
+        filepath = self.bid_writer.file_saver.find_existing_filepath(heading)
+        if filepath and filepath.exists():
+            content = filepath.read_text(encoding="utf-8")
+            self._show_workspace_message(
+                f"当前章节：{heading.full_path}",
+                f"已生成文件：{filepath.name}",
+                content,
+            )
+            return
+
+        self._show_workspace_message(
+            f"当前章节：{heading.full_path}",
+            "尚未生成正文",
+            "该章节当前没有已生成正文。\n\n点击“生成所选”开始扩写后，正文会在这里实时显示，并在完成后自动保存。",
+        )
+
+    def _refresh_workspace_from_selection(self) -> None:
+        """按当前选择刷新右侧工作区内容。"""
+        if self.is_generating:
+            return
+
+        selected_headings = self._get_selected_leaf_headings()
+        if len(selected_headings) == 1:
+            self._show_heading_preview_in_workspace(selected_headings[0])
+        elif len(selected_headings) > 1:
+            self._show_workspace_selection_summary(len(selected_headings))
+        else:
+            self._show_workspace_idle()
+
+    def _show_generation_start_in_workspace(self, heading: HeadingNode) -> None:
+        """在右侧工作区初始化当前章节的流式生成视图。"""
+        self._show_workspace_message(
+            f"当前章节：{heading.full_path}",
+            "正在生成正文...",
+            "",
+        )
+
+    def _show_generated_content_in_workspace(
+        self,
+        heading: HeadingNode,
+        content: str,
+        *,
+        meta_text: str,
+    ) -> None:
+        """在右侧工作区显示当前章节正文。"""
+        self._show_workspace_message(
+            f"当前章节：{heading.full_path}",
+            meta_text,
+            content,
+        )
 
     def on_window_resize(self, event):
         """窗口尺寸变化后刷新自适应布局"""
@@ -834,30 +1084,41 @@ class MainWindow(tk.Tk):
 
     def create_status_bar(self):
         """创建状态栏"""
-        status_frame = ttk.Frame(self, padding=(8, 4))
+        status_frame = ttk.Frame(self, padding=(12, 8))
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
+        summary_metrics_bar = ttk.Frame(status_frame)
+        summary_metrics_bar.pack(fill=tk.X, pady=(0, 6))
+        self._create_info_item(summary_metrics_bar, "配置", self.config_text)
+        self._create_info_item(summary_metrics_bar, "已选", self.selection_text)
+        self._create_info_item(summary_metrics_bar, "已生成", self.stats_text)
+
+        progress_bar_row = ttk.Frame(status_frame)
+        progress_bar_row.pack(fill=tk.X)
+
         self.task_text = tk.StringVar(value="当前任务: 空闲")
-        ttk.Label(status_frame, textvariable=self.task_text).pack(side=tk.LEFT)
+        ttk.Label(progress_bar_row, textvariable=self.task_text).pack(side=tk.LEFT)
 
         self.batch_progress_text = tk.StringVar(value="0 / 0")
-        ttk.Label(status_frame, textvariable=self.batch_progress_text).pack(side=tk.RIGHT)
+        ttk.Label(progress_bar_row, textvariable=self.batch_progress_text).pack(side=tk.RIGHT)
 
         self.btn_stop_generation = ttk.Button(
-            status_frame,
+            progress_bar_row,
             text="停止本轮",
             command=self.request_stop_generation,
-            padding=(10, 6)
+            padding=(10, 6),
+            **_bootstyle_kwargs("danger")
         )
         self.btn_stop_generation.pack(side=tk.RIGHT, padx=(10, 0))
         self.btn_stop_generation.config(state=tk.DISABLED)
 
         self.progress_bar = ttk.Progressbar(
-            status_frame,
+            progress_bar_row,
             mode='determinate',
             length=220,
             maximum=1,
-            value=0
+            value=0,
+            **_bootstyle_kwargs("success-striped")
         )
         self.progress_bar.pack(side=tk.RIGHT, padx=(10, 0))
 
@@ -866,9 +1127,6 @@ class MainWindow(tk.Tk):
         config_name = self.bid_writer.config.config_path.name
         self.title(f"自动标书撰写系统 - GUI版 [{config_name}]")
         self.config_text.set(config_name)
-        base_dir = Path.cwd().resolve()
-        output_dir = self.bid_writer.file_saver.output_directory.resolve()
-        self.output_text.set(_display_path(output_dir, base_dir))
 
     def create_expand_menu(self):
         """创建展开/收缩下拉菜单"""
@@ -993,6 +1251,7 @@ class MainWindow(tk.Tk):
         self._restore_selected_heading_paths(selected_paths)
         self.update_stats()
         self.update_action_states()
+        self._refresh_workspace_from_selection()
 
     def load_outline(self, preserve_tree_view: bool = True, reset_tree_view: bool = False):
         """加载大纲到树形视图"""
@@ -1027,6 +1286,8 @@ class MainWindow(tk.Tk):
         self.update_window_context()
         self.update_stats()
         self.update_action_states()
+        if not self._preserve_workspace_on_sync:
+            self._refresh_workspace_from_selection()
         remember_last_config(str(self.bid_writer.config.config_path))
 
     def _render_outline_tree(self):
@@ -1115,25 +1376,82 @@ class MainWindow(tk.Tk):
                 self.outline_tree.item(child_id, open=is_open)
             self._set_all_nodes_open(child_id, is_open)
 
-    def _add_tree_node(self, parent: str, heading: HeadingNode, query: str = "", status_filter: str = "全部"):
-        """递归添加树节点"""
-        if not self._heading_or_descendant_matches(heading, query, status_filter):
-            return
+    @staticmethod
+    def _status_to_row_tag(status: str) -> str:
+        if status == "已完成":
+            return "completed"
+        if status == "部分完成":
+            return "partial"
+        return "pending"
 
+    def _get_heading_tree_row_values(self, heading: HeadingNode) -> tuple[str, str, str]:
+        """返回树节点展示所需的状态、进度和颜色标签。"""
         status = self.adapter.get_status_text(heading)
         progress_info = "-"
         if heading.children:
             generated, total = self.adapter.get_progress(heading)
             progress_info = f"{generated}/{total}" if total > 0 else "-"
-        else:
-            self.visible_leaf_count += 1
+        return status, progress_info, self._status_to_row_tag(status)
 
-        if status == "已完成":
-            row_tag = "completed"
-        elif status == "部分完成":
-            row_tag = "partial"
-        else:
-            row_tag = "pending"
+    def _configure_heading_tree_tags(self, tree: ttk.Treeview) -> None:
+        """统一配置大纲树状态颜色与当前焦点高亮。"""
+        tree.tag_configure("completed", foreground="#1f7a4d")
+        tree.tag_configure("partial", foreground="#8a5a00")
+        tree.tag_configure("pending", foreground="#666666")
+        tree.tag_configure(
+            "current_focus",
+            background="#dbeafe",
+            foreground="#0f172a",
+            font=("TkDefaultFont", 10, "bold"),
+        )
+
+    @staticmethod
+    def _bind_label_wrap_to_parent(label: ttk.Label, parent: tk.Misc, min_width: int = 220) -> None:
+        """让说明文本随父容器宽度自动换行。"""
+
+        def on_resize(event):
+            label.configure(wraplength=max(event.width - 4, min_width))
+
+        parent.bind("<Configure>", on_resize, add="+")
+
+    @staticmethod
+    def _set_paned_window_default_sash(
+        paned_window: tk.PanedWindow,
+        *,
+        default_width: int = POPUP_OUTLINE_DEFAULT_WIDTH,
+        min_left_width: int = POPUP_OUTLINE_MIN_WIDTH,
+        min_right_width: int = POPUP_CONTENT_MIN_WIDTH,
+    ) -> None:
+        """为左右分栏设置一个稳定的默认分割宽度。"""
+
+        def place_sash() -> None:
+            if not paned_window.winfo_exists():
+                return
+
+            total_width = paned_window.winfo_width()
+            if total_width <= 1:
+                paned_window.after(50, place_sash)
+                return
+
+            target_width = max(
+                min_left_width,
+                min(default_width, total_width - min_right_width),
+            )
+            try:
+                paned_window.sash_place(0, target_width, 1)
+            except tk.TclError:
+                pass
+
+        paned_window.after_idle(place_sash)
+
+    def _add_tree_node(self, parent: str, heading: HeadingNode, query: str = "", status_filter: str = "全部"):
+        """递归添加树节点"""
+        if not self._heading_or_descendant_matches(heading, query, status_filter):
+            return
+
+        status, progress_info, row_tag = self._get_heading_tree_row_values(heading)
+        if not heading.children:
+            self.visible_leaf_count += 1
 
         node_id = self.outline_tree.insert(
             parent, 'end',
@@ -1170,9 +1488,6 @@ class MainWindow(tk.Tk):
             text=f"生成所选 {selected_count}",
             state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL)
         )
-        self.btn_preview.config(
-            state=(tk.DISABLED if self.is_generating or selected_count != 1 else tk.NORMAL)
-        )
         self.btn_merge.config(
             state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL)
         )
@@ -1205,8 +1520,10 @@ class MainWindow(tk.Tk):
         """当选择树节点时 - 只允许选择四级标题（叶子节点）"""
         selection = self.outline_tree.selection()
         if not selection:
-            self.status_text.set("未选择任何标题")
+            if not self.is_generating:
+                self.status_text.set("未选择任何标题")
             self.update_action_states()
+            self._refresh_workspace_from_selection()
             return
 
         # 过滤掉非叶子节点
@@ -1233,14 +1550,16 @@ class MainWindow(tk.Tk):
 
         # 更新状态栏
         count = len(valid_selection)
-        if count == 0:
-            self.status_text.set("请选择四级标题（叶子节点）")
-        elif count == 1:
-            heading = self.tree_node_map.get(valid_selection[0])
-            self.status_text.set(f"已选择: {heading.title if heading else ''}")
-        else:
-            self.status_text.set(f"已选择 {count} 个四级标题")
+        if not self.is_generating:
+            if count == 0:
+                self.status_text.set("请选择四级标题（叶子节点）")
+            elif count == 1:
+                heading = self.tree_node_map.get(valid_selection[0])
+                self.status_text.set(f"已选择: {heading.title if heading else ''}")
+            else:
+                self.status_text.set(f"已选择 {count} 个四级标题")
         self.update_action_states()
+        self._refresh_workspace_from_selection()
 
     def on_title_select(self, event):
         """保留空方法，避免旧绑定报错"""
@@ -1335,15 +1654,13 @@ class MainWindow(tk.Tk):
         ):
             return
 
-        # 在主线程执行生成（避免线程安全问题），批量生成模式自动保存
-        self._do_batch_generate(selected_headings, additional_requirements, min_words, auto_save=True)
+        # 在主线程执行生成（避免线程安全问题）
+        self._do_batch_generate(selected_headings, additional_requirements, min_words)
 
-    def _do_batch_generate(self, headings: List[HeadingNode],
-                           additional_requirements: str, min_words: int, auto_save: bool = False):
+    def _do_batch_generate(self, headings: List[HeadingNode], additional_requirements: str, min_words: int):
         """执行批量生成（主线程）"""
         total = len(headings)
         success_count = 0
-        skip_count = 0
         fail_count = 0
         completed_count = 0
         stopped_early = False
@@ -1367,11 +1684,10 @@ class MainWindow(tk.Tk):
                 self.status_text.set(f"[{i}/{total}] 正在生成: {heading.title}")
                 self.update_idletasks()
 
-                result = self._generate_with_preview(
+                result = self._generate_into_workspace(
                     heading,
                     additional_requirements,
                     min_words,
-                    auto_save=auto_save
                 )
 
                 completed_count = i
@@ -1380,8 +1696,6 @@ class MainWindow(tk.Tk):
 
                 if result == "success":
                     success_count += 1
-                elif result == "skip":
-                    skip_count += 1
                 else:
                     fail_count += 1
 
@@ -1393,55 +1707,35 @@ class MainWindow(tk.Tk):
             self.stop_requested = False
             self.update_action_states()
 
-        self.refresh_status()
+        self._preserve_workspace_on_sync = True
+        try:
+            self.refresh_status()
+        finally:
+            self._preserve_workspace_on_sync = False
         self.progress_bar.configure(value=(completed_count if stopped_early else total))
         self.batch_progress_text.set(f"{completed_count if stopped_early else total} / {total}")
         self.task_text.set("当前任务: 空闲")
         if stopped_early:
             self.status_text.set(
-                f"批量生成已停止 - 成功: {success_count}, 跳过: {skip_count}, 失败: {fail_count}"
+                f"批量生成已停止 - 成功: {success_count}, 失败: {fail_count}"
             )
         else:
             self.status_text.set(
-                f"批量生成完成 - 成功: {success_count}, 跳过: {skip_count}, 失败: {fail_count}"
+                f"批量生成完成 - 成功: {success_count}, 失败: {fail_count}"
             )
 
     def preview_selected(self):
-        """预览选中的标题"""
+        """将当前选中章节显示到主窗口右侧工作区。"""
         selected_headings = self._get_selected_leaf_headings()
         if not selected_headings:
-            messagebox.showwarning("警告", "请先选择要预览的标题")
+            self._show_workspace_idle()
             return
 
         if len(selected_headings) > 1:
-            messagebox.showwarning("警告", "只能预览单个标题")
+            self._show_workspace_selection_summary(len(selected_headings))
             return
 
-        heading = selected_headings[0]
-
-        # 查找文件（优先使用稳定 ID，兼容旧命名规则）
-        file_saver = self.bid_writer.file_saver
-        filepath = file_saver.find_existing_filepath(heading)
-
-        if filepath and filepath.exists():
-            # 读取并预览
-            content = filepath.read_text(encoding='utf-8')
-            preview_window = tk.Toplevel(self)
-            preview_window.title(f"预览 - {filepath.name}")
-            preview_window.geometry("800x600")
-
-            text_widget = tk.Text(preview_window, wrap=tk.WORD, font=('Consolas', 10))
-            scrollbar = ttk.Scrollbar(preview_window, command=text_widget.yview)
-            text_widget.config(yscrollcommand=scrollbar.set)
-
-            text_widget.insert('1.0', content)
-            text_widget.config(state=tk.DISABLED)
-
-            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        else:
-            self.status_text.set(f"未找到预览文件: {heading.title}")
-            messagebox.showinfo("预览", f"文件未生成\n标题：{heading.title}")
+        self._show_heading_preview_in_workspace(selected_headings[0])
 
     def merge_generated_sections(self):
         """整合所有已生成章节为一个 Markdown 文件。"""
@@ -1504,8 +1798,10 @@ class MainWindow(tk.Tk):
         # 清空当前选择
         for item_id in self.outline_tree.selection():
             self.outline_tree.selection_remove(item_id)
-        self.status_text.set("已清空选择")
+        if not self.is_generating:
+            self.status_text.set("已清空选择")
         self.update_action_states()
+        self._refresh_workspace_from_selection()
         return "break"
 
     def select_all_leaf_titles(self):
@@ -1516,10 +1812,13 @@ class MainWindow(tk.Tk):
         self._select_all_leaf_nodes("")
         selected_count = len(self._get_selected_leaf_headings())
         if selected_count == 0:
-            self.status_text.set("当前结果中没有可选择的四级标题")
+            if not self.is_generating:
+                self.status_text.set("当前结果中没有可选择的四级标题")
         else:
-            self.status_text.set(f"已选择 {selected_count} 个四级标题")
+            if not self.is_generating:
+                self.status_text.set(f"已选择 {selected_count} 个四级标题")
         self.update_action_states()
+        self._refresh_workspace_from_selection()
         return "break"
 
     def _select_all_leaf_nodes(self, parent):
@@ -1635,10 +1934,12 @@ class MainWindow(tk.Tk):
         result = {"cancelled": True}
 
         # 附加要求
-        ttk.Label(dialog, text="附加扩写要求：",
-                 font=('TkDefaultFont', 10)).pack(pady=(20, 5), padx=20, anchor=tk.W)
+        ttk.Label(dialog, text="附加扩写要求：", style="SectionTitle.TLabel").pack(
+            pady=(20, 5), padx=20, anchor=tk.W
+        )
 
-        req_text = tk.Text(dialog, height=5, width=60, font=('Consolas', 10))
+        req_text = tk.Text(dialog, height=5, width=60)
+        style_text_widget(req_text)
         req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
         req_text.insert('1.0', "")
 
@@ -1646,8 +1947,7 @@ class MainWindow(tk.Tk):
         words_frame = ttk.Frame(dialog)
         words_frame.pack(pady=10, padx=20, fill=tk.X)
 
-        ttk.Label(words_frame, text="最低字数：",
-                 font=('TkDefaultFont', 10)).pack(side=tk.LEFT)
+        ttk.Label(words_frame, text="最低字数：", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
 
         min_words_default = self.bid_writer.config.generation_default_min_words
         min_words_min = self.bid_writer.config.generation_min_words_min
@@ -1682,10 +1982,22 @@ class MainWindow(tk.Tk):
         def on_cancel():
             dialog.destroy()
 
-        ttk.Button(button_frame, text="确定", command=on_ok,
-                  width=10, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="取消", command=on_cancel,
-                  width=10, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            button_frame,
+            text="确定",
+            command=on_ok,
+            width=10,
+            padding=(15, 8),
+            **_bootstyle_kwargs("primary")
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            button_frame,
+            text="取消",
+            command=on_cancel,
+            width=10,
+            padding=(15, 8),
+            **_bootstyle_kwargs("secondary")
+        ).pack(side=tk.LEFT, padx=5)
 
         # 等待对话框关闭
         self.wait_window(dialog)
@@ -1694,62 +2006,18 @@ class MainWindow(tk.Tk):
             return None
         return (result["requirements"], result["min_words"])
 
-    class GenerationWindow:
-        """生成进度窗口 - 异步流式显示"""
+    class GenerationSession:
+        """主窗口右侧工作区的生成会话控制器。"""
 
-        def __init__(self, parent, heading_title: str):
+        def __init__(self, parent, heading: HeadingNode):
             self.parent = parent
-            self.window = tk.Toplevel(parent)
-            self.window.title(f"正在生成 - {heading_title}")
-            self.window.geometry("800x600")
-            self.window.transient(parent)
-            self.window.protocol("WM_DELETE_WINDOW", self._on_window_close)
-
-            # 不使用 grab_set()，允许用户查看其他窗口
-
-            # 标题
-            title_frame = ttk.Frame(self.window)
-            title_frame.pack(fill=tk.X, padx=10, pady=10)
-
-            ttk.Label(title_frame, text=f"正在生成：{heading_title}",
-                     font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W)
-
-            self.status_label = ttk.Label(title_frame, text="准备中...",
-                                         font=('TkDefaultFont', 9))
-            self.status_label.pack(anchor=tk.W)
-
-            # 文本显示区域
-            text_frame = ttk.Frame(self.window)
-            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-            self.text_widget = tk.Text(text_frame, wrap=tk.WORD,
-                                      font=('Consolas', 10), state=tk.DISABLED)
-            scrollbar = ttk.Scrollbar(text_frame, command=self.text_widget.yview)
-            self.text_widget.config(yscrollcommand=scrollbar.set)
-
-            self.text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-            # 进度条
-            self.progress = ttk.Progressbar(self.window, mode='indeterminate')
-            self.progress.pack(fill=tk.X, padx=10, pady=5)
-            self.progress.start()
-
-            # 居中窗口
-            self.window.update_idletasks()
-            x = (self.window.winfo_screenwidth() // 2) - (self.window.winfo_width() // 2)
-            y = (self.window.winfo_screenheight() // 2) - (self.window.winfo_height() // 2)
-            self.window.geometry(f"+{x}+{y}")
-
-            # 队列和状态
+            self.heading = heading
             self.text_queue = queue.Queue()
             self.is_generating = False
             self.error = None
             self.result_data = None
             self._queue_poll_id = None
-
-            # 注意：不在这里启动定时检查
-            # 定时器将在 start_generation() 中启动
+            self.parent._show_generation_start_in_workspace(heading)
 
         @staticmethod
         def _widget_exists(widget) -> bool:
@@ -1768,25 +2036,6 @@ class MainWindow(tk.Tk):
                     pass
             self._queue_poll_id = None
 
-        def _destroy_window(self) -> None:
-            if not self._widget_exists(self.window):
-                self.window = None
-                return
-            try:
-                self.window.destroy()
-            except tk.TclError:
-                pass
-            self.window = None
-
-        def _on_window_close(self) -> None:
-            """允许关闭进度窗，但不影响后台生成任务继续执行。"""
-            if self._widget_exists(self.progress):
-                try:
-                    self.progress.stop()
-                except tk.TclError:
-                    pass
-            self._destroy_window()
-
         def _check_queue(self):
             """定时检查队列并更新UI（主线程）"""
             try:
@@ -1795,35 +2044,28 @@ class MainWindow(tk.Tk):
 
                     if msg_type == "text":
                         # 追加文本
-                        if self._widget_exists(self.text_widget):
-                            self.text_widget.config(state=tk.NORMAL)
-                            self.text_widget.insert(tk.END, data)
-                            self.text_widget.see(tk.END)
-                            self.text_widget.config(state=tk.DISABLED)
+                        self.parent._set_workspace_text(
+                            data,
+                            append=True,
+                            scroll_to_end=True,
+                        )
 
                     elif msg_type == "replace":
                         # 后处理修复了格式，替换整个显示内容
-                        if self._widget_exists(self.text_widget):
-                            self.text_widget.config(state=tk.NORMAL)
-                            self.text_widget.delete('1.0', tk.END)
-                            self.text_widget.insert('1.0', data)
-                            self.text_widget.see(tk.END)
-                            self.text_widget.config(state=tk.DISABLED)
-                        if self._widget_exists(self.status_label):
-                            self.status_label.config(text="格式已自动修复")
+                        self.parent._set_workspace_text(data)
+                        if hasattr(self.parent, "workspace_meta_var"):
+                            self.parent.workspace_meta_var.set("格式已自动修复")
 
                     elif msg_type == "status":
                         # 更新状态
-                        if self._widget_exists(self.status_label):
-                            self.status_label.config(text=data)
+                        if hasattr(self.parent, "workspace_meta_var"):
+                            self.parent.workspace_meta_var.set(data)
 
                     elif msg_type == "done":
                         # 生成完成
                         self.is_generating = False
                         self.result_data = data
                         self._cancel_queue_poll()
-                        if self._widget_exists(self.progress):
-                            self.progress.stop()
                         return
 
                     elif msg_type == "error":
@@ -1831,8 +2073,6 @@ class MainWindow(tk.Tk):
                         self.error = data
                         self.is_generating = False
                         self._cancel_queue_poll()
-                        if self._widget_exists(self.progress):
-                            self.progress.stop()
                         return
 
             except queue.Empty:
@@ -1845,8 +2085,6 @@ class MainWindow(tk.Tk):
         def start_generation(self, heading, ai_writer, requirements, min_words):
             """启动后台生成线程"""
             self.is_generating = True
-            if self._widget_exists(self.progress):
-                self.progress.start()
 
             def _background_generate():
                 """后台线程执行生成"""
@@ -1914,185 +2152,74 @@ class MainWindow(tk.Tk):
             return self.result_data  # (content, word_count)
 
         def close(self):
-            """关闭窗口"""
+            """结束当前生成会话轮询。"""
             self._cancel_queue_poll()
-            if self._widget_exists(self.progress):
-                try:
-                    self.progress.stop()
-                except tk.TclError:
-                    pass
-            self._destroy_window()
 
-    def _generate_with_preview(self, heading: HeadingNode,
-                               additional_requirements: str,
-                               min_words: int, auto_save: bool = False) -> str:
+    def _generate_into_workspace(
+        self,
+        heading: HeadingNode,
+        additional_requirements: str,
+        min_words: int,
+    ) -> str:
         """
-        生成内容并预览确认（支持修改重新生成）- 完全异步
-
-        Args:
-            auto_save: 是否自动保存，跳过后续确认步骤（批量生成时使用）
+        生成内容并在主窗口右侧工作区展示，完成后自动保存。
 
         Returns:
-            "success" / "skip" / "failed"
+            "success" / "failed"
         """
-        current_requirements = additional_requirements
+        gen_window = self.GenerationSession(self, heading)
 
-        while True:
-            # 创建生成窗口
-            gen_window = self.GenerationWindow(self, heading.title)
+        gen_window.start_generation(
+            heading,
+            self.bid_writer.ai_writer,
+            additional_requirements,
+            min_words
+        )
 
-            # 启动后台生成
-            gen_window.start_generation(
-                heading,
-                self.bid_writer.ai_writer,
-                current_requirements,
-                min_words
-            )
-
-            # 等待完成（不阻塞，窗口可交互）
-            try:
-                raw_content, word_count, trace_session = gen_window.wait_completion()
-            except Exception as e:
-                gen_window.close()
-                # 在状态栏显示错误信息，不弹窗
-                self.status_text.set(f"生成失败: {str(e)[:50]}...")
-                return "failed"
-
-            # 关闭生成窗口
-            write_timing_log(
-                "popup_close_called",
-                heading_title=heading.title,
-                heading_full_path=heading.full_path,
-                trace_id=trace_session.trace_id if trace_session is not None else "",
-                raw_chars=len(raw_content),
-            )
+        try:
+            raw_content, _word_count, trace_session = gen_window.wait_completion()
+        except Exception as e:
             gen_window.close()
+            self.workspace_meta_var.set(f"生成失败：{str(e)[:80]}")
+            self.status_text.set(f"生成失败: {str(e)[:50]}...")
+            return "failed"
 
-            # 关闭生成窗口后再做格式整理，避免“正在生成”窗口长时间滞留
-            self.status_text.set(f"正在整理输出: {heading.title}")
-            finalize_result = self.bid_writer.ai_writer.finalize_generation(
+        write_timing_log(
+            "workspace_generation_completed",
+            heading_title=heading.title,
+            heading_full_path=heading.full_path,
+            trace_id=trace_session.trace_id if trace_session is not None else "",
+            raw_chars=len(raw_content),
+        )
+        gen_window.close()
+
+        self.status_text.set(f"正在整理输出: {heading.title}")
+        finalize_result = self.bid_writer.ai_writer.finalize_generation(
+            heading,
+            raw_content,
+            trace_session=trace_session,
+        )
+        content = finalize_result.content
+        word_count = self.bid_writer.ai_writer.count_chinese_words(content)
+
+        try:
+            filepath = self.bid_writer.file_saver.save(heading, content)
+        except Exception as e:
+            self._show_generated_content_in_workspace(
                 heading,
-                raw_content,
-                trace_session=trace_session,
+                content,
+                meta_text=f"生成完成，但保存失败：{str(e)[:80]}",
             )
-            content = finalize_result.content
-            word_count = self.bid_writer.ai_writer.count_chinese_words(content)
+            self.status_text.set(f"保存失败: {heading.title}")
+            return "failed"
 
-            # 批量生成时自动保存，跳过预览对话框
-            if auto_save:
-                filepath = self.bid_writer.file_saver.save(heading, content)
-                # 在状态栏显示保存成功信息
-                self.status_text.set(f"已自动保存: {filepath.name}")
-                return "success"
-
-            # 单个生成时显示预览对话框并获取用户操作
-            action, modification = self._show_preview_dialog(heading, content, word_count)
-
-            if action == "save":
-                filepath = self.bid_writer.file_saver.save(heading, content)
-                # 在状态栏显示保存成功信息
-                self.status_text.set(f"文件已保存: {filepath.name}")
-                return "success"
-
-            elif action == "modify":
-                # 追加修改要求，重新生成
-                if modification:
-                    current_requirements = f"{current_requirements}\n\n用户修改要求：{modification}"
-                continue
-
-            else:  # action == "skip"
-                return "skip"
-
-    def _show_preview_dialog(self, heading: HeadingNode, content: str, word_count: int):
-        """
-        显示预览对话框
-
-        Returns:
-            (action, modification) where action is "save"/"modify"/"skip"
-        """
-        dialog = tk.Toplevel(self)
-        dialog.title(f"预览 - {heading.title}")
-        dialog.geometry("900x700")
-        dialog.transient(self)
-        dialog.grab_set()
-
-        result = {"action": "skip", "modification": None}
-
-        # 标题和字数信息
-        info_frame = ttk.Frame(dialog)
-        info_frame.pack(fill=tk.X, padx=10, pady=10)
-
-        ttk.Label(info_frame, text=f"标题：{heading.title}",
-                 font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W)
-        ttk.Label(info_frame, text=f"字数：{word_count} 字",
-                 font=('TkDefaultFont', 9)).pack(anchor=tk.W)
-
-        # 内容预览
-        text_frame = ttk.Frame(dialog)
-        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        text_widget = tk.Text(text_frame, wrap=tk.WORD, font=('Consolas', 10))
-        scrollbar = ttk.Scrollbar(text_frame, command=text_widget.yview)
-        text_widget.config(yscrollcommand=scrollbar.set)
-
-        text_widget.insert('1.0', content)
-        text_widget.config(state=tk.DISABLED)
-
-        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # 按钮
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=10)
-
-        def on_save():
-            result["action"] = "save"
-            dialog.destroy()
-
-        def on_modify():
-            # 弹出修改要求输入框
-            mod_dialog = tk.Toplevel(dialog)
-            mod_dialog.title("输入修改要求")
-            mod_dialog.geometry("500x200")
-            mod_dialog.transient(dialog)
-            mod_dialog.grab_set()
-
-            ttk.Label(mod_dialog, text="请输入修改要求：",
-                     font=('TkDefaultFont', 10)).pack(pady=10, padx=20, anchor=tk.W)
-
-            mod_text = tk.Text(mod_dialog, height=5, width=60, font=('Consolas', 10))
-            mod_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
-
-            def submit_modification():
-                modification = mod_text.get('1.0', tk.END).strip()
-                if not modification:
-                    messagebox.showwarning("警告", "请输入修改要求")
-                    return
-                result["action"] = "modify"
-                result["modification"] = modification
-                mod_dialog.destroy()
-                dialog.destroy()
-
-            ttk.Button(mod_dialog, text="确定", command=submit_modification,
-                      padding=(15, 8)).pack(pady=10)
-
-            self.wait_window(mod_dialog)
-
-        def on_skip():
-            result["action"] = "skip"
-            dialog.destroy()
-
-        ttk.Button(button_frame, text="✅ 保存", command=on_save,
-                  width=15, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="✏️ 修改后重新生成", command=on_modify,
-                  width=20, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="⏭️ 跳过", command=on_skip,
-                  width=15, padding=(15, 8)).pack(side=tk.LEFT, padx=5)
-
-        # 等待对话框关闭
-        self.wait_window(dialog)
-
-        return result["action"], result["modification"]
+        self._show_generated_content_in_workspace(
+            heading,
+            content,
+            meta_text=f"已自动保存：{filepath.name} · {word_count} 字",
+        )
+        self.status_text.set(f"已自动保存: {filepath.name}")
+        return "success"
 
     def open_output_dir(self):
         """打开输出目录"""
@@ -2129,7 +2256,7 @@ class MainWindow(tk.Tk):
 1. 在大纲树中选择四级标题，可使用 Ctrl+点击 多选
 2. 可通过顶部搜索框和状态筛选快速定位未生成章节
 3. 点击“生成所选”开始批量生成，生成过程中可请求停止下一项
-4. 已生成内容可通过“预览所选”直接查看
+4. 单选章节时，右侧正文工作区会直接显示已生成内容；生成过程中也会实时刷新当前章节正文
 5. 点击“整合标书”可按大纲顺序合并所有已生成章节正文，并自定义输出文件名
 6. “扫描输出状态”会重新读取输出目录并刷新完成情况
 
@@ -2147,7 +2274,7 @@ class MainWindow(tk.Tk):
         about_text = """自动标书撰写系统（GUI版）
 
 版本：1.0.0
-基于：Python + Tkinter
+基于：Python + Tkinter + 可选 ttkbootstrap 主题
 功能：AI辅助标书撰写
 
 功能特点：
