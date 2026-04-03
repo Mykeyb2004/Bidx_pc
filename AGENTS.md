@@ -116,7 +116,6 @@ The system uses a hierarchical configuration approach:
 - Content must be professional, technical, and compliance-focused
 
 ### AI Prompt Engineering
-- System role defines bid writing expert with 20 years of experience
 - Three-part structure: Structure Compliance + Content Injection + Scoring Optimization
 - Automatically incorporates scoring criteria keywords for higher scores
 
@@ -126,7 +125,7 @@ The system uses a hierarchical configuration approach:
 - Duplicate detection based on content title
 - Automatic numbered suffix for conflicts
 - 测试文件放到 /tests 中
-- 文档放到 /docs 中
+- 文档放到 /docs 中，开发过程中有分析性、说明性文档保存在此处。并在功能变动时维护这些文档。有相关功能的变动也先参考一下对应文档
 - 调试日志放到 /log 中
 
 ### Error Handling

@@ -1,0 +1,564 @@
+# 章节正文扩写实现机制
+
+## 目的
+
+本文面向维护者，说明当前代码库中“扩展投标章节正文”的实际实现机制，包括：
+
+- 从大纲选择章节到发起模型请求的调用链
+- prompt 的装配顺序和约束来源
+- 章节级上下文裁剪的规则
+- 流式生成、后处理、保存与 trace 落盘方式
+- 当前实现的边界与维护注意事项
+
+## 总体链路
+
+当前章节扩写链路可概括为：
+
+1. `Config` 加载配置、环境变量和输入资源
+2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
+3. GUI 选择叶子章节，收集附加要求和最低字数
+4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
+5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
+6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
+7. `FileSaver.save()` 将章节正文保存为本地 Markdown 文件
+
+关键入口文件：
+
+- `bid_writer/gui.py`
+- `bid_writer/ai_writer.py`
+- `bid_writer/context_pruner.py`
+- `bid_writer/file_saver.py`
+- `bid_writer/generation_trace.py`
+
+## 一、大纲解析与章节选择
+
+### 1.1 大纲解析
+
+`OutlineParser.parse()` 会扫描 Markdown 标题行，支持 `#` 到 `######`，并为每个标题构建 `HeadingNode`：
+
+- `level`: 标题层级
+- `title`: 标题文本
+- `full_path`: 从根到当前节点的完整路径
+- `line_number`: 原始行号
+- `parent` / `children`: 树关系
+
+实现位置：
+
+- `bid_writer/outline_parser.py`
+
+### 1.2 可扩写章节的判定
+
+当前系统不是按“固定四级标题”写死扩写对象，而是以叶子节点为准。`get_deepest_headings()` 会返回所有没有子节点的标题：
+
+- 如果某一支有更深层级，则扩写最深叶子
+- 如果二级标题下没有三级，则该二级也可成为扩写目标
+- 如果一级标题本身没有子标题，也可直接扩写
+
+这意味着“章节正文扩写”的最小单位是当前大纲树中的叶子节点。
+
+### 1.3 GUI 侧的选择与批量执行
+
+GUI 中批量生成的主要逻辑位于：
+
+- `BidWriterGUI.batch_generate()`
+- `BidWriterGUI._do_batch_generate()`
+- `BidWriterGUI._generate_with_preview()`
+
+行为特点：
+
+- 先获取选中的叶子节点
+- 再让用户输入“附加扩写要求”和“最低字数”
+- 批量模式逐章执行
+- 单章模式生成后可预览、保存、跳过或输入修改意见后重新生成
+
+## 二、配置如何影响章节扩写
+
+### 2.1 配置来源
+
+`Config` 同时支持：
+
+- `.env` / `.env.local`
+- YAML 中的 `inputs.*`
+- YAML 根级兼容字段，如 `outline_file`、`bid_requirements`、`scoring_criteria`
+
+兼容逻辑依赖：
+
+- `_get_first_defined(...)`
+- `_get_text_or_file(...)`
+- `_extract_inline_file_path(...)`
+
+也就是说，维护时不能假设所有项目都只使用一种配置形态。
+
+### 2.2 与扩写直接相关的配置
+
+章节扩写主要受以下配置影响：
+
+- `generation.default_min_words`
+- `generation.stream`
+- `generation.stream_idle_timeout_seconds`
+- `prompt.output_format`
+- `prompt.first_line_template`
+- `prompt.allow_markdown_headings`
+- `prompt.allow_english_terms`
+- `prompt.bidder_name`
+- `prompt.max_tables_per_section`
+- `prompt.summary_title`
+- `prompt.hard_constraints`
+- `prompt.extra_rules`
+- `context_pruning.*`
+- `generation_trace.*`
+- `output.*`
+
+### 2.3 当前仓库内的活跃样例配置
+
+`config_公共服务满意度.yaml` 当前体现的运行策略是：
+
+- 开启流式生成
+- 开启上下文裁剪
+- 开启评分路由
+- 开启 `requirement_brief`
+- 开启 trace 全量落盘
+- 禁止 Markdown 标题
+- 禁止不必要英文
+- 强制正式层级序号
+
+因此，分析当前行为时应优先以该配置而不是 README 中的保守默认值为参考。
+
+## 三、Prompt 装配机制
+
+## 3.1 system prompt 与 user prompt 分离
+
+章节扩写使用两类 prompt：
+
+- `system prompt`: 全局角色和最高优先级强约束
+- `user prompt`: 当前章节任务、结构规则、上下文和人工附加要求
+
+system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
+
+- `Config.role`
+- `prompt_bidder_name`
+- `prompt_allow_markdown_headings`
+- `prompt_allow_english_terms`
+- `prompt_hard_constraints`
+
+其中强约束会被放入“最高优先级输出强约束”区块，优先级高于普通风格建议。
+
+### 3.2 user prompt 装配顺序
+
+`AIWriter.build_prompt_result()` 是章节 prompt 的核心装配函数。当前顺序固定为：
+
+1. `task_card`
+2. `structure_contract`
+3. `first_line_rule`，仅在配置了首行模板时出现
+4. 若有裁剪上下文：
+   - `scope_reference`
+   - `scoring_focus`
+   - `requirement_brief` 或 `requirement_points`
+5. 若没有裁剪上下文：
+   - `full_outline`
+   - `bid_requirements`
+   - `scoring_criteria`
+6. `additional_requirements`
+7. `extra_rules`
+
+这套顺序也是 `docs/prompt_contract.md` 中维护的契约。
+
+### 3.3 任务卡内容
+
+`_build_task_card()` 会写入：
+
+- 写作场景
+- 本章重点
+- 字数要求
+- 输出方式
+- 结构要求
+- 表格控制
+- 写作依据
+
+其中“本章重点”并不是简单使用标题原文，而是优先来自裁剪后的焦点词。
+
+### 3.4 结构硬约束
+
+`_build_structure_contract_section()` 会显式要求：
+
+- 正文不要写成无序号散文
+- 至少出现一个正式层级序号 `一、`
+- 若存在多个板块、多个自然段、表格、清单、流程、机制或并列措施，必须继续下钻到 `（一）`、`1.`、`（1）`
+- 序号后若带标题，该行只写“序号 + 标题”，正文另起
+
+这部分与 system prompt 中的强约束一起构成双层约束：一层在 system，一层在 user。
+
+### 3.5 首行规则与额外规则
+
+- `prompt.first_line_template` 非空时，模型被要求固定首行输出
+- `prompt.extra_rules` 会追加为“其他写作要求”段落
+
+这两项都属于 user prompt 的结构补充，不属于 system 级约束。
+
+## 四、章节级上下文裁剪
+
+## 4.1 裁剪是否启用
+
+`AIWriter.build_prompt_result()` 会先检查 `context_pruning_enabled`。如果开启，则调用：
+
+- `ChapterContextPruner.build_context(heading)`
+
+如果裁剪失败，代码会静默回退到 full-context 模式，不会阻断整次生成。
+
+### 4.2 裁剪产物结构
+
+裁剪结果封装在 `ChapterContext` 中，主要字段包括：
+
+- `local_outline`
+- `response_labels`
+- `chapter_focus_terms`
+- `match_keywords`
+- `scoring_items`
+- `scoring_candidates`
+- `requirement_seed`
+- `requirement_blocks`
+- `requirement_brief`
+
+### 4.3 局部大纲
+
+`_build_local_outline()` 会根据配置保留：
+
+- 当前节点的祖先链
+- 当前节点的同级标题
+
+同级标题数量可通过 `context_pruning.local_outline.max_siblings` 限制。这样做的目标不是给模型完整大纲，而是帮助模型理解“本章边界”和“哪些内容属于兄弟章节而不应提前展开”。
+
+### 4.4 响应标签与关键词
+
+`_extract_response_labels()` 会从标题链中提取形如：
+
+- `响应: xxx`
+- `对应评分标准: xxx`
+
+的标签。
+
+之后 `_build_match_keywords()` 会综合：
+
+- 响应标签
+- 当前章节标题
+- 祖先标题
+
+生成一组匹配关键词，用于评分项路由和需求块筛选。
+
+### 4.5 评分项路由
+
+评分项路由依赖 `scoring_criteria` 中的 Markdown 表格：
+
+1. `_parse_markdown_tables()` 解析表格
+2. `_parse_scoring_rows()` 找到“子项/评分项/评审因素”和“评审标准”等列
+3. `_score_criterion()` 根据响应标签、关键词和最长公共子串计算分数
+4. `_score_focus_terms()` 用章节自身焦点词加权
+5. `_route_scoring_items()` 取 Top N 项作为 `scoring_items`
+
+维护注意：
+
+- 如果评分标准不是 Markdown 表格，当前路由能力会明显下降
+- 表头命名虽然有别名兼容，但仍依赖表格结构可被解析
+
+### 4.6 采购需求块筛选
+
+需求裁剪流程如下：
+
+1. `_split_requirement_blocks()` 按空行切块
+2. `_merge_heading_blocks()` 尝试把纯标题块和其后的正文块合并
+3. `_build_requirement_seed()` 对每个需求块按关键词、响应标签、焦点词打分
+4. 高分块进入 `selected`
+5. `_summarize_requirement_blocks()` 将选中的原文块压缩成要点摘要
+
+这里有两个产物：
+
+- `requirement_seed`: 归纳后的要点列表
+- `requirement_blocks`: 命中的原始块及其得分、是否被选中
+
+### 4.7 requirement_brief 的真实实现
+
+当前 `requirement_brief` 不是辅助模型生成的摘要，而是从已选中的需求块里抽取原文摘录：
+
+- `_extract_requirement_excerpt()`
+- `_build_requirement_brief()`
+
+它会：
+
+- 过滤低价值块
+- 尝试保留原文语义
+- 最多摘取 4 条
+- 避免重复
+
+因此当前的 `requirements_brief` 更接近“原文摘录”而不是“智能总结”。
+
+### 4.8 调试输出
+
+当 `context_pruning.debug_dump` 开启时，`dump_debug()` 会在输出目录下写入 `_context_pruning_debug` 调试文件，便于维护者检查：
+
+- 命中的评分项
+- 需求 seed
+- 需求原文摘录
+- 局部大纲
+- prompt 长度
+
+## 五、模型请求与流式生成
+
+## 5.1 请求准备
+
+`AIWriter.prepare_generation()` 会完成三件事：
+
+1. 调用 `build_prompt_result()` 组装 prompt
+2. 调用 `build_system_prompt()` 组装 system prompt
+3. 调用 `_build_request_options()` 生成模型请求参数
+
+最终消息格式是标准 Chat Completions 结构：
+
+- `{"role": "system", "content": system_prompt}`
+- `{"role": "user", "content": user_prompt}`
+
+### 5.2 trace 会话创建
+
+如果开启 `generation_trace`，`prepare_generation()` 还会创建 `GenerationTraceSession`，在真正发请求前就落盘初始产物：
+
+- `manifest.json`
+- `01_heading.json`
+- `02_context_assembly.json`
+- `03_prompt_system.md`
+- `04_prompt_user.md`
+- `05_request_options.json`
+
+### 5.3 实际模型调用
+
+正文生成通过 OpenAI Python SDK 发起：
+
+- 流式：`self.client.chat.completions.create(**request_options)`
+- 同步：同样使用 `chat.completions.create(...)`
+
+虽然文件头注释仍写“Gemini API”，但实际实现已经切换为 OpenAI 兼容接口。
+
+### 5.4 流式读取机制
+
+流式实现位于 `_stream_expand_raw()`，关键点：
+
+- 单独启动 reader 线程遍历响应流
+- 每收到 token 就放入队列并 `yield`
+- 主循环按超时机制等待新 token
+- 若最后一个 token 后静默超过 `generation.stream_idle_timeout_seconds`，则主动关闭响应
+
+这套机制的目标是避免模型侧流结束不规范导致 GUI 一直卡在“生成中”。
+
+## 六、GUI 侧的生成与预览
+
+### 6.1 当前 GUI 实际调用路径
+
+GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
+
+1. `prepare_generation()`
+2. `expand_raw()`
+3. 生成完成后再 `finalize_generation()`
+
+这意味着：
+
+- 生成窗口中实时显示的是原始模型输出
+- 后处理发生在生成窗口关闭后
+- `AIWriter.expand()` 中自带的“流式后替换 sentinel”机制，当前 GUI 主路径并没有使用到
+
+### 6.2 预览与重新生成
+
+单章生成完成后：
+
+- 先做后处理
+- 再展示预览窗口
+- 用户可选择保存
+- 或输入“修改要求”后重新生成
+
+重新生成时，新的修改意见会直接拼接到原有 `additional_requirements` 后面。
+
+## 七、后处理机制
+
+当前后处理刻意保持轻量，不再做二次大模型格式修复。
+
+### 7.1 投标主体统一
+
+`_normalize_bidder_references()` 会把以下词替换成配置中的 `prompt.bidder_name`：
+
+- `我方`
+- `我司`
+- `本公司`
+- `本单位`
+
+### 7.2 输出问题检测
+
+`_collect_output_issues()` 当前会检测：
+
+- `numbering_transitions`
+  - 出现“首先、其次、再次、最后”等段首转承
+- `missing_formal_hierarchy`
+  - 文本已明显多段分层，但没有正式层级序号
+- `markdown_headings`
+  - 在禁止 Markdown 标题时仍输出 `#`
+- `forbidden_summary`
+  - 在 `summary_title` 为空时仍出现“小结/总结”
+
+注意：
+
+- 这些问题当前只会记录在 `postprocess` 和 trace 中
+- 不会自动重写正文
+- `format_repair_applied` 当前固定为 `False`
+
+## 八、保存机制
+
+## 8.1 文件命名
+
+`FileSaver` 为避免同名章节互相覆盖，会基于 `HeadingNode.full_path` 生成稳定 ID：
+
+- `heading_id = sha1(full_path)[:12]`
+
+最终文件名格式类似：
+
+- `章节标题__abcdef123456.md`
+
+### 8.2 保存内容格式
+
+常规 `save()` 默认会：
+
+- 可选写入 `# 标题`
+- 再写入正文内容
+
+因此“模型输出的正文”和“落盘后的 Markdown 文件”不是完全等价的：
+
+- 模型侧被要求“不重复标题”
+- 文件侧可能依然包一层 Markdown 标题，便于人工阅读
+
+### 8.3 已生成文件识别
+
+系统识别章节是否已生成时，优先看：
+
+- 文件名中的稳定 ID
+- 旧格式文件名
+- 旧文件中的 front matter 元数据
+
+这样兼容了旧版本输出。
+
+## 九、trace 与可观测性
+
+### 9.1 trace 记录了什么
+
+`GenerationTraceSession` 记录：
+
+- 当前标题信息
+- 请求参数
+- system prompt
+- user prompt
+- prompt contract 摘要层
+- raw `prompt_sections`
+- pruned context 或 full context 统计
+- 最终输出
+- 后处理 issue
+
+### 9.2 Prompt Contract 摘要层
+
+当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含六个 block：
+
+1. `system_constraints`
+2. `chapter_task`
+3. `structure_rules`
+4. `chapter_scope`
+5. `requirement_context`
+6. `scoring_context`
+
+这层不是替代原始 prompt sections，而是为了让维护者更快看懂“一次章节扩写到底喂给了模型什么”。
+
+### 9.3 维护者排查顺序
+
+当前推荐排查顺序仍然是：
+
+1. 先看 `07_summary.md`
+2. 再看 `04_prompt_user.md`
+3. 再看 `02_context_assembly.json`
+4. 最后看 `06_generation_output.md`
+
+## 十、当前实现的边界
+
+### 10.1 裁剪是规则驱动，不是智能规划
+
+`context_pruner.py` 当前没有实际调用辅助模型，虽然配置里预留了 `context_pruning.api.*`。因此当前裁剪效果高度依赖：
+
+- 标题命名质量
+- 评分标准结构
+- 需求文档分段质量
+
+### 10.2 评分路由依赖 Markdown 表格
+
+如果评分标准改成纯段落文本，`_parse_scoring_rows()` 很可能拿不到有效评分项，`scoring_focus` 将退化或为空。
+
+### 10.3 后处理只做检测，不做纠正
+
+当前系统能发现：
+
+- 层级不规范
+- Markdown 标题违规
+- 总结违规
+
+但不会自动修正。若需要“自动格式修复”，需要重新引入或新增一层修复机制。
+
+### 10.4 GUI 主路径绕过了 `AIWriter.expand()` 的整合封装
+
+这不是 bug，但属于重要实现事实。以后如果修改 `AIWriter.expand()` 的行为，未必会影响 GUI 主链路；真正影响 GUI 的是：
+
+- `prepare_generation()`
+- `expand_raw()`
+- `finalize_generation()`
+
+## 十一、维护建议
+
+### 11.1 改 prompt 时优先检查三处
+
+- `AIWriter.build_system_prompt()`
+- `AIWriter.build_prompt_result()`
+- `docs/prompt_contract.md`
+
+如果只改代码、不更新契约文档，后续维护会失真。
+
+### 11.2 改裁剪逻辑时优先检查四处
+
+- `ChapterContext` 字段定义
+- `build_context()` 的返回结构
+- `GenerationTraceSession._build_context_payload()`
+- `_context_pruning_debug` 调试输出格式
+
+否则 trace 和调试文档可能与运行时不一致。
+
+### 11.3 改保存逻辑时注意兼容旧文件
+
+`FileSaver.find_existing_filepath()` 目前兼容：
+
+- 新文件名中的稳定 ID
+- 老文件名规则
+- front matter 元数据
+
+修改命名规则时，不要直接破坏这三层兼容。
+
+### 11.4 改 GUI 生成流程时注意线程边界
+
+当前设计是：
+
+- 模型调用在后台线程
+- UI 更新在主线程
+- 通过队列通信
+
+任何直接在后台线程触碰 Tk 控件的改动，都容易引入线程安全问题。
+
+## 十二、核心结论
+
+当前“扩展投标章节正文”的实现，不是一个单点函数，而是一条明确分层的流水线：
+
+- 大纲树决定章节边界
+- 配置决定约束与生成策略
+- `AIWriter` 负责 prompt 装配和模型调用
+- `ChapterContextPruner` 负责章节级上下文压缩
+- GUI 负责交互、预览与批量调度
+- `FileSaver` 负责稳定落盘
+- `GenerationTraceSession` 负责全过程可观测性
+
+从维护角度看，最重要的不是单独看模型调用，而是把这几层一起理解，否则很容易误判“为什么某一章会生成成这样”。
