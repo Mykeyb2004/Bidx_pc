@@ -140,6 +140,7 @@ class AIWriter:
         lines = [
             "## 章节任务卡",
             f"- 写作场景：为{bidder_name}撰写“{project_title}”投标文件中的当前章节正文。",
+            f"- 当前章节路径：{heading.full_path}",
             f"- 本章重点：{'；'.join(focus_terms)}",
             f"- 字数要求：不少于 {min_words} 字",
             f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
@@ -552,13 +553,13 @@ class AIWriter:
                 "id": "chapter_scope",
                 "label": "Chapter Scope",
                 "prompt_kind": "user",
-                "section_names": ["scope_reference", "full_outline"],
+                "section_names": ["scope_reference"],
                 "source_context": [
                     "context_mode",
                     "HeadingNode.parent",
                     "HeadingNode.title",
+                    "HeadingNode.full_path",
                     "HeadingNode.siblings",
-                    "outline_file" if pruned_context is None else "",
                 ],
             },
             {
@@ -623,7 +624,6 @@ class AIWriter:
         pruned_context = None
         context_mode = "full"
         full_context_stats: dict[str, Any] = {
-            "outline_chars": 0,
             "bid_requirements_chars": 0,
             "scoring_criteria_chars": 0,
         }
@@ -667,15 +667,15 @@ class AIWriter:
                 ),
             )
 
+        self._append_prompt_section(
+            prompt_parts,
+            prompt_sections,
+            "scope_reference",
+            self._build_scope_reference(heading),
+        )
+
         if pruned_context is not None:
             context_mode = "pruned"
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "scope_reference",
-                self._build_scope_reference(heading),
-            )
-
             if pruned_context.scoring_items:
                 self._append_prompt_section(
                     prompt_parts,
@@ -707,24 +707,6 @@ class AIWriter:
 """,
                 )
         else:
-            outline_content = self.config.get_outline_content().strip()
-            full_context_stats["outline_chars"] = len(outline_content)
-            if outline_content:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "full_outline",
-                    f"""
-## 完整总大纲参考
-以下为本项目标书的完整 Markdown 大纲原文。请据此理解当前章节在全稿中的位置、边界和上下文关系。
-请仅撰写“当前标题”负责的内容，不要照抄大纲，不要把其他章节应展开的内容提前写入本章节。
-
-```markdown
-{outline_content}
-```
-""",
-                )
-
             # 添加招标需求上下文
             bid_requirements = self.config.bid_requirements.strip()
             full_context_stats["bid_requirements_chars"] = len(bid_requirements)

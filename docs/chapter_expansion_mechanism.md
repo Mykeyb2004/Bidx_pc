@@ -150,16 +150,15 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 1. `task_card`
 2. `structure_contract`
 3. `first_line_rule`，仅在配置了首行模板时出现
-4. 若有裁剪上下文：
-   - `scope_reference`
+4. `scope_reference`
+5. 若有裁剪上下文：
    - `scoring_focus`
    - `requirement_brief` 或 `requirement_points`
-5. 若没有裁剪上下文：
-   - `full_outline`
+6. 若没有裁剪上下文：
    - `bid_requirements`
    - `scoring_criteria`
-6. `additional_requirements`
-7. `extra_rules`
+7. `additional_requirements`
+8. `extra_rules`
 
 这套顺序也是 `docs/prompt_contract.md` 中维护的契约。
 
@@ -168,6 +167,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 `_build_task_card()` 会写入：
 
 - 写作场景
+- 当前章节路径
 - 本章重点
 - 字数要求
 - 输出方式

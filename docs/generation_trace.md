@@ -143,7 +143,6 @@ output/
 
 当 `context_mode = "full"` 时，会记录 `full_context`：
 
-- `outline_chars`
 - `bid_requirements_chars`
 - `scoring_criteria_chars`
 
@@ -190,6 +189,7 @@ output/
 给人看的快速摘要，适合先扫一眼：
 
 - 本章标题
+- 处理模式（`full_context` / `legacy_rule` / `hybrid_extract`）
 - 上下文模式
 - business-block 顺序（`prompt_contract_blocks`）
 - prompt 长度

@@ -2,6 +2,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 import bid_writer.ai_writer as ai_writer_module
 from bid_writer.ai_writer import AIWriter
 from bid_writer.config import Config
@@ -83,6 +85,18 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     assert "source_context" in result.prompt_contract_blocks[0]
 
 
+def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, min_words=1200)
+
+    assert "- 当前章节路径：综合服务项目投标方案 > 项目实施方案 > 质量保障措施" in result.prompt
+    assert "## 章节边界参考" in result.prompt
+    assert "## 完整总大纲参考" not in result.prompt
+
+
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)
@@ -105,6 +119,34 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
     assert payload["prompt_contract"]["block_order"] == EXPECTED_BLOCK_IDS
     assert [block["id"] for block in payload["prompt_contract"]["blocks"]] == EXPECTED_BLOCK_IDS
     assert payload["prompt_contract"]["blocks"][0]["source_context"]
+
+
+@pytest.mark.parametrize("processing_path", ["full_context", "legacy_rule", "hybrid_extract"])
+def test_trace_summary_records_processing_path(monkeypatch, tmp_path, processing_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = processing_path
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    if processing_path != "full_context":
+        monkeypatch.setattr(
+            writer.context_pruner,
+            "build_context",
+            lambda _: ChapterContext(
+                chapter_focus_terms=["质量保障措施"],
+                retrieval_mode=f"path={processing_path};vector=off;verify=off",
+            ),
+        )
+        monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
+
+    prepared = writer.prepare_generation(heading, min_words=1200, stream=False)
+
+    assert prepared.trace_session is not None
+
+    prepared.trace_session.finalize("测试正文")
+    summary = prepared.trace_session.artifact_paths["summary"].read_text(encoding="utf-8")
+
+    assert f"- processing_path: {processing_path}" in summary
 
 
 def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, tmp_path):

@@ -341,11 +341,10 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `task_card` | `## 章节任务卡` | 总是出现 | 定义当前章节写作任务 |
 | `structure_contract` | `## 结构输出硬要求` | 总是出现 | 定义正文结构硬要求 |
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
-| `scope_reference` | `## 章节边界参考` | pruned 分支 | 给出父标题/当前标题/同级标题 |
+| `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
 | `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |
-| `full_outline` | `## 完整总大纲参考` | full 分支且 outline 有内容时 | 放完整 outline |
 | `bid_requirements` | `## 招标需求参考` | full 分支且有采购需求原文时 | 放完整采购需求 |
 | `scoring_criteria` | `## 评分标准参考` | full 分支且有评分标准原文时 | 放完整评分标准 |
 | `additional_requirements` | `## 用户附加要求` | 用户输入非空时 | 运营侧临时补充要求 |
@@ -356,6 +355,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 `task_card` 当前固定包含以下字段：
 
 - 写作场景
+- 当前章节路径
 - 本章重点
 - 字数要求
 - 输出方式
@@ -365,6 +365,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 其中几个字段的真实来源要特别注意：
 
+- “当前章节路径”直接使用 `HeadingNode.full_path`
 - “本章重点”来自 `pruned_context.chapter_focus_terms`，如果没有 pruned context，则退回标题自身
 - “输出方式”只引用 `prompt_output_format` 这段配置文本
 - “表格控制”来自 `prompt_max_tables_per_section`
@@ -400,7 +401,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 当 `pruned_context` 成功构建后，user prompt 会追加以下内容：
 
-1. `## 章节边界参考`
+1. 公共段落中的 `## 章节边界参考`
 2. 如果命中评分项，则追加 `## 评分关注`
 3. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
 4. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
@@ -416,13 +417,13 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 在 full-context 分支中，会按顺序尝试放入：
 
-1. `## 完整总大纲参考`
+1. 公共段落中的 `## 章节边界参考`
 2. `## 招标需求参考`
 3. `## 评分标准参考`
 
 对应原文非空时，该 section 才会真正出现。
 
-也就是说，full 分支是“整段原文直塞”，不是章节级提炼。
+也就是说，full 分支不再注入完整大纲，而是依赖轻量的章节边界信息，再配合完整采购需求和评分标准原文。
 
 ### 5.8 拼接方式
 
@@ -520,7 +521,7 @@ messages = [
 ## 首行要求
 ...
 
-## 完整总大纲参考
+## 章节边界参考
 ...
 
 ## 招标需求参考
@@ -539,7 +540,6 @@ messages = [
 其中：
 
 - `首行要求` 可能没有
-- `完整总大纲参考` 理论上也取决于 outline 原文是否为空
 - `招标需求参考` 和 `评分标准参考` 取决于对应原文是否为空
 - `用户附加要求` 和 `其他写作要求` 也可能没有
 
@@ -661,16 +661,15 @@ flowchart TD
     H --> H1[task_card]
     H1 --> H2[structure_contract]
     H2 --> H3[first_line_rule 可选]
-    H3 --> H4{pruned 还是 full}
-    H4 -- pruned --> H5[scope_reference]
-    H5 --> H6[scoring_focus 可选]
+    H3 --> H4[scope_reference]
+    H4 --> H5{pruned 还是 full}
+    H5 -- pruned --> H6[scoring_focus 可选]
     H6 --> H7[requirement_brief 或 requirement_seed]
-    H4 -- full --> H8[full_outline]
-    H8 --> H9[bid_requirements 可选]
-    H9 --> H10[scoring_criteria 可选]
-    H7 --> H11[additional_requirements 可选]
-    H10 --> H11
-    H11 --> H12[extra_rules 可选]
+    H5 -- full --> H8[bid_requirements 可选]
+    H8 --> H9[scoring_criteria 可选]
+    H7 --> H10[additional_requirements 可选]
+    H9 --> H10
+    H10 --> H11[extra_rules 可选]
 
     B --> I[build_system_prompt]
     I --> J[role + 最高优先级输出强约束]

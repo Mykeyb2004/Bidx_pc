@@ -260,6 +260,7 @@ class GenerationTraceSession:
             f"- 标题: {self.heading.title}",
             f"- full_path: {self.heading.full_path}",
             f"- status: {self.status}",
+            f"- processing_path: {self.config.processing_path}",
             f"- context_mode: {self.context_mode}",
             f"- system_prompt_chars: {len(self.system_prompt)}",
             f"- user_prompt_chars: {len(self.user_prompt)}",
@@ -297,7 +298,6 @@ class GenerationTraceSession:
         else:
             lines.extend(
                 [
-                    f"- outline_chars: {self.full_context_stats.get('outline_chars', 0)}",
                     f"- bid_requirements_chars: {self.full_context_stats.get('bid_requirements_chars', 0)}",
                     f"- scoring_criteria_chars: {self.full_context_stats.get('scoring_criteria_chars', 0)}",
                 ]
