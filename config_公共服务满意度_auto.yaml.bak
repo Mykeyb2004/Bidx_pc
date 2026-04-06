@@ -34,13 +34,13 @@ writing:
   - 内容要专业、严谨，符合标书撰写规范，满足对评分标准高响应、高得分的要求
   role_file: ./docs/roles/公共服务满意度_role.md
 processing:
-  path: auto
+  path: full_context
   context_view:
     include_ancestors: true
     include_siblings: true
     max_siblings: 8
   project_background:
-    enabled: true
+    enabled: false
     max_chars: 800
   auto:
     requirements_top_k: 8
@@ -63,7 +63,7 @@ processing:
 models:
   generation:
     model: gpt-5.4
-    temperature: 0.6
+    temperature: 0.7
     max_tokens: 10000
     timeout_seconds: 120
     max_retries: 3

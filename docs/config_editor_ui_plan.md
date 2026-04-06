@@ -472,9 +472,11 @@
 - 已支持 `保存` 与 `另存为`
 - 已支持保存后对当前配置自动重载，或在另存为后选择切换
 - 已支持 legacy 配置加载、canonical schema 标准化导出和部分兼容字段保留
+- `processing.path` 当前已提供 `auto / full_context` 两个可视化入口；`full_context` 会恢复全文直送链路所需的配置项展示
 
 首版与理想方案的差异：
 
 - `hard_constraints` / `extra_rules` 当前采用“每行一条”的文本编辑方式，尚未做成带增删排序按钮的列表控件
 - `hybrid_extract` 高级参数当前直接展开在同页中，尚未单独做折叠交互
+- `legacy_rule / hybrid_extract` 仍未恢复为完整可视化编辑路径，当前更适合继续手工维护 YAML
 - YAML 注释和原字段顺序仍不会被保留，保存后会转为标准化结构

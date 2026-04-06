@@ -220,11 +220,12 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.max_tables_per_section", tk.StringVar())
         add_var("writing.summary_title", tk.StringVar())
 
+        add_var("processing.path", tk.StringVar())
         add_var("processing.context_view.include_ancestors", tk.BooleanVar())
         add_var("processing.context_view.include_siblings", tk.BooleanVar())
         add_var("processing.context_view.max_siblings", tk.StringVar())
-        add_var("processing.auto.project_background_enabled", tk.BooleanVar())
-        add_var("processing.auto.project_background_max_chars", tk.StringVar())
+        add_var("processing.project_background.enabled", tk.BooleanVar())
+        add_var("processing.project_background.max_chars", tk.StringVar())
         add_var("processing.auto.requirements_top_k", tk.StringVar())
         add_var("processing.auto.scoring_parse_mode", tk.StringVar())
         add_var("processing.auto.scoring_max_rows", tk.StringVar())
@@ -275,6 +276,7 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("runtime.merge.normalize_soft_line_breaks", tk.BooleanVar())
 
         self.section_var.trace_add("write", lambda *_: self._show_current_section())
+        self.vars["processing.path"].trace_add("write", lambda *_: self._update_processing_visibility())
 
     def _create_widgets(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -475,35 +477,66 @@ class ConfigEditorDialog(tk.Toplevel):
         page = self._create_section_page("processing")
         content = page.content
 
-        context_view = ttk.LabelFrame(content, text="上下文视图", padding=12)
-        context_view.pack(fill=tk.X, pady=(0, 12))
-        self._add_check_row(context_view, 0, "包含祖先标题", "processing.context_view.include_ancestors")
-        self._add_check_row(context_view, 1, "包含同级标题", "processing.context_view.include_siblings")
-        self._add_entry_row(context_view, 2, "同级标题上限", "processing.context_view.max_siblings")
-        context_view.columnconfigure(1, weight=1)
+        self.processing_path_frame = ttk.LabelFrame(content, text="处理路径", padding=12)
+        self.processing_path_frame.pack(fill=tk.X, pady=(0, 12))
+        path_label = ttk.Label(self.processing_path_frame, text="processing.path")
+        path_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        path_box = ttk.Combobox(
+            self.processing_path_frame,
+            textvariable=self.vars["processing.path"],
+            values=("auto", "full_context"),
+        )
+        path_box.grid(row=0, column=1, sticky="ew", pady=5)
+        helper = ttk.Label(
+            self.processing_path_frame,
+            text="可选值：auto / full_context。若载入旧配置中的其他模式，可在这里切回受支持模式。",
+            style="Muted.TLabel",
+            justify=tk.LEFT,
+        )
+        helper.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self.processing_path_frame.columnconfigure(1, weight=1)
+        self._register_tooltip(path_label, "processing.path")
+        self._register_tooltip(path_box, "processing.path")
+        self._register_tooltip(helper, "processing.path")
 
-        bg_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
-        bg_frame.pack(fill=tk.X, pady=(0, 12))
-        self._add_check_row(bg_frame, 0, "启用项目背景生成", "processing.auto.project_background_enabled")
-        self._add_entry_row(bg_frame, 1, "背景最大字符数", "processing.auto.project_background_max_chars")
-        bg_frame.columnconfigure(1, weight=1)
+        self.processing_full_context_frame = ttk.LabelFrame(content, text="full_context 说明", padding=12)
+        ttk.Label(
+            self.processing_full_context_frame,
+            text=(
+                "当前模式不会做章节级摘录或检索，而是把采购需求全文和评分标准全文直接拼入提示词。"
+                " 下方仅保留对 full_context 仍然生效的项目背景参数。"
+            ),
+            justify=tk.LEFT,
+            wraplength=760,
+        ).pack(anchor="w")
 
-        req_frame = ttk.LabelFrame(content, text="需求检索", padding=12)
-        req_frame.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(req_frame, 0, "需求检索 top-K（原文段落数）", "processing.auto.requirements_top_k")
-        self._add_entry_row(req_frame, 1, "top_k_lexical", "processing.auto.retrieval.top_k_lexical")
-        self._add_entry_row(req_frame, 2, "top_k_fused", "processing.auto.retrieval.top_k_fused")
-        self._add_entry_row(req_frame, 3, "top_k_final", "processing.auto.retrieval.top_k_final")
-        self._add_entry_row(req_frame, 4, "min_fused_score", "processing.auto.retrieval.min_fused_score")
-        self._add_check_row(req_frame, 5, "lexical_enabled", "processing.auto.retrieval.lexical_enabled")
-        self._add_check_row(req_frame, 6, "vector_enabled（需配置 embedding）", "processing.auto.retrieval.vector_enabled")
-        req_frame.columnconfigure(1, weight=1)
+        self.processing_context_view_frame = ttk.LabelFrame(content, text="上下文视图", padding=12)
+        self._add_check_row(self.processing_context_view_frame, 0, "包含祖先标题", "processing.context_view.include_ancestors")
+        self._add_check_row(self.processing_context_view_frame, 1, "包含同级标题", "processing.context_view.include_siblings")
+        self._add_entry_row(self.processing_context_view_frame, 2, "同级标题上限", "processing.context_view.max_siblings")
+        self.processing_context_view_frame.columnconfigure(1, weight=1)
 
-        scoring_frame = ttk.LabelFrame(content, text="评分检索", padding=12)
-        scoring_frame.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(scoring_frame, 0, "评分最多保留行数", "processing.auto.scoring_max_rows")
-        self._add_entry_row(scoring_frame, 1, "评分解析模式", "processing.auto.scoring_parse_mode")
-        scoring_frame.columnconfigure(1, weight=1)
+        self.processing_project_background_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
+        self._add_check_row(self.processing_project_background_frame, 0, "启用项目背景生成", "processing.project_background.enabled")
+        self._add_entry_row(self.processing_project_background_frame, 1, "背景最大字符数", "processing.project_background.max_chars")
+        self.processing_project_background_frame.columnconfigure(1, weight=1)
+
+        self.processing_req_frame = ttk.LabelFrame(content, text="需求检索", padding=12)
+        self._add_entry_row(self.processing_req_frame, 0, "需求检索 top-K（原文段落数）", "processing.auto.requirements_top_k")
+        self._add_entry_row(self.processing_req_frame, 1, "top_k_lexical", "processing.auto.retrieval.top_k_lexical")
+        self._add_entry_row(self.processing_req_frame, 2, "top_k_fused", "processing.auto.retrieval.top_k_fused")
+        self._add_entry_row(self.processing_req_frame, 3, "top_k_final", "processing.auto.retrieval.top_k_final")
+        self._add_entry_row(self.processing_req_frame, 4, "min_fused_score", "processing.auto.retrieval.min_fused_score")
+        self._add_check_row(self.processing_req_frame, 5, "lexical_enabled", "processing.auto.retrieval.lexical_enabled")
+        self._add_check_row(self.processing_req_frame, 6, "vector_enabled（需配置 embedding）", "processing.auto.retrieval.vector_enabled")
+        self.processing_req_frame.columnconfigure(1, weight=1)
+
+        self.processing_scoring_frame = ttk.LabelFrame(content, text="评分检索", padding=12)
+        self._add_entry_row(self.processing_scoring_frame, 0, "评分最多保留行数", "processing.auto.scoring_max_rows")
+        self._add_entry_row(self.processing_scoring_frame, 1, "评分解析模式", "processing.auto.scoring_parse_mode")
+        self.processing_scoring_frame.columnconfigure(1, weight=1)
+
+        self._update_processing_visibility()
 
     def _build_models_section(self) -> None:
         page = self._create_section_page("models")
@@ -727,11 +760,12 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.allow_english_terms": model["writing"]["allow_english_terms"],
             "writing.max_tables_per_section": str(model["writing"]["max_tables_per_section"]),
             "writing.summary_title": model["writing"]["summary_title"],
+            "processing.path": model["processing"]["path"],
             "processing.context_view.include_ancestors": model["processing"]["context_view"]["include_ancestors"],
             "processing.context_view.include_siblings": model["processing"]["context_view"]["include_siblings"],
             "processing.context_view.max_siblings": str(model["processing"]["context_view"]["max_siblings"]),
-            "processing.auto.project_background_enabled": model["processing"]["auto"]["project_background_enabled"],
-            "processing.auto.project_background_max_chars": str(model["processing"]["auto"]["project_background_max_chars"]),
+            "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
+            "processing.project_background.max_chars": str(model["processing"]["project_background"]["max_chars"]),
             "processing.auto.requirements_top_k": str(model["processing"]["auto"]["requirements_top_k"]),
             "processing.auto.scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
             "processing.auto.scoring_max_rows": str(model["processing"]["auto"]["scoring_max_rows"]),
@@ -830,15 +864,17 @@ class ConfigEditorDialog(tk.Toplevel):
                 "extra_rules": self._split_lines(self._get_text_value("writing.extra_rules_text")),
             },
             "processing": {
-                "path": "auto",
+                "path": self.vars["processing.path"].get().strip() or "auto",
                 "context_view": {
                     "include_ancestors": bool(self.vars["processing.context_view.include_ancestors"].get()),
                     "include_siblings": bool(self.vars["processing.context_view.include_siblings"].get()),
                     "max_siblings": self.vars["processing.context_view.max_siblings"].get().strip(),
                 },
+                "project_background": {
+                    "enabled": bool(self.vars["processing.project_background.enabled"].get()),
+                    "max_chars": self.vars["processing.project_background.max_chars"].get().strip(),
+                },
                 "auto": {
-                    "project_background_enabled": bool(self.vars["processing.auto.project_background_enabled"].get()),
-                    "project_background_max_chars": self.vars["processing.auto.project_background_max_chars"].get().strip(),
                     "requirements_top_k": self.vars["processing.auto.requirements_top_k"].get().strip(),
                     "scoring_parse_mode": self.vars["processing.auto.scoring_parse_mode"].get().strip(),
                     "scoring_max_rows": self.vars["processing.auto.scoring_max_rows"].get().strip(),
@@ -1001,6 +1037,25 @@ class ConfigEditorDialog(tk.Toplevel):
             file_frame.grid()
 
     def _update_processing_visibility(self) -> None:
+        path = self.vars["processing.path"].get().strip().lower()
+
+        for frame in (
+            self.processing_full_context_frame,
+            self.processing_context_view_frame,
+            self.processing_project_background_frame,
+            self.processing_req_frame,
+            self.processing_scoring_frame,
+        ):
+            frame.pack_forget()
+
+        if path == "full_context":
+            self.processing_full_context_frame.pack(fill=tk.X, pady=(0, 12))
+            self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
+        else:
+            self.processing_context_view_frame.pack(fill=tk.X, pady=(0, 12))
+            self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
+            self.processing_req_frame.pack(fill=tk.X, pady=(0, 12))
+            self.processing_scoring_frame.pack(fill=tk.X, pady=(0, 12))
         self._schedule_refresh()
 
     def _show_current_section(self) -> None:

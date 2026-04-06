@@ -14,8 +14,8 @@ import yaml
 
 
 _MISSING = object()
-_PROCESSING_PATHS = {"auto"}
-_PROCESSING_PATHS_WITH_MIXED = _PROCESSING_PATHS | {"mixed"}
+_SUPPORTED_PROCESSING_PATHS = {"auto", "full_context"}
+_KNOWN_PROCESSING_PATHS = _SUPPORTED_PROCESSING_PATHS | {"legacy_rule", "hybrid_extract", "mixed"}
 
 
 @dataclass(frozen=True)
@@ -90,8 +90,14 @@ def load_config_editor_document(config_path: str | Path) -> ConfigEditorDocument
 
 def build_editor_notes(model: dict[str, Any], raw_config: dict[str, Any]) -> list[str]:
     notes: list[str] = []
-    if model["processing"]["path"] != "auto":
-        notes.append("当前配置不是 auto 模式，编辑器已统一切换为 auto。保存后将使用 auto 模式。")
+    processing_path = model["processing"]["path"]
+    if processing_path not in _SUPPORTED_PROCESSING_PATHS:
+        notes.append(
+            "当前配置使用的 processing.path 暂不支持完整可视化编辑；"
+            "编辑器当前仅支持 auto / full_context，若直接保存将按 auto 模式导出。"
+        )
+    elif processing_path == "full_context":
+        notes.append("full_context 模式会把采购需求和评分标准全文直接拼入提示词，不做章节级摘录。")
 
     if "context_pruning" in raw_config or "prompt" in raw_config or "api" in raw_config:
         notes.append("当前文件包含旧 schema 字段，保存后会按 canonical schema 标准化。")
@@ -238,7 +244,7 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
             ),
         },
         "processing": {
-            "path": "auto",
+            "path": processing_path,
             "context_view": {
                 "include_ancestors": _coerce_bool(
                     _first_defined(raw_config, ("processing", "context_view", "include_ancestors"), ("context_pruning", "local_outline", "include_ancestors"), default=True),
@@ -253,15 +259,17 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     default=8,
                 ),
             },
-            "auto": {
-                "project_background_enabled": _coerce_bool(
+            "project_background": {
+                "enabled": _coerce_bool(
                     _first_defined(raw_config, ("processing", "project_background", "enabled"), default=True),
                     default=True,
                 ),
-                "project_background_max_chars": _coerce_int(
+                "max_chars": _coerce_int(
                     _first_defined(raw_config, ("processing", "project_background", "max_chars"), default=800),
                     default=800,
                 ),
+            },
+            "auto": {
                 "requirements_top_k": _coerce_int(
                     _first_defined(raw_config, ("processing", "auto", "requirements_top_k"), default=8),
                     default=8,
@@ -380,6 +388,7 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
 
 
 def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
+    processing_path = model["processing"]["path"] if model["processing"]["path"] in _SUPPORTED_PROCESSING_PATHS else "auto"
     project_inputs: dict[str, Any] = {
         "outline_file": model["project"]["outline_file"].strip() or "./outline.md",
     }
@@ -454,15 +463,15 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         },
         "writing": writing_payload,
         "processing": {
-            "path": "auto",
+            "path": processing_path,
             "context_view": {
                 "include_ancestors": bool(model["processing"]["context_view"]["include_ancestors"]),
                 "include_siblings": bool(model["processing"]["context_view"]["include_siblings"]),
                 "max_siblings": int(model["processing"]["context_view"]["max_siblings"]),
             },
             "project_background": {
-                "enabled": bool(model["processing"]["auto"]["project_background_enabled"]),
-                "max_chars": int(model["processing"]["auto"]["project_background_max_chars"]),
+                "enabled": bool(model["processing"]["project_background"]["enabled"]),
+                "max_chars": int(model["processing"]["project_background"]["max_chars"]),
             },
             "auto": {
                 "requirements_top_k": int(model["processing"]["auto"]["requirements_top_k"]),
@@ -530,9 +539,9 @@ def validate_editor_model(
     raw_config: dict[str, Any] | None = None,
 ) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
-    if model["processing"]["path"] not in _PROCESSING_PATHS:
-        messages.append(ValidationMessage("error", "processing.path 只支持 auto 模式。"))
-        return messages
+    processing_path = model["processing"]["path"]
+    if processing_path not in _SUPPORTED_PROCESSING_PATHS:
+        messages.append(ValidationMessage("error", "processing.path 当前仅支持 auto / full_context 两种模式。"))
 
     root_dir = _resolve_path(model["project"]["root_dir"] or ".", config_path.parent)
     if not root_dir.exists():
@@ -582,12 +591,12 @@ def validate_editor_model(
     if embedding_cache_dir.exists() and not embedding_cache_dir.is_dir():
         messages.append(ValidationMessage("error", f"embedding.cache_dir 不是目录：{embedding_cache_dir}"))
 
-    if model["processing"]["path"] == "auto":
-        if not env_status["pruning"].configured:
-            messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型（models.pruning），请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
+    if processing_path in {"auto", "hybrid_extract"}:
         retrieval = model["processing"]["auto"]["retrieval"]
+        if processing_path == "auto" and not env_status["pruning"].configured:
+            messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型（models.pruning），请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
         if not retrieval["lexical_enabled"]:
-            messages.append(ValidationMessage("error", "auto 模式要求 lexical_enabled=true。"))
+            messages.append(ValidationMessage("error", f"{processing_path} 模式要求 lexical_enabled=true。"))
         if retrieval["vector_enabled"] and not env_status["embedding"].configured:
             messages.append(ValidationMessage("error", "启用 vector_enabled 时，必须先在 .env.local 中配置 embedding 连接信息。"))
 
@@ -705,7 +714,7 @@ def _derive_processing_path(raw_config: dict[str, Any]) -> str:
     configured = _get_value(raw_config, "processing", "path", default=_MISSING)
     if configured is not _MISSING:
         normalized = _coerce_str(configured).strip().lower()
-        return normalized if normalized in _PROCESSING_PATHS else "full_context"
+        return normalized if normalized in _KNOWN_PROCESSING_PATHS else "full_context"
 
     enabled = _coerce_bool(_get_value(raw_config, "context_pruning", "enabled", default=False), default=False)
     if not enabled:
@@ -964,6 +973,14 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
             "include_ancestors": True,
             "include_siblings": True,
             "max_siblings": True,
+        },
+        "project_background": {
+            "enabled": True,
+            "max_chars": True,
+            "cache_dir": True,
+        },
+        "auto": {
+            "requirements_top_k": True,
         },
         "legacy_rule": {
             "scoring_max_rows": True,

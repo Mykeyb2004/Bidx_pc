@@ -186,7 +186,7 @@ writing:
     - "内容要专业、严谨，符合标书撰写规范"
 
 processing:
-  path: "legacy_rule" # full_context / legacy_rule / hybrid_extract
+  path: "legacy_rule" # 可改为 full_context，直接把采购需求与评分标准全文送入提示词
   context_view:
     include_ancestors: true
     include_siblings: true

@@ -53,6 +53,61 @@ output:
     assert payload["models"]["generation"]["api_key"] == "secret-key"
 
 
+def test_config_editor_preserves_full_context_processing_path(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "full-context.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "full_context"
+  project_background:
+    enabled: true
+    max_chars: 600
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.model["processing"]["path"] == "full_context"
+    assert payload["processing"]["path"] == "full_context"
+    assert payload["processing"]["project_background"]["enabled"] is True
+    assert payload["processing"]["project_background"]["max_chars"] == 600
+
+
+def test_config_editor_validation_full_context_does_not_require_auto_runtime(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "full-context.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "full_context"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate()
+
+    assert not any("processing.path" in message.text for message in messages if message.level == "error")
+    assert not any("auto 模式需要配置辅助模型" in message.text for message in messages)
+
+
 def test_config_editor_validation_requires_explicit_processing_path_for_legacy_mixed_mode(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "mixed.yaml"
