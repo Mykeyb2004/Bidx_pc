@@ -33,6 +33,9 @@ api:
   model: "legacy-model"
   temperature: 0.6
 
+prompt:
+  max_mermaid_flowcharts_per_section: 5
+
 output:
   directory: "./output"
 """.strip(),
@@ -51,6 +54,8 @@ output:
     assert payload["models"]["generation"]["temperature"] == 0.6
     assert payload["models"]["generation"]["base_url"] == "https://example.invalid/v1"
     assert payload["models"]["generation"]["api_key"] == "secret-key"
+    assert document.model["writing"]["max_mermaid_flowcharts_per_section"] == 5
+    assert payload["writing"]["max_mermaid_flowcharts_per_section"] == 5
 
 
 def test_config_editor_preserves_full_context_processing_path(tmp_path: Path):

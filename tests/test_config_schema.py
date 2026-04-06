@@ -32,6 +32,7 @@ writing:
     step: 100
   output_format: "纯正文"
   allow_markdown_headings: false
+  max_mermaid_flowcharts_per_section: 3
 
 processing:
   path: "legacy_rule"
@@ -86,6 +87,7 @@ runtime:
     assert config.bid_requirements == "项目采购需求正文"
     assert config.scoring_criteria == "评分标准正文"
     assert config.prompt_bidder_name == "测试投标主体"
+    assert config.prompt_max_mermaid_flowcharts_per_section == 3
     assert config.generation_stream is False
     assert config.generation_stream_idle_timeout_seconds == 15
 

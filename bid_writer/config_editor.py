@@ -233,6 +233,15 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                 _first_defined(raw_config, ("writing", "max_tables_per_section"), ("prompt", "max_tables_per_section"), default=4),
                 default=4,
             ),
+            "max_mermaid_flowcharts_per_section": _coerce_int(
+                _first_defined(
+                    raw_config,
+                    ("writing", "max_mermaid_flowcharts_per_section"),
+                    ("prompt", "max_mermaid_flowcharts_per_section"),
+                    default=0,
+                ),
+                default=0,
+            ),
             "summary_title": _coerce_str(
                 _first_defined(raw_config, ("writing", "summary_title"), ("prompt", "summary_title"), default="章节小结")
             ),
@@ -426,6 +435,7 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         "allow_markdown_headings": bool(model["writing"]["allow_markdown_headings"]),
         "allow_english_terms": bool(model["writing"]["allow_english_terms"]),
         "max_tables_per_section": int(model["writing"]["max_tables_per_section"]),
+        "max_mermaid_flowcharts_per_section": int(model["writing"]["max_mermaid_flowcharts_per_section"]),
         "summary_title": model["writing"]["summary_title"],
         "hard_constraints": list(model["writing"]["hard_constraints"]),
         "extra_rules": list(model["writing"]["extra_rules"]),
@@ -600,6 +610,8 @@ def validate_editor_model(
         messages.append(ValidationMessage("error", "字数配置需要满足 min <= default <= max。"))
     if step_value <= 0:
         messages.append(ValidationMessage("error", "min_words.step 必须大于 0。"))
+    if _coerce_int(model["writing"]["max_mermaid_flowcharts_per_section"], default=0) < 0:
+        messages.append(ValidationMessage("error", "max_mermaid_flowcharts_per_section 不能小于 0。"))
 
     trace_dir = _resolve_path(model["runtime"]["trace"]["directory"] or "./log/generation_traces", config_path.parent)
     if trace_dir.exists() and not trace_dir.is_dir():
@@ -994,6 +1006,7 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
         "allow_markdown_headings": True,
         "allow_english_terms": True,
         "max_tables_per_section": True,
+        "max_mermaid_flowcharts_per_section": True,
         "summary_title": True,
         "hard_constraints": True,
         "extra_rules": True,

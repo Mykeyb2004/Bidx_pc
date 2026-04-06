@@ -30,6 +30,7 @@ writing:
   allow_markdown_headings: false
   allow_english_terms: false
   max_tables_per_section: 2
+  max_mermaid_flowcharts_per_section: 0
   summary_title: "章节小结"
   hard_constraints:
     - "严禁使用Markdown标题符号（#）。"

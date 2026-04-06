@@ -2001,7 +2001,7 @@ class MainWindow(tk.Tk):
         if params is None:
             return  # 用户取消了
 
-        additional_requirements, min_words = params
+        additional_requirements, min_words, max_mermaid_flowcharts_per_section = params
 
         # 确认对话框
         warning_line = ""
@@ -2012,15 +2012,27 @@ class MainWindow(tk.Tk):
             "确认",
             f"确定要生成 {len(selected_headings)} 个标题吗？\n\n"
             f"附加要求：{additional_requirements or '（无）'}\n"
-            f"最低字数：{min_words}"
+            f"最低字数：{min_words}\n"
+            f"Mermaid流程图上限：{max_mermaid_flowcharts_per_section}"
             f"{warning_line}"
         ):
             return
 
         # 在主线程执行生成（避免线程安全问题）
-        self._do_batch_generate(selected_headings, additional_requirements, min_words)
+        self._do_batch_generate(
+            selected_headings,
+            additional_requirements,
+            min_words,
+            max_mermaid_flowcharts_per_section,
+        )
 
-    def _do_batch_generate(self, headings: List[HeadingNode], additional_requirements: str, min_words: int):
+    def _do_batch_generate(
+        self,
+        headings: List[HeadingNode],
+        additional_requirements: str,
+        min_words: int,
+        max_mermaid_flowcharts_per_section: int,
+    ):
         """执行批量生成（主线程）"""
         total = len(headings)
         success_count = 0
@@ -2051,6 +2063,7 @@ class MainWindow(tk.Tk):
                     heading,
                     additional_requirements,
                     min_words,
+                    max_mermaid_flowcharts_per_section,
                 )
 
                 completed_count = i
@@ -2280,7 +2293,7 @@ class MainWindow(tk.Tk):
         获取生成参数对话框
 
         Returns:
-            (additional_requirements, min_words) 或 None（用户取消）
+            (additional_requirements, min_words, max_mermaid_flowcharts_per_section) 或 None（用户取消）
         """
         dialog = tk.Toplevel(self)
         dialog.title("生成参数设置")
@@ -2318,6 +2331,28 @@ class MainWindow(tk.Tk):
                                     increment=min_words_step)
         words_spinbox.pack(side=tk.LEFT, padx=10)
 
+        mermaid_frame = ttk.Frame(dialog)
+        mermaid_frame.pack(pady=(0, 10), padx=20, fill=tk.X)
+
+        ttk.Label(mermaid_frame, text="Mermaid流程图上限：", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
+
+        mermaid_var = tk.IntVar(value=0)
+        mermaid_spinbox = ttk.Spinbox(
+            mermaid_frame,
+            from_=0,
+            to=999,
+            textvariable=mermaid_var,
+            width=10,
+            increment=1,
+        )
+        mermaid_spinbox.pack(side=tk.LEFT, padx=10)
+
+        ttk.Label(
+            mermaid_frame,
+            text="本次生成覆盖配置值；0 表示不注入流程图控制提示",
+            style="SummaryLabel.TLabel",
+        ).pack(side=tk.LEFT)
+
         # 按钮
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=(16, 20))
@@ -2330,12 +2365,17 @@ class MainWindow(tk.Tk):
                     return
 
                 additional_req = req_text.get('1.0', tk.END).strip()
+                max_mermaid_flowcharts_per_section = mermaid_var.get()
+                if max_mermaid_flowcharts_per_section < 0:
+                    messagebox.showwarning("警告", "Mermaid流程图上限不能小于 0")
+                    return
                 result["cancelled"] = False
                 result["requirements"] = additional_req
                 result["min_words"] = min_words
+                result["max_mermaid_flowcharts_per_section"] = max_mermaid_flowcharts_per_section
                 dialog.destroy()
             except tk.TclError:
-                messagebox.showwarning("警告", "请输入有效的字数")
+                messagebox.showwarning("警告", "请输入有效的字数和 Mermaid 流程图上限")
 
         def on_cancel():
             dialog.destroy()
@@ -2375,7 +2415,11 @@ class MainWindow(tk.Tk):
 
         if result["cancelled"]:
             return None
-        return (result["requirements"], result["min_words"])
+        return (
+            result["requirements"],
+            result["min_words"],
+            result["max_mermaid_flowcharts_per_section"],
+        )
 
     class GenerationSession:
         """主窗口右侧工作区的生成会话控制器。"""
@@ -2456,7 +2500,14 @@ class MainWindow(tk.Tk):
             if self.is_generating and self._widget_exists(self.parent):
                 self._queue_poll_id = self.parent.after(50, self._check_queue)
 
-        def start_generation(self, heading, ai_writer, requirements, min_words):
+        def start_generation(
+            self,
+            heading,
+            ai_writer,
+            requirements,
+            min_words,
+            max_mermaid_flowcharts_per_section,
+        ):
             """启动后台生成线程"""
             self.is_generating = True
 
@@ -2470,7 +2521,8 @@ class MainWindow(tk.Tk):
                         heading,
                         requirements,
                         min_words,
-                        stream=ai_writer.config.generation_stream
+                        stream=ai_writer.config.generation_stream,
+                        max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section,
                     )
                     result = ai_writer.expand_raw(prepared)
 
@@ -2534,6 +2586,7 @@ class MainWindow(tk.Tk):
         heading: HeadingNode,
         additional_requirements: str,
         min_words: int,
+        max_mermaid_flowcharts_per_section: int,
     ) -> str:
         """
         生成内容并在主窗口右侧工作区展示，完成后自动保存。
@@ -2547,7 +2600,8 @@ class MainWindow(tk.Tk):
             heading,
             self.bid_writer.ai_writer,
             additional_requirements,
-            min_words
+            min_words,
+            max_mermaid_flowcharts_per_section,
         )
 
         try:

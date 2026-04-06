@@ -150,11 +150,15 @@ class AIWriter:
         pruned_context: Optional[ChapterContext],
         min_words: int,
         chapter_writing_plan: str = "",
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> str:
         chain = self._heading_chain(heading)
         project_title = chain[0].title if chain else heading.title
         bidder_name = self.config.prompt_bidder_name or "当前投标主体"
         focus_terms = self._chapter_focus_terms(heading, pruned_context)
+        mermaid_rule_text = self._build_mermaid_flowchart_rule_text(
+            max_mermaid_flowcharts_per_section_override
+        )
 
         lines = [
             "## 章节任务卡",
@@ -167,6 +171,8 @@ class AIWriter:
             f"- 表格控制：{self._build_table_rule_text()}",
             "- 写作依据：优先根据下方评分关注和需求要点组织内容。",
         ]
+        if mermaid_rule_text:
+            lines.insert(8, f"- 流程图控制：{mermaid_rule_text}")
         if chapter_writing_plan.strip():
             lines.append("- 章节写作计划：")
             for line in chapter_writing_plan.splitlines():
@@ -380,6 +386,30 @@ class AIWriter:
         if min_tables == max_tables:
             return f"插入 {max_tables} 个Markdown表格，用于概括关键信息，表格标题前不加序号。"
         return f"插入 {min_tables} 至 {max_tables} 个Markdown表格，用于概括关键信息，表格标题前不加序号。"
+
+    def _resolve_max_mermaid_flowcharts_per_section(
+        self,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+    ) -> int:
+        if max_mermaid_flowcharts_per_section_override is None:
+            value = self.config.prompt_max_mermaid_flowcharts_per_section
+        else:
+            value = max_mermaid_flowcharts_per_section_override
+        return max(int(value), 0)
+
+    def _build_mermaid_flowchart_rule_text(
+        self,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+    ) -> str:
+        max_flowcharts = self._resolve_max_mermaid_flowcharts_per_section(
+            max_mermaid_flowcharts_per_section_override
+        )
+        if max_flowcharts <= 0:
+            return ""
+        return (
+            f"生成的文档中适当绘制不超过{max_flowcharts}个Mermaid流程图，用于呈现关键流程、步骤衔接或机制闭环；"
+            "必须使用```mermaid代码块，统一采用flowchart TD语法，节点文案保持简洁。"
+        )
 
     def _build_english_rule_text(self) -> str:
         if self.config.prompt_allow_english_terms:
@@ -598,9 +628,13 @@ class AIWriter:
         prompt_sections: list[dict[str, str]],
         pruned_context: Optional[ChapterContext],
         additional_requirements: str,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         section_map = {section["name"]: section["content"] for section in prompt_sections}
         system_prompt = self.build_system_prompt()
+        mermaid_rule_present = (
+            "task_card" in section_map and "流程图控制：" in section_map.get("task_card", "")
+        )
 
         block_specs: list[dict[str, Any]] = [
             {
@@ -628,6 +662,13 @@ class AIWriter:
                     "min_words",
                     "prompt.output_format",
                     "prompt_bidder_name",
+                    (
+                        "runtime.max_mermaid_flowcharts_per_section_override"
+                        if max_mermaid_flowcharts_per_section_override is not None and mermaid_rule_present
+                        else "prompt.max_mermaid_flowcharts_per_section"
+                        if mermaid_rule_present
+                        else ""
+                    ),
                     "pruned_context.chapter_focus_terms" if pruned_context is not None else "HeadingNode.title",
                     "ChapterWritingPlanGenerator.get_or_generate"
                     if "task_card" in section_map and "章节写作计划" in section_map.get("task_card", "")
@@ -715,7 +756,8 @@ class AIWriter:
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
-        min_words: int = 500
+        min_words: int = 500,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> PromptBuildResult:
         """
         构建扩写提示词
@@ -788,6 +830,7 @@ class AIWriter:
                 pruned_context,
                 min_words,
                 chapter_writing_plan=chapter_writing_plan,
+                max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
             ),
         )
         self._append_prompt_section(
@@ -897,6 +940,7 @@ class AIWriter:
                 prompt_sections=prompt_sections,
                 pruned_context=pruned_context,
                 additional_requirements=additional_requirements,
+                max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
             ),
             pruned_context=pruned_context,
             context_mode=context_mode,
@@ -907,16 +951,23 @@ class AIWriter:
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
-        min_words: int = 500
+        min_words: int = 500,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> str:
-        return self.build_prompt_result(heading, additional_requirements, min_words).prompt
+        return self.build_prompt_result(
+            heading,
+            additional_requirements,
+            min_words,
+            max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+        ).prompt
 
     def expand(
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
         min_words: int = 500,
-        stream: bool = True
+        stream: bool = True,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> Generator[str, None, None] | str:
         """
         扩写指定标题
@@ -935,6 +986,7 @@ class AIWriter:
             additional_requirements=additional_requirements,
             min_words=min_words,
             stream=stream,
+            max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
         )
         raw_result = self.expand_raw(prepared)
 
@@ -970,9 +1022,15 @@ class AIWriter:
         additional_requirements: str = "",
         min_words: int = 500,
         stream: bool = True,
+        max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> PreparedGeneration:
         """准备模型请求和 trace 会话，但不执行正文后处理。"""
-        prompt_result = self.build_prompt_result(heading, additional_requirements, min_words)
+        prompt_result = self.build_prompt_result(
+            heading,
+            additional_requirements,
+            min_words,
+            max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+        )
         system_prompt = self.build_system_prompt()
 
         messages = [

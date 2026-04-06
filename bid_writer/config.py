@@ -676,6 +676,15 @@ class Config:
         return self._get_int(('writing', 'max_tables_per_section'), ('prompt', 'max_tables_per_section'), default=4)
 
     @property
+    def prompt_max_mermaid_flowcharts_per_section(self) -> int:
+        """单节最大 Mermaid 流程图数"""
+        return self._get_int(
+            ('writing', 'max_mermaid_flowcharts_per_section'),
+            ('prompt', 'max_mermaid_flowcharts_per_section'),
+            default=0,
+        )
+
+    @property
     def prompt_summary_title(self) -> str:
         """章节总结标题名称"""
         return self._get_first_defined(('writing', 'summary_title'), ('prompt', 'summary_title'), default='章节小结')

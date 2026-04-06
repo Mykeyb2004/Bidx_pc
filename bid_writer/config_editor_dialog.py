@@ -227,6 +227,7 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.allow_markdown_headings", tk.BooleanVar())
         add_var("writing.allow_english_terms", tk.BooleanVar())
         add_var("writing.max_tables_per_section", tk.StringVar())
+        add_var("writing.max_mermaid_flowcharts_per_section", tk.StringVar())
         add_var("writing.summary_title", tk.StringVar())
 
         add_var("processing.path", tk.StringVar())
@@ -471,9 +472,10 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_entry_row(rules, 0, "输出格式", "writing.output_format")
         self._add_entry_row(rules, 1, "首行模板", "writing.first_line_template")
         self._add_entry_row(rules, 2, "单节最大表格数", "writing.max_tables_per_section")
-        self._add_entry_row(rules, 3, "总结标题", "writing.summary_title")
-        self._add_check_row(rules, 4, "允许 Markdown 标题", "writing.allow_markdown_headings")
-        self._add_check_row(rules, 5, "允许英文术语", "writing.allow_english_terms")
+        self._add_entry_row(rules, 3, "单节最大 Mermaid 流程图数", "writing.max_mermaid_flowcharts_per_section")
+        self._add_entry_row(rules, 4, "总结标题", "writing.summary_title")
+        self._add_check_row(rules, 5, "允许 Markdown 标题", "writing.allow_markdown_headings")
+        self._add_check_row(rules, 6, "允许英文术语", "writing.allow_english_terms")
         rules.columnconfigure(1, weight=1)
 
         hard_constraints = ttk.LabelFrame(content, text="高优先级约束", padding=12)
@@ -785,6 +787,7 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.allow_markdown_headings": model["writing"]["allow_markdown_headings"],
             "writing.allow_english_terms": model["writing"]["allow_english_terms"],
             "writing.max_tables_per_section": str(model["writing"]["max_tables_per_section"]),
+            "writing.max_mermaid_flowcharts_per_section": str(model["writing"]["max_mermaid_flowcharts_per_section"]),
             "writing.summary_title": model["writing"]["summary_title"],
             "processing.path": model["processing"]["path"],
             "processing.context_view.include_ancestors": model["processing"]["context_view"]["include_ancestors"],
@@ -887,6 +890,7 @@ class ConfigEditorDialog(tk.Toplevel):
                 "allow_markdown_headings": bool(self.vars["writing.allow_markdown_headings"].get()),
                 "allow_english_terms": bool(self.vars["writing.allow_english_terms"].get()),
                 "max_tables_per_section": self.vars["writing.max_tables_per_section"].get().strip(),
+                "max_mermaid_flowcharts_per_section": self.vars["writing.max_mermaid_flowcharts_per_section"].get().strip(),
                 "summary_title": self.vars["writing.summary_title"].get(),
                 "hard_constraints": self._split_lines(self._get_text_value("writing.hard_constraints_text")),
                 "extra_rules": self._split_lines(self._get_text_value("writing.extra_rules_text")),

@@ -115,6 +115,45 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert "## 完整总大纲参考" not in result.prompt
 
 
+def test_task_card_omits_mermaid_control_when_limit_is_zero(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, min_words=1200)
+
+    assert "流程图控制" not in result.prompt
+
+
+def test_task_card_includes_mermaid_control_when_limit_is_positive(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("writing", {})["max_mermaid_flowcharts_per_section"] = 3
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, min_words=1200)
+
+    assert (
+        "- 流程图控制：生成的文档中适当绘制不超过3个Mermaid流程图，用于呈现关键流程、步骤衔接或机制闭环；"
+        "必须使用```mermaid代码块，统一采用flowchart TD语法，节点文案保持简洁。"
+    ) in result.prompt
+
+
+def test_runtime_mermaid_override_can_disable_configured_prompt_rule(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("writing", {})["max_mermaid_flowcharts_per_section"] = 3
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        min_words=1200,
+        max_mermaid_flowcharts_per_section_override=0,
+    )
+
+    assert "流程图控制" not in result.prompt
+
+
 def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     config._config.setdefault("processing", {}).setdefault("full_context", {}).setdefault(

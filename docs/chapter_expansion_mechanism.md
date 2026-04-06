@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，收集附加要求和最低字数
+3. GUI 选择叶子章节，收集附加要求、最低字数和 Mermaid 流程图上限覆盖值
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -102,6 +102,7 @@ GUI 中批量生成的主要逻辑位于：
 - `prompt.allow_english_terms`
 - `prompt.bidder_name`
 - `prompt.max_tables_per_section`
+- `prompt.max_mermaid_flowcharts_per_section`
 - `prompt.summary_title`
 - `prompt.hard_constraints`
 - `prompt.extra_rules`
@@ -184,6 +185,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 输出方式
 - 结构要求
 - 表格控制
+- 可选的流程图控制
 - 写作依据
 
 其中：
@@ -191,6 +193,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - “本章重点”并不是简单使用标题原文，而是优先来自裁剪后的焦点词
 - 当 `processing.path = full_context` 且开启 `processing.full_context.chapter_writing_plan.enabled` 时，会先调用章节写作计划生成器生成简短的“章节写作计划”，再把它插入任务卡
 - 该生成器会优先复用正文扩写所使用的 `system prompt` 与 full-context 共享参考前缀，以提高模型 cache 命中概率
+- 当 `max_mermaid_flowcharts_per_section` 的配置值或运行时 override 值大于 `0` 时，任务卡会额外插入“流程图控制”一行；值为 `0` 时不会提及 Mermaid
 
 ### 3.4 结构硬约束
 
@@ -327,6 +330,8 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 1. 调用 `build_prompt_result()` 组装 prompt
 2. 调用 `build_system_prompt()` 组装 system prompt
 3. 调用 `_build_request_options()` 生成模型请求参数
+
+GUI 主链路会把“生成参数设置”弹窗中的 Mermaid 流程图上限作为运行时 override 传给 `prepare_generation()`；该值默认是 `0`，并直接覆盖配置文件中的同名参数。
 
 最终消息格式是标准 Chat Completions 结构：
 

@@ -31,7 +31,7 @@
 
 当前章节生成请求的 prompt 链路固定如下：
 
-1. `AIWriter.prepare_generation(heading, additional_requirements, min_words, stream)`
+1. `AIWriter.prepare_generation(heading, additional_requirements, min_words, stream, max_mermaid_flowcharts_per_section_override)`
 2. `AIWriter.build_prompt_result(...)`
 3. 如果 `context_pruning_enabled=True`，则在 `build_prompt_result()` 内调用 `ChapterContextPruner.build_context(heading)`
 4. `AIWriter.build_system_prompt()`
@@ -360,6 +360,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - 输出方式
 - 结构要求
 - 表格控制
+- 可选的流程图控制
 - 写作依据
 
 其中几个字段的真实来源要特别注意：
@@ -369,6 +370,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - 当 `processing.full_context.chapter_writing_plan.enabled=true` 且当前走 full-context 分支时，会额外生成“章节写作计划”，并直接插入任务卡
 - “输出方式”只引用 `prompt_output_format` 这段配置文本
 - “表格控制”来自 `prompt_max_tables_per_section`
+- “流程图控制”只在 `prompt_max_mermaid_flowcharts_per_section > 0` 或运行时 override 值 `> 0` 时出现
 - “写作依据”固定写成“优先根据下方评分关注和需求要点组织内容”
 
 ### 5.4 `structure_contract` 具体写了什么
@@ -597,10 +599,12 @@ messages = [
 | `prompt_allow_markdown_headings` | `prompt.allow_markdown_headings` | system prompt 中是否禁止 `#` 标题 | 是 |
 | `prompt_allow_english_terms` | `prompt.allow_english_terms` | system prompt 中是否禁止不必要英文 | 是 |
 | `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
+| `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
 | `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `min_words` | 运行时入参 | 最低字数要求 | 是 |
+| `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 流程图上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
 | `HeadingNode.full_path` | 当前章节节点 | 当前章节完整路径 | 是 |
 | `response_labels` | 标题链解析结果 | 用于路由评分项和需求块 | 间接进入 |

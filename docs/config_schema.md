@@ -96,6 +96,7 @@ writing:
   allow_markdown_headings: false
   allow_english_terms: false
   max_tables_per_section: 2
+  max_mermaid_flowcharts_per_section: 0
   summary_title: ""
   hard_constraints: []
   extra_rules: []
