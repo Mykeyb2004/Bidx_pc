@@ -35,7 +35,7 @@ FIELD_TOOLTIPS: dict[str, str] = {
     "writing.max_tables_per_section": "单节允许出现的最大表格数。数值越大，模型越容易输出表格。",
     "writing.summary_title": "章节小结标题名称。若不希望正文出现小结标题，可以结合提示词策略一起调整。",
     "writing.hard_constraints_text": "高优先级硬约束，每行一条。这里适合写绝对不能违反的格式规则和禁用表达。",
-    "writing.extra_rules_text": "补充写作规则，每行一条。相比硬约束，这里更适合写风格建议和业务偏好。",
+    "writing.extra_rules_text": "补充写作规则，每行一条。当前会追加到“结构输出硬要求”的末尾，适合放必须跟随结构要求一起传达的业务写作口径。",
     "processing.path": "当前项目的主处理路径。编辑器当前提供 auto 和 full_context 两个入口：auto 会做章节级检索与分类，full_context 会直接把采购需求和评分标准全文拼入提示词。",
     "processing.context_view.include_ancestors": "是否把当前章节的父级标题链一起带入局部上下文。通常建议开启，便于模型理解章节定位。",
     "processing.context_view.include_siblings": "是否把同级标题带入局部上下文。开启后更利于避免跨章节重复。",

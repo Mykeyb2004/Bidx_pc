@@ -105,6 +105,7 @@ writing:
 
 - `writing.role` 或 `writing.role_file` 用于角色设定
 - `writing.role_file` 适合多个项目配置复用同一段长 prompt
+- `writing.extra_rules` 当前不会单独生成 `## 其他写作要求` 区块，而是直接追加到 `## 结构输出硬要求` 的末尾
 
 ### 3.3 `processing`
 
@@ -153,6 +154,7 @@ processing:
 - `processing.path` 决定当前项目跑哪条链路
 - `processing.project_background.*` 当前会在 `auto` 和 `full_context` 下生效
 - `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”
+- 开启后会增加一次辅助 LLM 调用；当前实现会尽量复用正文扩写的 system prompt 与 full-context 参考前缀，以改善 prompt cache 命中率
 - 每条链路自己的参数挂在各自子块下
 - `verify_enabled` 统一表达原先 `rerank_enabled` / `llm_verify_enabled` 那条候选校验链路
 

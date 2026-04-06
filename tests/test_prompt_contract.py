@@ -17,6 +17,7 @@ EXPECTED_BLOCK_IDS = [
     "chapter_task",
     "structure_rules",
     "chapter_scope",
+    "project_background",
     "requirement_context",
     "scoring_context",
 ]
@@ -85,6 +86,23 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     assert "source_context" in result.prompt_contract_blocks[0]
 
 
+def test_extra_rules_are_folded_into_structure_contract(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, min_words=1200)
+    structure_section = next(
+        section["content"]
+        for section in result.prompt_sections
+        if section["name"] == "structure_contract"
+    )
+
+    assert "请为以下标书章节撰写投标正文。" not in result.prompt
+    assert "## 其他写作要求" not in result.prompt
+    assert "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。" in structure_section
+
+
 def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)
@@ -107,7 +125,13 @@ def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_p
     writer.chapter_writing_plan_generator = type(
         "DummyPlanGenerator",
         (),
-        {"get_or_generate": staticmethod(lambda _heading, _scope: "1. 先回应项目目标。\n2. 再回应质量评分点。")},
+        {
+            "get_or_generate": staticmethod(
+                lambda _heading, *, system_prompt, shared_prompt_prefix: (
+                    "1. 先回应项目目标。\n2. 再回应质量评分点。"
+                )
+            )
+        },
     )()
     heading = _select_leaf_heading(config, "质量保障措施")
 
@@ -116,6 +140,42 @@ def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_p
     assert "- 章节写作计划：" in result.prompt
     assert "1. 先回应项目目标。" in result.prompt
     assert "2. 再回应质量评分点。" in result.prompt
+
+
+def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {}).setdefault("full_context", {}).setdefault(
+        "chapter_writing_plan",
+        {},
+    )["enabled"] = True
+    writer = _build_writer(monkeypatch, config)
+
+    captured: dict[str, str] = {}
+
+    class DummyPlanGenerator:
+        @staticmethod
+        def get_or_generate(_heading, *, system_prompt, shared_prompt_prefix):
+            captured["system_prompt"] = system_prompt
+            captured["shared_prompt_prefix"] = shared_prompt_prefix
+            return "1. 先回应采购需求。\n2. 再逐条覆盖评分关注。"
+
+    writer.project_background_generator = type(
+        "DummyBackgroundGenerator",
+        (),
+        {"get_or_generate": staticmethod(lambda: "项目背景摘要。")},
+    )()
+    writer.chapter_writing_plan_generator = DummyPlanGenerator()
+
+    heading = _select_leaf_heading(config, "质量保障措施")
+    result = writer.build_prompt_result(heading, min_words=1200)
+
+    assert captured["system_prompt"] == writer.build_system_prompt()
+    assert captured["shared_prompt_prefix"].startswith("## 章节边界参考")
+    assert "## 项目背景" in captured["shared_prompt_prefix"]
+    assert "## 招标需求参考" in captured["shared_prompt_prefix"]
+    assert "## 评分标准参考" in captured["shared_prompt_prefix"]
+    assert result.prompt.startswith(captured["shared_prompt_prefix"])
+    assert result.prompt.index("## 章节任务卡") > result.prompt.index("## 评分标准参考")
 
 
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):

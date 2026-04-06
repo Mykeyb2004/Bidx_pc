@@ -25,6 +25,7 @@ writing:
     - "严禁使用Markdown标题符号（#）。"
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范"
+    - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"
 
 processing:
   path: "legacy_rule"  # 可改为 "full_context"：直接把采购需求与评分标准全文送入提示词

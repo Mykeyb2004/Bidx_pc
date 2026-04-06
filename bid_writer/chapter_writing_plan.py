@@ -19,15 +19,29 @@ class ChapterWritingPlanGenerator:
     def __init__(self, config: Config):
         self.config = config
         self._lock = threading.Lock()
+        self.client = OpenAI(
+            base_url=config.api_base_url,
+            api_key=config.api_key,
+            timeout=config.api_timeout_seconds,
+            max_retries=config.api_max_retries,
+        )
 
-    def get_or_generate(self, heading: HeadingNode, scope_reference: str) -> str:
+    def get_or_generate(
+        self,
+        heading: HeadingNode,
+        *,
+        system_prompt: str,
+        shared_prompt_prefix: str,
+    ) -> str:
         """返回缓存的章节写作计划，若缓存未命中则调用 LLM 生成。"""
-        requirements = self.config.bid_requirements.strip()
-        scoring = self.config.scoring_criteria.strip()
-        if not requirements and not scoring:
+        if not shared_prompt_prefix.strip():
             return ""
 
-        cache_path = self._cache_path(heading, requirements, scoring)
+        cache_path = self._cache_path(
+            heading,
+            system_prompt=system_prompt,
+            shared_prompt_prefix=shared_prompt_prefix,
+        )
         if cache_path.exists():
             try:
                 return cache_path.read_text(encoding="utf-8").strip()
@@ -41,14 +55,30 @@ class ChapterWritingPlanGenerator:
                 except OSError:
                     pass
 
-            plan = self._compute_plan(heading, scope_reference, requirements, scoring)
+            plan = self._compute_plan(
+                heading,
+                system_prompt=system_prompt,
+                shared_prompt_prefix=shared_prompt_prefix,
+            )
             if plan:
                 self._write_cache(cache_path, plan)
             return plan
 
-    def _cache_path(self, heading: HeadingNode, requirements: str, scoring: str) -> Path:
+    def _cache_path(
+        self,
+        heading: HeadingNode,
+        *,
+        system_prompt: str,
+        shared_prompt_prefix: str,
+    ) -> Path:
         max_chars = self.config.chapter_writing_plan_max_chars
-        hash_input = f"{heading.full_path}\n{requirements}\n{scoring}\n{max_chars}"
+        hash_input = (
+            f"{self.config.model}\n"
+            f"{heading.full_path}\n"
+            f"{system_prompt}\n"
+            f"{shared_prompt_prefix}\n"
+            f"{max_chars}"
+        )
         hash_key = hashlib.sha1(hash_input.encode("utf-8")).hexdigest()[:16]
         return Path(self.config.chapter_writing_plan_cache_dir) / f"plan_{hash_key}.txt"
 
@@ -65,32 +95,24 @@ class ChapterWritingPlanGenerator:
     def _compute_plan(
         self,
         heading: HeadingNode,
-        scope_reference: str,
-        requirements: str,
-        scoring: str,
+        *,
+        system_prompt: str,
+        shared_prompt_prefix: str,
     ) -> str:
         max_chars = self.config.chapter_writing_plan_max_chars
-        prompt = self._build_prompt(heading, scope_reference, requirements, scoring, max_chars)
+        prompt = self._build_prompt(
+            heading,
+            shared_prompt_prefix=shared_prompt_prefix,
+            max_chars=max_chars,
+        )
 
         try:
-            client, model = self._get_client_and_model()
-            response = client.chat.completions.create(
-                model=model,
+            response = self.client.chat.completions.create(
+                model=self.config.model,
                 temperature=0,
                 max_tokens=max_chars * 2,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是标书章节写作规划助手。你的任务不是直接写正文，而是先为当前章节拟定一个简明、可执行的写作计划。\n"
-                            "要求：\n"
-                            "- 紧扣当前章节边界，不扩写同级章节内容\n"
-                            "- 重点响应与本章相关的评分标准和采购需求\n"
-                            "- 只输出章节写作计划，不输出正文\n"
-                            "- 不要复述大段原文，不要写解释性套话\n"
-                            f"- 控制在 {max_chars} 字以内"
-                        ),
-                    },
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt},
                 ],
             )
@@ -100,48 +122,31 @@ class ChapterWritingPlanGenerator:
             return content
         except Exception as exc:
             import sys
-            print(f"[chapter_writing_plan] 章节写作计划生成失败（{type(exc).__name__}: {exc}）", file=sys.stderr)
-            return ""
 
-    def _get_client_and_model(self) -> tuple[OpenAI, str]:
-        config = self.config
-        if config.pruning_api_is_configured:
-            client = OpenAI(
-                base_url=config.pruning_api_base_url,
-                api_key=config.pruning_api_key,
-                timeout=config.pruning_timeout_seconds,
-                max_retries=config.pruning_max_retries,
+            print(
+                f"[chapter_writing_plan] 章节写作计划生成失败（{type(exc).__name__}: {exc}）",
+                file=sys.stderr,
             )
-            return client, config.pruning_model
-        client = OpenAI(
-            base_url=config.api_base_url,
-            api_key=config.api_key,
-            timeout=config.api_timeout_seconds,
-            max_retries=config.api_max_retries,
-        )
-        return client, config.model
+            return ""
 
     @staticmethod
     def _build_prompt(
         heading: HeadingNode,
-        scope_reference: str,
-        requirements: str,
-        scoring: str,
+        *,
+        shared_prompt_prefix: str,
         max_chars: int,
     ) -> str:
         return (
-            "请根据以下信息，为当前章节拟定“章节写作计划”。\n\n"
-            f"当前章节：{heading.title}\n"
-            f"章节路径：{heading.full_path}\n\n"
-            f"{scope_reference}\n\n"
-            "项目采购需求全文：\n"
-            f"{requirements or '（无）'}\n\n"
-            "评分标准全文：\n"
-            f"{scoring or '（无）'}\n\n"
+            f"{shared_prompt_prefix}\n\n"
+            "## 当前任务\n"
+            "请先不要写正文，只输出当前章节的“章节写作计划”。\n"
+            f"- 当前章节：{heading.title}\n"
+            f"- 当前章节路径：{heading.full_path}\n\n"
             "输出要求：\n"
-            "1. 只输出“章节写作计划”内容\n"
+            "1. 只输出“章节写作计划”内容，不要输出正文\n"
             "2. 用 4-6 条编号列出本章建议写作结构\n"
             "3. 每条说明应写清本段要回应的需求或评分关注\n"
-            "4. 不写“根据以上内容”“综上所述”等说明性话术\n"
-            f"5. 总长度控制在 {max_chars} 字以内"
+            "4. 重点服务于对应评分标准、项目采购背景与本章边界\n"
+            "5. 不写“根据以上内容”“综上所述”等说明性话术\n"
+            f"6. 总长度控制在 {max_chars} 字以内"
         )

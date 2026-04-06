@@ -330,7 +330,6 @@ pruned 分支里，需求相关内容只会出现一个区块：
    - pruned-context 分支
    - full-context 分支
 5. 可选 `additional_requirements`
-6. 可选 `extra_rules`
 
 这个顺序是硬编码的，没有配置化。
 
@@ -348,7 +347,6 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `bid_requirements` | `## 招标需求参考` | full 分支且有采购需求原文时 | 放完整采购需求 |
 | `scoring_criteria` | `## 评分标准参考` | full 分支且有评分标准原文时 | 放完整评分标准 |
 | `additional_requirements` | `## 用户附加要求` | 用户输入非空时 | 运营侧临时补充要求 |
-| `extra_rules` | `## 其他写作要求` | `prompt_extra_rules` 非空时 | 额外规则列表 |
 
 ### 5.3 `task_card` 具体写了什么
 
@@ -383,6 +381,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文
 - 表格前标题和引导性标题也必须纳入正式层级
 - 段内枚举不能替代章节层级序号
+- `prompt_extra_rules` 中的每一条规则也会继续作为列表项追加在本节末尾
 
 ### 5.5 `first_line_rule`
 
@@ -417,16 +416,25 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - `context_pruning_enabled=False`
 - `context_pruner.build_context(...)` 抛异常
 
-在 full-context 分支中，会按顺序尝试放入：
+在 full-context 分支中，会先构建一组共享参考段落：
 
-1. 公共段落中的 `## 章节边界参考`
-2. 若开启 `processing.full_context.chapter_writing_plan.enabled`，先基于采购需求全文、评分标准全文与章节边界生成“章节写作计划”，并将其写入 `task_card`
+1. `## 章节边界参考`
+2. `## 项目背景`，仅在项目背景摘要存在时出现
 3. `## 招标需求参考`
 4. `## 评分标准参考`
 
-对应原文非空时，该 section 才会真正出现。
+对应原文非空时，该 section 才会真正出现。之后再进入任务型段落，例如 `task_card`、`structure_contract`、`first_line_rule`。
 
-也就是说，full 分支不再注入完整大纲，而是依赖轻量的章节边界信息，再配合完整采购需求和评分标准原文。
+若开启 `processing.full_context.chapter_writing_plan.enabled`，还会额外发生一次“章节写作计划”请求：
+
+1. 该请求与正文扩写请求使用同一份 `system prompt`
+2. 该请求的 `user prompt` 会先复用上述共享参考段落，再追加“只输出章节写作计划”的任务后缀
+3. 正文扩写请求在这种情况下也会以前述共享参考段落作为 `user prompt` 前缀，然后再接 `task_card`
+4. 生成出的“章节写作计划”最终仍写回 `task_card`
+
+这样做的目的，是让“章节写作计划”请求与正文扩写请求尽可能共享相同的前缀 token，以便更容易命中模型侧 prompt cache。
+
+也就是说，full 分支不再注入完整大纲，而是依赖轻量的章节边界信息，再配合完整采购需求和评分标准原文；当开启章节写作计划时，这些 full-context 参考信息还会被刻意放到 prompt 前缀以服务缓存复用。
 
 ### 5.8 拼接方式
 
@@ -492,8 +500,6 @@ messages = [
 
 ## 用户附加要求
 ...
-
-## 其他写作要求
 ...
 ```
 
@@ -502,7 +508,7 @@ messages = [
 - `首行要求` 可能没有
 - `评分关注` 可能没有
 - `需求要点` 可能来自 `requirement_brief`，也可能来自 `requirement_seed`
-- `用户附加要求` 和 `其他写作要求` 也可能没有
+- `用户附加要求` 也可能没有
 
 ### 6.3 full 分支下的大致形态
 
@@ -535,8 +541,6 @@ messages = [
 
 ## 用户附加要求
 ...
-
-## 其他写作要求
 ...
 ```
 
@@ -544,7 +548,7 @@ messages = [
 
 - `首行要求` 可能没有
 - `招标需求参考` 和 `评分标准参考` 取决于对应原文是否为空
-- `用户附加要求` 和 `其他写作要求` 也可能没有
+- `用户附加要求` 也可能没有
 
 ### 6.4 除 prompt 外还会传什么
 
@@ -594,7 +598,7 @@ messages = [
 | `prompt_allow_english_terms` | `prompt.allow_english_terms` | system prompt 中是否禁止不必要英文 | 是 |
 | `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
 | `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
-| `prompt_extra_rules` | `prompt.extra_rules` | user prompt 中的其他写作要求 | 是 |
+| `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `min_words` | 运行时入参 | 最低字数要求 | 是 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
@@ -672,12 +676,11 @@ flowchart TD
     H8 --> H9[scoring_criteria 可选]
     H7 --> H10[additional_requirements 可选]
     H9 --> H10
-    H10 --> H11[extra_rules 可选]
 
     B --> I[build_system_prompt]
     I --> J[role + 最高优先级输出强约束]
 
-    H12 --> K[组装 messages]
+    H10 --> K[组装 messages]
     J --> K
     K --> L["messages = [system, user]"]
     L --> M[_build_request_options]

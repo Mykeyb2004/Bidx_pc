@@ -18,6 +18,8 @@ prompt:
   output_format: "纯正文"
   allow_markdown_headings: false
   allow_english_terms: false
+  extra_rules:
+    - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"
 
 output:
   directory: "./output"

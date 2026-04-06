@@ -387,28 +387,19 @@ class AIWriter:
         return "除专有名词或用户明确要求外，不要输出不必要的英文、英文缩写或中英对照。"
 
     def _build_structure_contract_section(self) -> str:
-        return "\n".join(
-            [
-                "## 结构输出硬要求",
-                "- 本次正文默认采用显式层级结构，不接受整篇无序号散文式表达。",
-                "- 除非用户明确要求只写单段摘要，否则正文至少出现一个正式层级序号“一、”。",
-                "- 只要正文存在两个及以上功能板块、三个及以上自然段、表格、清单、流程、机制或并列措施，必须继续使用“（一）”“1.”“（1）”展开。",
-                "- 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文。",
-                "- 表格前的引导性标题、板块标题或小标题，同样必须纳入正式层级序号体系，不得裸写。",
-                "- 段内枚举可使用“第一……、第二……”或“一是……；二是……”，但不能替代章节层级序号。",
-            ]
-        )
-
-    def _build_extra_rules_section(self) -> str:
         rules = self.config.prompt_extra_rules
-        if not rules:
-            return ""
-        return "\n".join(
-            [
-                "## 其他写作要求",
-                *[f"- {rule}" for rule in rules],
-            ]
-        )
+        lines = [
+            "## 结构输出硬要求",
+            "- 本次正文默认采用显式层级结构，不接受整篇无序号散文式表达。",
+            "- 除非用户明确要求只写单段摘要，否则正文至少出现一个正式层级序号“一、”。",
+            "- 只要正文存在两个及以上功能板块、三个及以上自然段、表格、清单、流程、机制或并列措施，必须继续使用“（一）”“1.”“（1）”展开。",
+            "- 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文。",
+            "- 表格前的引导性标题、板块标题或小标题，同样必须纳入正式层级序号体系，不得裸写。",
+            "- 段内枚举可使用“第一……、第二……”或“一是……；二是……”，但不能替代章节层级序号。",
+        ]
+        if rules:
+            lines.extend(f"- {rule}" for rule in rules)
+        return "\n".join(lines)
 
     def _normalize_bidder_references(self, text: str) -> tuple[str, int]:
         bidder_name = self.config.prompt_bidder_name.strip()
@@ -514,6 +505,61 @@ class AIWriter:
         prompt_parts.append(content)
         prompt_sections.append({"name": name, "content": content})
 
+    @classmethod
+    def _append_prompt_sections(
+        cls,
+        prompt_parts: list[str],
+        prompt_sections: list[dict[str, str]],
+        sections: list[tuple[str, str]],
+    ) -> None:
+        for name, content in sections:
+            cls._append_prompt_section(prompt_parts, prompt_sections, name, content)
+
+    @staticmethod
+    def _join_prompt_section_contents(sections: list[tuple[str, str]]) -> str:
+        return "\n".join(content for _, content in sections if content)
+
+    def _build_full_context_reference_sections(
+        self,
+        scope_reference: str,
+        background: str,
+        full_context_stats: dict[str, Any],
+    ) -> list[tuple[str, str]]:
+        sections: list[tuple[str, str]] = [("scope_reference", scope_reference)]
+
+        if background:
+            sections.append(
+                ("project_background", self._build_project_background_section(background))
+            )
+
+        bid_requirements = self.config.bid_requirements.strip()
+        full_context_stats["bid_requirements_chars"] = len(bid_requirements)
+        if bid_requirements:
+            sections.append(
+                (
+                    "bid_requirements",
+                    f"""
+## 招标需求参考
+{bid_requirements}
+""",
+                )
+            )
+
+        scoring_criteria = self.config.scoring_criteria.strip()
+        full_context_stats["scoring_criteria_chars"] = len(scoring_criteria)
+        if scoring_criteria:
+            sections.append(
+                (
+                    "scoring_criteria",
+                    f"""
+## 评分标准参考
+{scoring_criteria}
+""",
+                )
+            )
+
+        return sections
+
     @staticmethod
     def _dedupe_values(values: list[str]) -> list[str]:
         deduped: list[str] = []
@@ -593,11 +639,11 @@ class AIWriter:
                 "id": "structure_rules",
                 "label": "Structure Rules",
                 "prompt_kind": "user",
-                "section_names": ["structure_contract", "first_line_rule", "extra_rules"],
+                "section_names": ["structure_contract", "first_line_rule"],
                 "source_context": [
                     "structure_contract",
                     "prompt.first_line_template" if "first_line_rule" in section_map else "",
-                    "prompt.extra_rules" if "extra_rules" in section_map else "",
+                    "prompt.extra_rules" if self.config.prompt_extra_rules else "",
                 ],
             },
             {
@@ -686,6 +732,7 @@ class AIWriter:
         prompt_sections: list[dict[str, str]] = []
         pruned_context = None
         context_mode = "full"
+        system_prompt = self.build_system_prompt()
         full_context_stats: dict[str, Any] = {
             "bid_requirements_chars": 0,
             "scoring_criteria_chars": 0,
@@ -699,31 +746,48 @@ class AIWriter:
 
         first_line = self._format_first_line(heading)
         scope_reference = self._build_scope_reference(heading)
+        background = ""
+        try:
+            if self.project_background_generator is not None:
+                background = self.project_background_generator.get_or_generate()
+        except Exception:
+            background = ""
+
+        full_context_sections: list[tuple[str, str]] = []
         chapter_writing_plan = ""
-        if pruned_context is None and self.chapter_writing_plan_generator is not None:
-            try:
-                chapter_writing_plan = self.chapter_writing_plan_generator.get_or_generate(
-                    heading,
-                    scope_reference,
-                )
-            except Exception:
-                chapter_writing_plan = ""
+        use_shared_prefix_layout = False
+        if pruned_context is None:
+            full_context_sections = self._build_full_context_reference_sections(
+                scope_reference,
+                background,
+                full_context_stats,
+            )
+            shared_prompt_prefix = self._join_prompt_section_contents(full_context_sections)
+            if self.chapter_writing_plan_generator is not None:
+                try:
+                    chapter_writing_plan = self.chapter_writing_plan_generator.get_or_generate(
+                        heading,
+                        system_prompt=system_prompt,
+                        shared_prompt_prefix=shared_prompt_prefix,
+                    )
+                except Exception:
+                    chapter_writing_plan = ""
+                use_shared_prefix_layout = bool(shared_prompt_prefix.strip())
+
         full_context_stats["chapter_writing_plan_chars"] = len(chapter_writing_plan)
+
+        if use_shared_prefix_layout:
+            self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
+
         self._append_prompt_section(
             prompt_parts,
             prompt_sections,
             "task_card",
-            "\n".join(
-                [
-                    "请为以下标书章节撰写投标正文。",
-                    "",
-                    self._build_task_card(
-                        heading,
-                        pruned_context,
-                        min_words,
-                        chapter_writing_plan=chapter_writing_plan,
-                    ),
-                ]
+            self._build_task_card(
+                heading,
+                pruned_context,
+                min_words,
+                chapter_writing_plan=chapter_writing_plan,
             ),
         )
         self._append_prompt_section(
@@ -747,30 +811,21 @@ class AIWriter:
                 ),
             )
 
-        self._append_prompt_section(
-            prompt_parts,
-            prompt_sections,
-            "scope_reference",
-            scope_reference,
-        )
-
-        # 项目背景（始终注入，不受裁剪模式影响）
-        background = ""
-        try:
-            if self.project_background_generator is not None:
-                background = self.project_background_generator.get_or_generate()
-        except Exception:
-            background = ""
-        if background:
+        if pruned_context is not None:
+            context_mode = "pruned"
             self._append_prompt_section(
                 prompt_parts,
                 prompt_sections,
-                "project_background",
-                self._build_project_background_section(background),
+                "scope_reference",
+                scope_reference,
             )
-
-        if pruned_context is not None:
-            context_mode = "pruned"
+            if background:
+                self._append_prompt_section(
+                    prompt_parts,
+                    prompt_sections,
+                    "project_background",
+                    self._build_project_background_section(background),
+                )
 
             # 评分注入：优先用分类结果
             has_classified = bool(
@@ -817,33 +872,8 @@ class AIWriter:
 """,
                 )
         else:
-            # 添加招标需求上下文
-            bid_requirements = self.config.bid_requirements.strip()
-            full_context_stats["bid_requirements_chars"] = len(bid_requirements)
-            if bid_requirements:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "bid_requirements",
-                    f"""
-## 招标需求参考
-{bid_requirements}
-""",
-                )
-
-            # 添加评分标准上下文
-            scoring_criteria = self.config.scoring_criteria.strip()
-            full_context_stats["scoring_criteria_chars"] = len(scoring_criteria)
-            if scoring_criteria:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "scoring_criteria",
-                    f"""
-## 评分标准参考
-{scoring_criteria}
-""",
-                )
+            if not use_shared_prefix_layout:
+                self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
 
         # 添加用户附加要求
         if additional_requirements:
@@ -855,15 +885,6 @@ class AIWriter:
 ## 用户附加要求
 {additional_requirements}
 """,
-            )
-
-        extra_rules_section = self._build_extra_rules_section()
-        if extra_rules_section:
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "extra_rules",
-                extra_rules_section,
             )
 
         prompt = "\n".join(prompt_parts)
