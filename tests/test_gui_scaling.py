@@ -1,7 +1,10 @@
 from bid_writer.gui import (
     _build_gui_scale_profile,
+    _count_text_characters,
     _compute_dialog_target_size,
     _compute_gui_font_delta,
+    _format_workspace_char_count,
+    _shift_hex_color,
 )
 
 
@@ -64,3 +67,19 @@ def test_compute_dialog_target_size_keeps_existing_larger_window_size():
 
     assert width == 560
     assert height == 320
+
+
+def test_shift_hex_color_darkens_surface_color_for_subtle_borders():
+    assert _shift_hex_color("#dcdad5", -18) == "#cac8c3"
+
+
+def test_count_text_characters_keeps_newlines_for_workspace_display():
+    assert _count_text_characters("第一段\n第二段") == 7
+
+
+def test_format_workspace_char_count_uses_placeholder_without_active_node():
+    assert _format_workspace_char_count(None) == "当前节点已生成字符数：-"
+
+
+def test_format_workspace_char_count_formats_large_numbers_for_readability():
+    assert _format_workspace_char_count(12345) == "当前节点已生成字符数：12,345"

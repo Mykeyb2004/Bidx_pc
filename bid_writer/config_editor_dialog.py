@@ -17,13 +17,20 @@ from .config_editor import (
     summarize_model,
 )
 from .config_editor_tooltips import get_tooltip_text
-from .gui import _bootstyle_kwargs, setup_gui_theme, style_text_widget
+from .gui import (
+    _bootstyle_kwargs,
+    apply_window_surface,
+    setup_gui_theme,
+    style_canvas_widget,
+    style_text_widget,
+)
 
 
 class ScrollableSection(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
+        style_canvas_widget(self.canvas)
         self.scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.canvas.yview)
         self.content = ttk.Frame(self.canvas)
         self.window_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
@@ -128,6 +135,7 @@ class HoverTooltip:
             return
 
         tip = tk.Toplevel(self.widget)
+        apply_window_surface(tip)
         tip.wm_overrideredirect(True)
         tip.wm_geometry(f"+{x}+{y}")
 
@@ -165,6 +173,7 @@ class ConfigEditorDialog(tk.Toplevel):
         super().__init__(parent)
         self.parent_window = parent
         self.style = setup_gui_theme(self)
+        apply_window_surface(self)
         self.active_config_path = Path(config_path).expanduser().resolve()
         self.document: ConfigEditorDocument | None = None
         self.result: dict[str, Any] = {"saved_path": None, "apply_path": None}

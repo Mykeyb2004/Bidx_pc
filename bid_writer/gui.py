@@ -50,6 +50,7 @@ GUI_SCREEN_WIDTH_MEDIUM_THRESHOLD = 1600
 GUI_SCREEN_WIDTH_LARGE_THRESHOLD = 2200
 GUI_SCREEN_HEIGHT_MEDIUM_THRESHOLD = 1000
 GUI_SCREEN_HEIGHT_LARGE_THRESHOLD = 1400
+_WORKSPACE_CHAR_COUNT_UNCHANGED = object()
 _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
@@ -75,6 +76,17 @@ class GuiScaleProfile:
     button_padding: tuple[int, int]
     field_padding: tuple[int, int]
     text_padding: tuple[int, int]
+
+
+@dataclass(frozen=True)
+class GuiColorPalette:
+    """GUI 常用颜色面板。"""
+
+    surface_background: str
+    input_background: str
+    input_foreground: str
+    border_color: str
+    accent_color: str
 
 
 def _is_valid_tcl_dir(path: Path) -> bool:
@@ -182,6 +194,36 @@ def _parse_gui_font_delta(value: Optional[str]) -> int:
         return 0
 
 
+def _first_non_empty(*values: Optional[str]) -> str:
+    for value in values:
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
+def _shift_hex_color(color: str, delta: int) -> str:
+    if not color.startswith("#") or len(color) != 7:
+        return color
+
+    channels = []
+    for index in range(1, 7, 2):
+        channel = int(color[index:index + 2], 16)
+        channels.append(max(0, min(255, channel + delta)))
+    return "#{:02x}{:02x}{:02x}".format(*channels)
+
+
+def _count_text_characters(text: str) -> int:
+    """统计正文字符数，保留空白和换行。"""
+    return len(text)
+
+
+def _format_workspace_char_count(count: Optional[int]) -> str:
+    """格式化正文工作区的字符数标签。"""
+    if count is None:
+        return "当前节点已生成字符数：-"
+    return f"当前节点已生成字符数：{max(0, count):,}"
+
+
 def _compute_gui_font_delta(
     *,
     screen_width: Optional[int] = None,
@@ -257,6 +299,32 @@ def _compute_dialog_target_size(
     return width, height
 
 
+def _build_gui_color_palette(style: ttk.Style) -> GuiColorPalette:
+    surface_background = _first_non_empty(
+        style.lookup("TFrame", "background"),
+        style.lookup("TLabel", "background"),
+        "#dcdad5",
+    )
+    input_background = _first_non_empty(
+        style.lookup("TEntry", "fieldbackground"),
+        style.lookup("Treeview", "background"),
+        "#ffffff",
+    )
+    input_foreground = _first_non_empty(
+        style.lookup("TEntry", "foreground"),
+        style.lookup("Treeview", "foreground"),
+        style.lookup("TLabel", "foreground"),
+        "black",
+    )
+    return GuiColorPalette(
+        surface_background=surface_background,
+        input_background=input_background,
+        input_foreground=input_foreground,
+        border_color=_shift_hex_color(surface_background, -18),
+        accent_color="#3b82f6",
+    )
+
+
 def _get_gui_scale_profile(master: tk.Misc) -> GuiScaleProfile:
     root = master._root()
     existing_profile = getattr(root, "_bid_writer_gui_scale_profile", None)
@@ -289,6 +357,38 @@ def _get_gui_scale_profile(master: tk.Misc) -> GuiScaleProfile:
     )
     setattr(root, "_bid_writer_gui_scale_profile", profile)
     return profile
+
+
+def _get_gui_color_palette(master: tk.Misc) -> GuiColorPalette:
+    root = master._root()
+    existing_palette = getattr(root, "_bid_writer_gui_color_palette", None)
+    if existing_palette is not None:
+        return existing_palette
+
+    palette = _build_gui_color_palette(ttk.Style(master))
+    setattr(root, "_bid_writer_gui_color_palette", palette)
+    return palette
+
+
+def apply_window_surface(widget: tk.Misc) -> None:
+    """让 Tk 顶层窗口背景与 ttk 主题底色一致。"""
+    palette = _get_gui_color_palette(widget)
+    try:
+        widget.configure(background=palette.surface_background)
+    except tk.TclError:
+        return
+
+
+def style_canvas_widget(widget: tk.Canvas) -> None:
+    """统一 Canvas 背景，避免与 ttk 容器出现色差。"""
+    palette = _get_gui_color_palette(widget)
+    widget.configure(background=palette.surface_background, highlightbackground=palette.surface_background)
+
+
+def style_paned_window(widget: tk.PanedWindow) -> None:
+    """统一 PanedWindow 分隔色，避免出现突兀的硬编码色块。"""
+    palette = _get_gui_color_palette(widget)
+    widget.configure(background=palette.border_color)
 
 
 def _configure_named_fonts(profile: GuiScaleProfile) -> None:
@@ -340,6 +440,8 @@ def setup_gui_theme(master: tk.Misc) -> ttk.Style:
     style.configure("SectionTitle.TLabel", font=("TkDefaultFont", profile.default_font_size, "bold"))
     style.configure("Muted.TLabel", foreground=muted_foreground)
 
+    palette = _build_gui_color_palette(style)
+    setattr(root, "_bid_writer_gui_color_palette", palette)
     setattr(root, "_bid_writer_bootstrap_style", bootstrap_style)
     setattr(root, "_bid_writer_style", style)
     return style
@@ -348,15 +450,21 @@ def setup_gui_theme(master: tk.Misc) -> ttk.Style:
 def style_text_widget(widget: tk.Text) -> None:
     """统一原生 Text 控件的观感。"""
     profile = _get_gui_scale_profile(widget)
+    palette = _get_gui_color_palette(widget)
     widget.configure(
         font="TkFixedFont",
+        background=palette.input_background,
+        foreground=palette.input_foreground,
         relief=tk.FLAT,
         borderwidth=0,
         padx=profile.text_padding[0],
         pady=profile.text_padding[1],
         highlightthickness=1,
-        highlightbackground="#d7dee8",
-        highlightcolor="#3b82f6",
+        highlightbackground=palette.border_color,
+        highlightcolor=palette.accent_color,
+        insertbackground=palette.input_foreground,
+        selectbackground=palette.accent_color,
+        selectforeground="#ffffff",
         insertwidth=2,
     )
 
@@ -395,6 +503,7 @@ class ConfigSelectionDialog(tk.Toplevel):
 
     def __init__(self, parent, initial_path: Optional[str] = None):
         super().__init__(parent)
+        apply_window_surface(self)
 
         self.base_dir = Path.cwd().resolve()
         self.result: Optional[str] = None
@@ -698,6 +807,7 @@ class MainWindow(tk.Tk):
         ensure_tk_runtime()
         super().__init__()
         self.style = setup_gui_theme(self)
+        apply_window_surface(self)
 
         self.bid_writer = bid_writer
         self.adapter = GUIAdapter(bid_writer)
@@ -901,8 +1011,8 @@ class MainWindow(tk.Tk):
             relief=tk.FLAT,
             bd=0,
             opaqueresize=True,
-            background="#d7dee8",
         )
+        style_paned_window(self.main_paned_window)
         self.main_paned_window.pack(fill=tk.BOTH, expand=True)
 
         outline_panel = ttk.Frame(self.main_paned_window)
@@ -1017,11 +1127,23 @@ class MainWindow(tk.Tk):
         workspace_frame = ttk.Frame(parent, padding=(12, 12, 12, 12))
         workspace_frame.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(workspace_frame, text="正文工作区", style="SectionTitle.TLabel").pack(anchor=tk.W)
+        workspace_header = ttk.Frame(workspace_frame)
+        workspace_header.pack(fill=tk.X)
+
+        ttk.Label(workspace_header, text="正文工作区", style="SectionTitle.TLabel").pack(side=tk.LEFT, anchor=tk.W)
+        self.workspace_char_count_var = tk.StringVar(value=_format_workspace_char_count(None))
+        ttk.Label(
+            workspace_header,
+            textvariable=self.workspace_char_count_var,
+            style="Muted.TLabel",
+            justify=tk.RIGHT,
+        ).pack(side=tk.RIGHT, anchor=tk.E)
+
         self.workspace_heading_var = tk.StringVar(value="未选择章节")
         self.workspace_meta_var = tk.StringVar(
             value="选择单个四级标题后，这里会显示已生成正文；点击“生成所选”时，这里会实时显示当前扩写内容。"
         )
+        self._workspace_generated_char_count: Optional[int] = None
 
         self.workspace_heading_label = ttk.Label(
             workspace_frame,
@@ -1055,7 +1177,21 @@ class MainWindow(tk.Tk):
 
         self._show_workspace_idle()
 
-    def _set_workspace_text(self, content: str, *, append: bool = False, scroll_to_end: bool = False) -> None:
+    def _set_workspace_generated_char_count(self, count: Optional[int]) -> None:
+        """更新正文工作区显示的当前节点字符数。"""
+        normalized_count = None if count is None else max(0, count)
+        self._workspace_generated_char_count = normalized_count
+        if hasattr(self, "workspace_char_count_var"):
+            self.workspace_char_count_var.set(_format_workspace_char_count(normalized_count))
+
+    def _set_workspace_text(
+        self,
+        content: str,
+        *,
+        append: bool = False,
+        scroll_to_end: bool = False,
+        generated_char_count: Optional[int] | object = _WORKSPACE_CHAR_COUNT_UNCHANGED,
+    ) -> None:
         """更新右侧正文工作区文本。"""
         if not hasattr(self, "workspace_text"):
             return
@@ -1074,11 +1210,25 @@ class MainWindow(tk.Tk):
             self.workspace_text.see("1.0")
         self.workspace_text.configure(state=tk.DISABLED)
 
-    def _show_workspace_message(self, heading_text: str, meta_text: str, body_text: str) -> None:
+        if generated_char_count is not _WORKSPACE_CHAR_COUNT_UNCHANGED:
+            self._set_workspace_generated_char_count(generated_char_count)
+        elif append and self._workspace_generated_char_count is not None:
+            self._set_workspace_generated_char_count(
+                self._workspace_generated_char_count + _count_text_characters(content)
+            )
+
+    def _show_workspace_message(
+        self,
+        heading_text: str,
+        meta_text: str,
+        body_text: str,
+        *,
+        generated_char_count: Optional[int],
+    ) -> None:
         """显示正文工作区的标题、说明和正文内容。"""
         self.workspace_heading_var.set(heading_text)
         self.workspace_meta_var.set(meta_text)
-        self._set_workspace_text(body_text)
+        self._set_workspace_text(body_text, generated_char_count=generated_char_count)
 
     def _show_workspace_idle(self) -> None:
         """正文工作区空状态。"""
@@ -1086,6 +1236,7 @@ class MainWindow(tk.Tk):
             "未选择章节",
             "选择单个四级标题后，右侧会直接显示已生成正文；批量生成时，这里会显示当前处理章节的实时输出。",
             "可在左侧大纲树中选择一个四级标题查看正文，或多选后点击“生成所选”开始批量扩写。",
+            generated_char_count=None,
         )
 
     def _show_workspace_selection_summary(self, selected_count: int) -> None:
@@ -1094,6 +1245,7 @@ class MainWindow(tk.Tk):
             f"已选择 {selected_count} 个章节",
             "当前为多选模式。点击“生成所选”后，右侧会实时显示当前处理章节的正文内容。",
             "若要查看某个章节的已生成正文，请只保留一个四级标题为选中状态。",
+            generated_char_count=None,
         )
 
     def _show_heading_preview_in_workspace(self, heading: HeadingNode) -> None:
@@ -1105,6 +1257,7 @@ class MainWindow(tk.Tk):
                 f"当前章节：{heading.full_path}",
                 f"已生成文件：{filepath.name}",
                 content,
+                generated_char_count=_count_text_characters(content),
             )
             return
 
@@ -1112,6 +1265,7 @@ class MainWindow(tk.Tk):
             f"当前章节：{heading.full_path}",
             "尚未生成正文",
             "该章节当前没有已生成正文。\n\n点击“生成所选”开始扩写后，正文会在这里实时显示，并在完成后自动保存。",
+            generated_char_count=0,
         )
 
     def _refresh_workspace_from_selection(self) -> None:
@@ -1133,6 +1287,7 @@ class MainWindow(tk.Tk):
             f"当前章节：{heading.full_path}",
             "正在生成正文...",
             "",
+            generated_char_count=0,
         )
 
     def _show_generated_content_in_workspace(
@@ -1147,6 +1302,7 @@ class MainWindow(tk.Tk):
             f"当前章节：{heading.full_path}",
             meta_text,
             content,
+            generated_char_count=_count_text_characters(content),
         )
 
     def on_window_resize(self, event):
@@ -2128,6 +2284,7 @@ class MainWindow(tk.Tk):
         """
         dialog = tk.Toplevel(self)
         dialog.title("生成参数设置")
+        apply_window_surface(dialog)
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -2163,7 +2320,7 @@ class MainWindow(tk.Tk):
 
         # 按钮
         button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=(12, 0))
+        button_frame.pack(pady=(16, 20))
 
         def on_ok():
             try:
@@ -2266,7 +2423,10 @@ class MainWindow(tk.Tk):
 
                     elif msg_type == "replace":
                         # 后处理修复了格式，替换整个显示内容
-                        self.parent._set_workspace_text(data)
+                        self.parent._set_workspace_text(
+                            data,
+                            generated_char_count=_count_text_characters(data),
+                        )
                         if hasattr(self.parent, "workspace_meta_var"):
                             self.parent.workspace_meta_var.set("格式已自动修复")
 
