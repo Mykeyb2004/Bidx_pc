@@ -13,6 +13,7 @@ from openai import OpenAI
 
 from .config import Config
 from .context_pruner import ChapterContext, ChapterContextPruner
+from .chapter_writing_plan import ChapterWritingPlanGenerator
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
 from .outline_parser import HeadingNode
 from .project_background import ProjectBackgroundGenerator
@@ -93,6 +94,11 @@ class AIWriter:
             if config.project_background_enabled
             else None
         )
+        self.chapter_writing_plan_generator = (
+            ChapterWritingPlanGenerator(config)
+            if config.chapter_writing_plan_enabled
+            else None
+        )
 
     @staticmethod
     def _heading_chain(heading: HeadingNode) -> list[HeadingNode]:
@@ -138,7 +144,13 @@ class AIWriter:
             return concise_terms[:3]
         return [title_core] if title_core else [heading.title]
 
-    def _build_task_card(self, heading: HeadingNode, pruned_context: Optional[ChapterContext], min_words: int) -> str:
+    def _build_task_card(
+        self,
+        heading: HeadingNode,
+        pruned_context: Optional[ChapterContext],
+        min_words: int,
+        chapter_writing_plan: str = "",
+    ) -> str:
         chain = self._heading_chain(heading)
         project_title = chain[0].title if chain else heading.title
         bidder_name = self.config.prompt_bidder_name or "当前投标主体"
@@ -155,6 +167,12 @@ class AIWriter:
             f"- 表格控制：{self._build_table_rule_text()}",
             "- 写作依据：优先根据下方评分关注和需求要点组织内容。",
         ]
+        if chapter_writing_plan.strip():
+            lines.append("- 章节写作计划：")
+            for line in chapter_writing_plan.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    lines.append(f"  {stripped}")
         return "\n".join(lines)
 
     def _build_scope_reference(self, heading: HeadingNode) -> str:
@@ -565,6 +583,9 @@ class AIWriter:
                     "prompt.output_format",
                     "prompt_bidder_name",
                     "pruned_context.chapter_focus_terms" if pruned_context is not None else "HeadingNode.title",
+                    "ChapterWritingPlanGenerator.get_or_generate"
+                    if "task_card" in section_map and "章节写作计划" in section_map.get("task_card", "")
+                    else "",
                     "additional_requirements" if additional_requirements.strip() else "",
                 ],
             },
@@ -668,6 +689,7 @@ class AIWriter:
         full_context_stats: dict[str, Any] = {
             "bid_requirements_chars": 0,
             "scoring_criteria_chars": 0,
+            "chapter_writing_plan_chars": 0,
         }
         if self.config.context_pruning_enabled:
             try:
@@ -676,6 +698,17 @@ class AIWriter:
                 pruned_context = None
 
         first_line = self._format_first_line(heading)
+        scope_reference = self._build_scope_reference(heading)
+        chapter_writing_plan = ""
+        if pruned_context is None and self.chapter_writing_plan_generator is not None:
+            try:
+                chapter_writing_plan = self.chapter_writing_plan_generator.get_or_generate(
+                    heading,
+                    scope_reference,
+                )
+            except Exception:
+                chapter_writing_plan = ""
+        full_context_stats["chapter_writing_plan_chars"] = len(chapter_writing_plan)
         self._append_prompt_section(
             prompt_parts,
             prompt_sections,
@@ -684,7 +717,12 @@ class AIWriter:
                 [
                     "请为以下标书章节撰写投标正文。",
                     "",
-                    self._build_task_card(heading, pruned_context, min_words),
+                    self._build_task_card(
+                        heading,
+                        pruned_context,
+                        min_words,
+                        chapter_writing_plan=chapter_writing_plan,
+                    ),
                 ]
             ),
         )
@@ -713,7 +751,7 @@ class AIWriter:
             prompt_parts,
             prompt_sections,
             "scope_reference",
-            self._build_scope_reference(heading),
+            scope_reference,
         )
 
         # 项目背景（始终注入，不受裁剪模式影响）

@@ -97,6 +97,27 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert "## 完整总大纲参考" not in result.prompt
 
 
+def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {}).setdefault("full_context", {}).setdefault(
+        "chapter_writing_plan",
+        {},
+    )["enabled"] = True
+    writer = _build_writer(monkeypatch, config)
+    writer.chapter_writing_plan_generator = type(
+        "DummyPlanGenerator",
+        (),
+        {"get_or_generate": staticmethod(lambda _heading, _scope: "1. 先回应项目目标。\n2. 再回应质量评分点。")},
+    )()
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, min_words=1200)
+
+    assert "- 章节写作计划：" in result.prompt
+    assert "1. 先回应项目目标。" in result.prompt
+    assert "2. 再回应质量评分点。" in result.prompt
+
+
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)

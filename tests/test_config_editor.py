@@ -70,6 +70,10 @@ processing:
   project_background:
     enabled: true
     max_chars: 600
+  full_context:
+    chapter_writing_plan:
+      enabled: true
+      max_chars: 280
 """.strip(),
         encoding="utf-8",
     )
@@ -81,6 +85,8 @@ processing:
     assert payload["processing"]["path"] == "full_context"
     assert payload["processing"]["project_background"]["enabled"] is True
     assert payload["processing"]["project_background"]["max_chars"] == 600
+    assert payload["processing"]["full_context"]["chapter_writing_plan"]["enabled"] is True
+    assert payload["processing"]["full_context"]["chapter_writing_plan"]["max_chars"] == 280
 
 
 def test_config_editor_validation_full_context_does_not_require_auto_runtime(tmp_path: Path):

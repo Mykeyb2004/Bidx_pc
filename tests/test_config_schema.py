@@ -90,6 +90,42 @@ runtime:
     assert config.generation_stream_idle_timeout_seconds == 15
 
 
+def test_full_context_chapter_writing_plan_config_is_read(tmp_path: Path):
+    project_root = tmp_path / "project-data"
+    project_root.mkdir()
+    (project_root / "outline.md").write_text("# 项目\n## 章节\n### 质量保障措施\n", encoding="utf-8")
+    (project_root / "bid_requirements.md").write_text("项目采购需求正文", encoding="utf-8")
+    (project_root / "scoring_criteria.md").write_text("评分标准正文", encoding="utf-8")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "./project-data"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "full_context"
+  full_context:
+    chapter_writing_plan:
+      enabled: true
+      max_chars: 280
+      cache_dir: "./plan-cache"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.processing_path == "full_context"
+    assert config.chapter_writing_plan_enabled is True
+    assert config.chapter_writing_plan_max_chars == 280
+    assert config.chapter_writing_plan_cache_dir == str(project_root / "plan-cache")
+
+
 def test_legacy_schema_still_derives_full_context_and_reads_inputs(tmp_path: Path):
     (tmp_path / "outline.md").write_text("# 项目\n## 章节\n### 质量保障措施\n", encoding="utf-8")
     (tmp_path / "bid_requirements.md").write_text("旧配置采购需求", encoding="utf-8")

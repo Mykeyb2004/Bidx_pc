@@ -42,6 +42,8 @@ FIELD_TOOLTIPS: dict[str, str] = {
     "processing.context_view.max_siblings": "最多保留多少个同级标题。值越大，上下文更全，但 prompt 也会更长。",
     "processing.project_background.enabled": "是否根据采购需求生成一段项目背景摘要。当前它会在 auto 和 full_context 两种模式下生效。",
     "processing.project_background.max_chars": "项目背景摘要的目标长度上限。值越大，背景更完整，但 prompt 也会更长。",
+    "processing.full_context.chapter_writing_plan.enabled": "是否在 full_context 模式下先生成一个章节写作计划，并把它插入章节任务卡。开启后会增加一次辅助 LLM 调用。",
+    "processing.full_context.chapter_writing_plan.max_chars": "章节写作计划的长度上限。建议保持简短，只做提纲，不要让它挤占正文生成的上下文空间。",
     "processing.legacy_rule.scoring_max_rows": "legacy_rule 下最多保留多少条评分项。数值太小可能漏要求，太大则会稀释重点。",
     "processing.legacy_rule.requirements_max_quotes": "legacy_rule 下最多摘录多少条采购需求片段。通常 3 到 6 比较稳。",
     "processing.legacy_rule.requirements_max_quote_chars": "legacy_rule 下单条需求摘录的最大长度。主要用来限制 prompt 膨胀。",

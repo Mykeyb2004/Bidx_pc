@@ -169,13 +169,17 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 写作场景
 - 当前章节路径
 - 本章重点
+- 可选的章节写作计划
 - 字数要求
 - 输出方式
 - 结构要求
 - 表格控制
 - 写作依据
 
-其中“本章重点”并不是简单使用标题原文，而是优先来自裁剪后的焦点词。
+其中：
+
+- “本章重点”并不是简单使用标题原文，而是优先来自裁剪后的焦点词
+- 当 `processing.path = full_context` 且开启 `processing.full_context.chapter_writing_plan.enabled` 时，会先调用辅助模型生成简短的“章节写作计划”，再把它插入任务卡
 
 ### 3.4 结构硬约束
 

@@ -1231,6 +1231,42 @@ class Config:
         )
 
     @property
+    def chapter_writing_plan_enabled(self) -> bool:
+        """是否启用 full_context 下的章节写作计划。"""
+        if self.processing_path != 'full_context':
+            return False
+        return self._get_bool(
+            ('processing', 'full_context', 'chapter_writing_plan', 'enabled'),
+            default=False,
+        )
+
+    @property
+    def chapter_writing_plan_max_chars(self) -> int:
+        """章节写作计划最大字符数。"""
+        return self._get_int(
+            ('processing', 'full_context', 'chapter_writing_plan', 'max_chars'),
+            default=320,
+        )
+
+    @property
+    def chapter_writing_plan_cache_dir(self) -> str:
+        """章节写作计划缓存目录。"""
+        value = self._get_value(
+            'processing',
+            'full_context',
+            'chapter_writing_plan',
+            'cache_dir',
+            default=self._MISSING,
+        )
+        if value is not self._MISSING:
+            return self._resolve_declared_path(
+                value,
+                resolver=self._resolve_project_path,
+                default=str(self._resolve_project_path('./caches/chapter_writing_plan')),
+            )
+        return str(self._resolve_project_path('./caches/chapter_writing_plan'))
+
+    @property
     def generation_trace_enabled(self) -> bool:
         """是否启用章节生成 trace。"""
         return self._get_bool(('runtime', 'trace', 'enabled'), ('generation_trace', 'enabled'), default=False)

@@ -187,6 +187,13 @@ writing:
 
 processing:
   path: "legacy_rule" # 可改为 full_context，直接把采购需求与评分标准全文送入提示词
+  project_background:
+    enabled: true
+    max_chars: 800
+  full_context:
+    chapter_writing_plan:
+      enabled: false
+      max_chars: 320
   context_view:
     include_ancestors: true
     include_siblings: true
@@ -258,6 +265,7 @@ runtime:
 - `models.generation.base_url` 不限于 OpenAI 官方地址，只要接口兼容 OpenAI Chat Completions 即可；同名环境变量优先级更高
 - 程序会先读取配置文件同目录下的 `.env`，再读取 `.env.local`；`.env.local` 可覆盖 `.env`，但不会覆盖你外部 shell 已显式设置的环境变量
 - 最简单的用法是把整组 API 参数都写进 `.env.local`
+- `processing.full_context.chapter_writing_plan.enabled=true` 时，会先为当前章节生成一个简短写作计划，并把它插入“章节任务卡”；该计划默认优先使用 pruning 模型生成
 - `project.root_dir` 用于声明项目资料的根目录；`project.inputs.*` 和 `project.output_dir` 默认相对它解析
 - `project.inputs.*_file` 支持路径；`project.inputs.bid_requirements`、`project.inputs.scoring_criteria` 也支持直接写长文本
 - `writing.role_file` 可把大段角色设定单独存成文件，减少多个项目配置重复粘贴

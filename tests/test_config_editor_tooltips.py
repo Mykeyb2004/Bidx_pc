@@ -11,6 +11,7 @@ def test_config_editor_tooltips_cover_key_sections_and_fields():
         "writing.hard_constraints_text",
         "processing.path",
         "processing.project_background.enabled",
+        "processing.full_context.chapter_writing_plan.enabled",
         "processing.hybrid_extract.retrieval.vector_enabled",
         "models.generation.model",
         "runtime.trace.enabled",

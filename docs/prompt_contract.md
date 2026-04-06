@@ -357,6 +357,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - 写作场景
 - 当前章节路径
 - 本章重点
+- 可选的章节写作计划
 - 字数要求
 - 输出方式
 - 结构要求
@@ -367,6 +368,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 - “当前章节路径”直接使用 `HeadingNode.full_path`
 - “本章重点”来自 `pruned_context.chapter_focus_terms`，如果没有 pruned context，则退回标题自身
+- 当 `processing.full_context.chapter_writing_plan.enabled=true` 且当前走 full-context 分支时，会额外生成“章节写作计划”，并直接插入任务卡
 - “输出方式”只引用 `prompt_output_format` 这段配置文本
 - “表格控制”来自 `prompt_max_tables_per_section`
 - “写作依据”固定写成“优先根据下方评分关注和需求要点组织内容”
@@ -418,8 +420,9 @@ pruned 分支里，需求相关内容只会出现一个区块：
 在 full-context 分支中，会按顺序尝试放入：
 
 1. 公共段落中的 `## 章节边界参考`
-2. `## 招标需求参考`
-3. `## 评分标准参考`
+2. 若开启 `processing.full_context.chapter_writing_plan.enabled`，先基于采购需求全文、评分标准全文与章节边界生成“章节写作计划”，并将其写入 `task_card`
+3. `## 招标需求参考`
+4. `## 评分标准参考`
 
 对应原文非空时，该 section 才会真正出现。
 

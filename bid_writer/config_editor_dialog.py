@@ -226,6 +226,8 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("processing.context_view.max_siblings", tk.StringVar())
         add_var("processing.project_background.enabled", tk.BooleanVar())
         add_var("processing.project_background.max_chars", tk.StringVar())
+        add_var("processing.full_context.chapter_writing_plan.enabled", tk.BooleanVar())
+        add_var("processing.full_context.chapter_writing_plan.max_chars", tk.StringVar())
         add_var("processing.auto.requirements_top_k", tk.StringVar())
         add_var("processing.auto.scoring_parse_mode", tk.StringVar())
         add_var("processing.auto.scoring_max_rows", tk.StringVar())
@@ -521,6 +523,21 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_entry_row(self.processing_project_background_frame, 1, "背景最大字符数", "processing.project_background.max_chars")
         self.processing_project_background_frame.columnconfigure(1, weight=1)
 
+        self.processing_chapter_plan_frame = ttk.LabelFrame(content, text="章节写作计划", padding=12)
+        self._add_check_row(
+            self.processing_chapter_plan_frame,
+            0,
+            "启用章节写作计划",
+            "processing.full_context.chapter_writing_plan.enabled",
+        )
+        self._add_entry_row(
+            self.processing_chapter_plan_frame,
+            1,
+            "计划最大字符数",
+            "processing.full_context.chapter_writing_plan.max_chars",
+        )
+        self.processing_chapter_plan_frame.columnconfigure(1, weight=1)
+
         self.processing_req_frame = ttk.LabelFrame(content, text="需求检索", padding=12)
         self._add_entry_row(self.processing_req_frame, 0, "需求检索 top-K（原文段落数）", "processing.auto.requirements_top_k")
         self._add_entry_row(self.processing_req_frame, 1, "top_k_lexical", "processing.auto.retrieval.top_k_lexical")
@@ -766,6 +783,8 @@ class ConfigEditorDialog(tk.Toplevel):
             "processing.context_view.max_siblings": str(model["processing"]["context_view"]["max_siblings"]),
             "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
             "processing.project_background.max_chars": str(model["processing"]["project_background"]["max_chars"]),
+            "processing.full_context.chapter_writing_plan.enabled": model["processing"]["full_context"]["chapter_writing_plan"]["enabled"],
+            "processing.full_context.chapter_writing_plan.max_chars": str(model["processing"]["full_context"]["chapter_writing_plan"]["max_chars"]),
             "processing.auto.requirements_top_k": str(model["processing"]["auto"]["requirements_top_k"]),
             "processing.auto.scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
             "processing.auto.scoring_max_rows": str(model["processing"]["auto"]["scoring_max_rows"]),
@@ -873,6 +892,12 @@ class ConfigEditorDialog(tk.Toplevel):
                 "project_background": {
                     "enabled": bool(self.vars["processing.project_background.enabled"].get()),
                     "max_chars": self.vars["processing.project_background.max_chars"].get().strip(),
+                },
+                "full_context": {
+                    "chapter_writing_plan": {
+                        "enabled": bool(self.vars["processing.full_context.chapter_writing_plan.enabled"].get()),
+                        "max_chars": self.vars["processing.full_context.chapter_writing_plan.max_chars"].get().strip(),
+                    },
                 },
                 "auto": {
                     "requirements_top_k": self.vars["processing.auto.requirements_top_k"].get().strip(),
@@ -1043,6 +1068,7 @@ class ConfigEditorDialog(tk.Toplevel):
             self.processing_full_context_frame,
             self.processing_context_view_frame,
             self.processing_project_background_frame,
+            self.processing_chapter_plan_frame,
             self.processing_req_frame,
             self.processing_scoring_frame,
         ):
@@ -1051,6 +1077,7 @@ class ConfigEditorDialog(tk.Toplevel):
         if path == "full_context":
             self.processing_full_context_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
+            self.processing_chapter_plan_frame.pack(fill=tk.X, pady=(0, 12))
         else:
             self.processing_context_view_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))

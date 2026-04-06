@@ -111,6 +111,13 @@ writing:
 ```yaml
 processing:
   path: "hybrid_extract"
+  project_background:
+    enabled: true
+    max_chars: 800
+  full_context:
+    chapter_writing_plan:
+      enabled: false
+      max_chars: 320
   context_view:
     include_ancestors: true
     include_siblings: true
@@ -144,6 +151,8 @@ processing:
 说明：
 
 - `processing.path` 决定当前项目跑哪条链路
+- `processing.project_background.*` 当前会在 `auto` 和 `full_context` 下生效
+- `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”
 - 每条链路自己的参数挂在各自子块下
 - `verify_enabled` 统一表达原先 `rerank_enabled` / `llm_verify_enabled` 那条候选校验链路
 

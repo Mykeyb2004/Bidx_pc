@@ -308,6 +308,18 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     ),
                 },
             },
+            "full_context": {
+                "chapter_writing_plan": {
+                    "enabled": _coerce_bool(
+                        _first_defined(raw_config, ("processing", "full_context", "chapter_writing_plan", "enabled"), default=False),
+                        default=False,
+                    ),
+                    "max_chars": _coerce_int(
+                        _first_defined(raw_config, ("processing", "full_context", "chapter_writing_plan", "max_chars"), default=320),
+                        default=320,
+                    ),
+                },
+            },
         },
         "models": {
             "generation": {
@@ -476,6 +488,12 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
             "auto": {
                 "requirements_top_k": int(model["processing"]["auto"]["requirements_top_k"]),
             },
+            "full_context": {
+                "chapter_writing_plan": {
+                    "enabled": bool(model["processing"]["full_context"]["chapter_writing_plan"]["enabled"]),
+                    "max_chars": int(model["processing"]["full_context"]["chapter_writing_plan"]["max_chars"]),
+                },
+            },
             "hybrid_extract": {
                 "unavailable_policy": "fail_fast",
                 "scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
@@ -599,6 +617,13 @@ def validate_editor_model(
             messages.append(ValidationMessage("error", f"{processing_path} 模式要求 lexical_enabled=true。"))
         if retrieval["vector_enabled"] and not env_status["embedding"].configured:
             messages.append(ValidationMessage("error", "启用 vector_enabled 时，必须先在 .env.local 中配置 embedding 连接信息。"))
+    elif processing_path == "full_context":
+        plan_max_chars = _coerce_int(
+            model["processing"]["full_context"]["chapter_writing_plan"]["max_chars"],
+            default=320,
+        )
+        if plan_max_chars <= 0:
+            messages.append(ValidationMessage("error", "full_context.chapter_writing_plan.max_chars 必须大于 0。"))
 
     if not env_status["generation"].configured:
         messages.append(ValidationMessage("warning", "当前未检测到 generation 连接配置，保存后可能无法直接运行生成。"))
@@ -613,6 +638,12 @@ def validate_editor_model(
 def summarize_model(model: dict[str, Any], env_status: dict[str, ConnectionStatus]) -> list[str]:
     lines = [
         f"processing.path = {model['processing']['path']}",
+        (
+            "章节写作计划 = "
+            + ("开启" if model["processing"]["full_context"]["chapter_writing_plan"]["enabled"] else "关闭")
+            if model["processing"]["path"] == "full_context"
+            else "章节写作计划 = 不适用"
+        ),
         f"投标主体 = {model['project']['bidder_name'] or '（未填写）'}",
         f"角色模式 = {'内嵌文本' if model['writing']['role_mode'] == 'inline' else 'role_file'}",
         f"流式输出 = {'开启' if model['runtime']['stream']['enabled'] else '关闭'}",
@@ -981,6 +1012,13 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
         },
         "auto": {
             "requirements_top_k": True,
+        },
+        "full_context": {
+            "chapter_writing_plan": {
+                "enabled": True,
+                "max_chars": True,
+                "cache_dir": True,
+            },
         },
         "legacy_rule": {
             "scoring_max_rows": True,

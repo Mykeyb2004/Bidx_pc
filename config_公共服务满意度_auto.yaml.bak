@@ -44,6 +44,10 @@ processing:
     max_chars: 800
   auto:
     requirements_top_k: 8
+  full_context:
+    chapter_writing_plan:
+      enabled: true
+      max_chars: 320
   hybrid_extract:
     unavailable_policy: fail_fast
     scoring_parse_mode: auto
