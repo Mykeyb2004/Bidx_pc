@@ -220,33 +220,20 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.max_tables_per_section", tk.StringVar())
         add_var("writing.summary_title", tk.StringVar())
 
-        add_var("processing.path", tk.StringVar())
         add_var("processing.context_view.include_ancestors", tk.BooleanVar())
         add_var("processing.context_view.include_siblings", tk.BooleanVar())
         add_var("processing.context_view.max_siblings", tk.StringVar())
-        add_var("processing.legacy_rule.scoring_max_rows", tk.StringVar())
-        add_var("processing.legacy_rule.requirements_max_quotes", tk.StringVar())
-        add_var("processing.legacy_rule.requirements_max_quote_chars", tk.StringVar())
-        add_var("processing.legacy_rule.requirement_brief_enabled", tk.BooleanVar())
-        add_var("processing.legacy_rule.requirement_brief_fallback", tk.StringVar())
-        add_var("processing.hybrid_extract.unavailable_policy", tk.StringVar())
-        add_var("processing.hybrid_extract.scoring_parse_mode", tk.StringVar())
-        add_var("processing.hybrid_extract.scoring_max_rows", tk.StringVar())
-        add_var("processing.hybrid_extract.requirements_max_quotes", tk.StringVar())
-        add_var("processing.hybrid_extract.requirements_max_quote_chars", tk.StringVar())
-        add_var("processing.hybrid_extract.requirement_brief_enabled", tk.BooleanVar())
-        add_var("processing.hybrid_extract.requirement_brief_fallback", tk.StringVar())
-        add_var("processing.hybrid_extract.retrieval.lexical_enabled", tk.BooleanVar())
-        add_var("processing.hybrid_extract.retrieval.vector_enabled", tk.BooleanVar())
-        add_var("processing.hybrid_extract.retrieval.verify_enabled", tk.BooleanVar())
-        add_var("processing.hybrid_extract.retrieval.top_k_lexical", tk.StringVar())
-        add_var("processing.hybrid_extract.retrieval.top_k_vector", tk.StringVar())
-        add_var("processing.hybrid_extract.retrieval.top_k_fused", tk.StringVar())
-        add_var("processing.hybrid_extract.retrieval.top_k_final", tk.StringVar())
-        add_var("processing.hybrid_extract.retrieval.min_fused_score", tk.StringVar())
-        add_var("processing.hybrid_extract.quote_only", tk.BooleanVar())
-        add_var("processing.hybrid_extract.return_ids_only", tk.BooleanVar())
-        add_var("processing.hybrid_extract.verify_max_candidates", tk.StringVar())
+        add_var("processing.auto.project_background_enabled", tk.BooleanVar())
+        add_var("processing.auto.project_background_max_chars", tk.StringVar())
+        add_var("processing.auto.requirements_top_k", tk.StringVar())
+        add_var("processing.auto.scoring_parse_mode", tk.StringVar())
+        add_var("processing.auto.scoring_max_rows", tk.StringVar())
+        add_var("processing.auto.retrieval.lexical_enabled", tk.BooleanVar())
+        add_var("processing.auto.retrieval.vector_enabled", tk.BooleanVar())
+        add_var("processing.auto.retrieval.top_k_lexical", tk.StringVar())
+        add_var("processing.auto.retrieval.top_k_fused", tk.StringVar())
+        add_var("processing.auto.retrieval.top_k_final", tk.StringVar())
+        add_var("processing.auto.retrieval.min_fused_score", tk.StringVar())
 
         add_var("models.generation.model", tk.StringVar())
         add_var("models.generation.temperature", tk.StringVar())
@@ -488,28 +475,6 @@ class ConfigEditorDialog(tk.Toplevel):
         page = self._create_section_page("processing")
         content = page.content
 
-        path_card = ttk.LabelFrame(content, text="业务链路", padding=12)
-        path_card.pack(fill=tk.X, pady=(0, 12))
-        for idx, (value, label) in enumerate(
-            [
-                ("full_context", "full_context"),
-                ("legacy_rule", "legacy_rule"),
-                ("hybrid_extract", "hybrid_extract"),
-            ]
-        ):
-            radio = ttk.Radiobutton(
-                path_card,
-                text=label,
-                value=value,
-                variable=self.vars["processing.path"],
-                command=self._update_processing_visibility,
-            )
-            radio.grid(row=0, column=idx, sticky="w", padx=(0, 20))
-            self._register_tooltip(radio, "processing.path")
-        self.processing_note_label = ttk.Label(path_card, text="", style="Muted.TLabel", justify=tk.LEFT)
-        self.processing_note_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        self._register_tooltip(self.processing_note_label, "processing.path")
-
         context_view = ttk.LabelFrame(content, text="上下文视图", padding=12)
         context_view.pack(fill=tk.X, pady=(0, 12))
         self._add_check_row(context_view, 0, "包含祖先标题", "processing.context_view.include_ancestors")
@@ -517,49 +482,28 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_entry_row(context_view, 2, "同级标题上限", "processing.context_view.max_siblings")
         context_view.columnconfigure(1, weight=1)
 
-        self.processing_full_context_frame = ttk.LabelFrame(content, text="full_context 说明", padding=12)
-        self.processing_full_context_frame.pack(fill=tk.X, pady=(0, 12))
-        ttk.Label(
-            self.processing_full_context_frame,
-            text="当前链路不会对采购需求和评分标准做章节级处理，主 prompt 将直接使用完整原文。",
-            justify=tk.LEFT,
-        ).pack(anchor="w")
+        bg_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
+        bg_frame.pack(fill=tk.X, pady=(0, 12))
+        self._add_check_row(bg_frame, 0, "启用项目背景生成", "processing.auto.project_background_enabled")
+        self._add_entry_row(bg_frame, 1, "背景最大字符数", "processing.auto.project_background_max_chars")
+        bg_frame.columnconfigure(1, weight=1)
 
-        self.processing_legacy_frame = ttk.LabelFrame(content, text="legacy_rule 参数", padding=12)
-        self.processing_legacy_frame.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(self.processing_legacy_frame, 0, "评分最多保留行数", "processing.legacy_rule.scoring_max_rows")
-        self._add_entry_row(self.processing_legacy_frame, 1, "需求最多摘录条数", "processing.legacy_rule.requirements_max_quotes")
-        self._add_entry_row(self.processing_legacy_frame, 2, "单条最大字符", "processing.legacy_rule.requirements_max_quote_chars")
-        self._add_check_row(self.processing_legacy_frame, 3, "启用 requirement brief", "processing.legacy_rule.requirement_brief_enabled")
-        self._add_entry_row(self.processing_legacy_frame, 4, "brief fallback", "processing.legacy_rule.requirement_brief_fallback")
-        self.processing_legacy_frame.columnconfigure(1, weight=1)
+        req_frame = ttk.LabelFrame(content, text="需求检索", padding=12)
+        req_frame.pack(fill=tk.X, pady=(0, 12))
+        self._add_entry_row(req_frame, 0, "需求检索 top-K（原文段落数）", "processing.auto.requirements_top_k")
+        self._add_entry_row(req_frame, 1, "top_k_lexical", "processing.auto.retrieval.top_k_lexical")
+        self._add_entry_row(req_frame, 2, "top_k_fused", "processing.auto.retrieval.top_k_fused")
+        self._add_entry_row(req_frame, 3, "top_k_final", "processing.auto.retrieval.top_k_final")
+        self._add_entry_row(req_frame, 4, "min_fused_score", "processing.auto.retrieval.min_fused_score")
+        self._add_check_row(req_frame, 5, "lexical_enabled", "processing.auto.retrieval.lexical_enabled")
+        self._add_check_row(req_frame, 6, "vector_enabled（需配置 embedding）", "processing.auto.retrieval.vector_enabled")
+        req_frame.columnconfigure(1, weight=1)
 
-        self.processing_hybrid_frame = ttk.LabelFrame(content, text="hybrid_extract 参数", padding=12)
-        self.processing_hybrid_frame.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(self.processing_hybrid_frame, 0, "不可用策略", "processing.hybrid_extract.unavailable_policy")
-        self._add_entry_row(self.processing_hybrid_frame, 1, "评分解析模式", "processing.hybrid_extract.scoring_parse_mode")
-        self._add_entry_row(self.processing_hybrid_frame, 2, "评分最多保留行数", "processing.hybrid_extract.scoring_max_rows")
-        self._add_entry_row(self.processing_hybrid_frame, 3, "需求最多摘录条数", "processing.hybrid_extract.requirements_max_quotes")
-        self._add_entry_row(self.processing_hybrid_frame, 4, "单条最大字符", "processing.hybrid_extract.requirements_max_quote_chars")
-        self._add_check_row(self.processing_hybrid_frame, 5, "启用 requirement brief", "processing.hybrid_extract.requirement_brief_enabled")
-        self._add_entry_row(self.processing_hybrid_frame, 6, "brief fallback", "processing.hybrid_extract.requirement_brief_fallback")
-        self.processing_hybrid_frame.columnconfigure(1, weight=1)
-
-        hybrid_advanced = ttk.LabelFrame(content, text="hybrid_extract 高级参数", padding=12)
-        hybrid_advanced.pack(fill=tk.X, pady=(0, 12))
-        self.processing_hybrid_advanced_frame = hybrid_advanced
-        self._add_check_row(hybrid_advanced, 0, "lexical_enabled", "processing.hybrid_extract.retrieval.lexical_enabled")
-        self._add_check_row(hybrid_advanced, 1, "vector_enabled", "processing.hybrid_extract.retrieval.vector_enabled")
-        self._add_check_row(hybrid_advanced, 2, "verify_enabled", "processing.hybrid_extract.retrieval.verify_enabled")
-        self._add_entry_row(hybrid_advanced, 3, "top_k_lexical", "processing.hybrid_extract.retrieval.top_k_lexical")
-        self._add_entry_row(hybrid_advanced, 4, "top_k_vector", "processing.hybrid_extract.retrieval.top_k_vector")
-        self._add_entry_row(hybrid_advanced, 5, "top_k_fused", "processing.hybrid_extract.retrieval.top_k_fused")
-        self._add_entry_row(hybrid_advanced, 6, "top_k_final", "processing.hybrid_extract.retrieval.top_k_final")
-        self._add_entry_row(hybrid_advanced, 7, "min_fused_score", "processing.hybrid_extract.retrieval.min_fused_score")
-        self._add_check_row(hybrid_advanced, 8, "quote_only", "processing.hybrid_extract.quote_only")
-        self._add_check_row(hybrid_advanced, 9, "return_ids_only", "processing.hybrid_extract.return_ids_only")
-        self._add_entry_row(hybrid_advanced, 10, "verify_max_candidates", "processing.hybrid_extract.verify_max_candidates")
-        hybrid_advanced.columnconfigure(1, weight=1)
+        scoring_frame = ttk.LabelFrame(content, text="评分检索", padding=12)
+        scoring_frame.pack(fill=tk.X, pady=(0, 12))
+        self._add_entry_row(scoring_frame, 0, "评分最多保留行数", "processing.auto.scoring_max_rows")
+        self._add_entry_row(scoring_frame, 1, "评分解析模式", "processing.auto.scoring_parse_mode")
+        scoring_frame.columnconfigure(1, weight=1)
 
     def _build_models_section(self) -> None:
         page = self._create_section_page("models")
@@ -783,33 +727,20 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.allow_english_terms": model["writing"]["allow_english_terms"],
             "writing.max_tables_per_section": str(model["writing"]["max_tables_per_section"]),
             "writing.summary_title": model["writing"]["summary_title"],
-            "processing.path": model["processing"]["path"],
             "processing.context_view.include_ancestors": model["processing"]["context_view"]["include_ancestors"],
             "processing.context_view.include_siblings": model["processing"]["context_view"]["include_siblings"],
             "processing.context_view.max_siblings": str(model["processing"]["context_view"]["max_siblings"]),
-            "processing.legacy_rule.scoring_max_rows": str(model["processing"]["legacy_rule"]["scoring_max_rows"]),
-            "processing.legacy_rule.requirements_max_quotes": str(model["processing"]["legacy_rule"]["requirements_max_quotes"]),
-            "processing.legacy_rule.requirements_max_quote_chars": str(model["processing"]["legacy_rule"]["requirements_max_quote_chars"]),
-            "processing.legacy_rule.requirement_brief_enabled": model["processing"]["legacy_rule"]["requirement_brief_enabled"],
-            "processing.legacy_rule.requirement_brief_fallback": model["processing"]["legacy_rule"]["requirement_brief_fallback"],
-            "processing.hybrid_extract.unavailable_policy": model["processing"]["hybrid_extract"]["unavailable_policy"],
-            "processing.hybrid_extract.scoring_parse_mode": model["processing"]["hybrid_extract"]["scoring_parse_mode"],
-            "processing.hybrid_extract.scoring_max_rows": str(model["processing"]["hybrid_extract"]["scoring_max_rows"]),
-            "processing.hybrid_extract.requirements_max_quotes": str(model["processing"]["hybrid_extract"]["requirements_max_quotes"]),
-            "processing.hybrid_extract.requirements_max_quote_chars": str(model["processing"]["hybrid_extract"]["requirements_max_quote_chars"]),
-            "processing.hybrid_extract.requirement_brief_enabled": model["processing"]["hybrid_extract"]["requirement_brief_enabled"],
-            "processing.hybrid_extract.requirement_brief_fallback": model["processing"]["hybrid_extract"]["requirement_brief_fallback"],
-            "processing.hybrid_extract.retrieval.lexical_enabled": model["processing"]["hybrid_extract"]["retrieval"]["lexical_enabled"],
-            "processing.hybrid_extract.retrieval.vector_enabled": model["processing"]["hybrid_extract"]["retrieval"]["vector_enabled"],
-            "processing.hybrid_extract.retrieval.verify_enabled": model["processing"]["hybrid_extract"]["retrieval"]["verify_enabled"],
-            "processing.hybrid_extract.retrieval.top_k_lexical": str(model["processing"]["hybrid_extract"]["retrieval"]["top_k_lexical"]),
-            "processing.hybrid_extract.retrieval.top_k_vector": str(model["processing"]["hybrid_extract"]["retrieval"]["top_k_vector"]),
-            "processing.hybrid_extract.retrieval.top_k_fused": str(model["processing"]["hybrid_extract"]["retrieval"]["top_k_fused"]),
-            "processing.hybrid_extract.retrieval.top_k_final": str(model["processing"]["hybrid_extract"]["retrieval"]["top_k_final"]),
-            "processing.hybrid_extract.retrieval.min_fused_score": str(model["processing"]["hybrid_extract"]["retrieval"]["min_fused_score"]),
-            "processing.hybrid_extract.quote_only": model["processing"]["hybrid_extract"]["quote_only"],
-            "processing.hybrid_extract.return_ids_only": model["processing"]["hybrid_extract"]["return_ids_only"],
-            "processing.hybrid_extract.verify_max_candidates": str(model["processing"]["hybrid_extract"]["verify_max_candidates"]),
+            "processing.auto.project_background_enabled": model["processing"]["auto"]["project_background_enabled"],
+            "processing.auto.project_background_max_chars": str(model["processing"]["auto"]["project_background_max_chars"]),
+            "processing.auto.requirements_top_k": str(model["processing"]["auto"]["requirements_top_k"]),
+            "processing.auto.scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
+            "processing.auto.scoring_max_rows": str(model["processing"]["auto"]["scoring_max_rows"]),
+            "processing.auto.retrieval.lexical_enabled": model["processing"]["auto"]["retrieval"]["lexical_enabled"],
+            "processing.auto.retrieval.vector_enabled": model["processing"]["auto"]["retrieval"]["vector_enabled"],
+            "processing.auto.retrieval.top_k_lexical": str(model["processing"]["auto"]["retrieval"]["top_k_lexical"]),
+            "processing.auto.retrieval.top_k_fused": str(model["processing"]["auto"]["retrieval"]["top_k_fused"]),
+            "processing.auto.retrieval.top_k_final": str(model["processing"]["auto"]["retrieval"]["top_k_final"]),
+            "processing.auto.retrieval.min_fused_score": str(model["processing"]["auto"]["retrieval"]["min_fused_score"]),
             "models.generation.model": model["models"]["generation"]["model"],
             "models.generation.temperature": str(model["models"]["generation"]["temperature"]),
             "models.generation.max_tokens": str(model["models"]["generation"]["max_tokens"]),
@@ -899,40 +830,26 @@ class ConfigEditorDialog(tk.Toplevel):
                 "extra_rules": self._split_lines(self._get_text_value("writing.extra_rules_text")),
             },
             "processing": {
-                "path": self.vars["processing.path"].get().strip(),
+                "path": "auto",
                 "context_view": {
                     "include_ancestors": bool(self.vars["processing.context_view.include_ancestors"].get()),
                     "include_siblings": bool(self.vars["processing.context_view.include_siblings"].get()),
                     "max_siblings": self.vars["processing.context_view.max_siblings"].get().strip(),
                 },
-                "legacy_rule": {
-                    "scoring_max_rows": self.vars["processing.legacy_rule.scoring_max_rows"].get().strip(),
-                    "requirements_max_quotes": self.vars["processing.legacy_rule.requirements_max_quotes"].get().strip(),
-                    "requirements_max_quote_chars": self.vars["processing.legacy_rule.requirements_max_quote_chars"].get().strip(),
-                    "requirement_brief_enabled": bool(self.vars["processing.legacy_rule.requirement_brief_enabled"].get()),
-                    "requirement_brief_fallback": self.vars["processing.legacy_rule.requirement_brief_fallback"].get().strip(),
-                },
-                "hybrid_extract": {
-                    "unavailable_policy": self.vars["processing.hybrid_extract.unavailable_policy"].get().strip(),
-                    "scoring_parse_mode": self.vars["processing.hybrid_extract.scoring_parse_mode"].get().strip(),
-                    "scoring_max_rows": self.vars["processing.hybrid_extract.scoring_max_rows"].get().strip(),
-                    "requirements_max_quotes": self.vars["processing.hybrid_extract.requirements_max_quotes"].get().strip(),
-                    "requirements_max_quote_chars": self.vars["processing.hybrid_extract.requirements_max_quote_chars"].get().strip(),
-                    "requirement_brief_enabled": bool(self.vars["processing.hybrid_extract.requirement_brief_enabled"].get()),
-                    "requirement_brief_fallback": self.vars["processing.hybrid_extract.requirement_brief_fallback"].get().strip(),
+                "auto": {
+                    "project_background_enabled": bool(self.vars["processing.auto.project_background_enabled"].get()),
+                    "project_background_max_chars": self.vars["processing.auto.project_background_max_chars"].get().strip(),
+                    "requirements_top_k": self.vars["processing.auto.requirements_top_k"].get().strip(),
+                    "scoring_parse_mode": self.vars["processing.auto.scoring_parse_mode"].get().strip(),
+                    "scoring_max_rows": self.vars["processing.auto.scoring_max_rows"].get().strip(),
                     "retrieval": {
-                        "lexical_enabled": bool(self.vars["processing.hybrid_extract.retrieval.lexical_enabled"].get()),
-                        "vector_enabled": bool(self.vars["processing.hybrid_extract.retrieval.vector_enabled"].get()),
-                        "verify_enabled": bool(self.vars["processing.hybrid_extract.retrieval.verify_enabled"].get()),
-                        "top_k_lexical": self.vars["processing.hybrid_extract.retrieval.top_k_lexical"].get().strip(),
-                        "top_k_vector": self.vars["processing.hybrid_extract.retrieval.top_k_vector"].get().strip(),
-                        "top_k_fused": self.vars["processing.hybrid_extract.retrieval.top_k_fused"].get().strip(),
-                        "top_k_final": self.vars["processing.hybrid_extract.retrieval.top_k_final"].get().strip(),
-                        "min_fused_score": self.vars["processing.hybrid_extract.retrieval.min_fused_score"].get().strip(),
+                        "lexical_enabled": bool(self.vars["processing.auto.retrieval.lexical_enabled"].get()),
+                        "vector_enabled": bool(self.vars["processing.auto.retrieval.vector_enabled"].get()),
+                        "top_k_lexical": self.vars["processing.auto.retrieval.top_k_lexical"].get().strip(),
+                        "top_k_fused": self.vars["processing.auto.retrieval.top_k_fused"].get().strip(),
+                        "top_k_final": self.vars["processing.auto.retrieval.top_k_final"].get().strip(),
+                        "min_fused_score": self.vars["processing.auto.retrieval.min_fused_score"].get().strip(),
                     },
-                    "quote_only": bool(self.vars["processing.hybrid_extract.quote_only"].get()),
-                    "return_ids_only": bool(self.vars["processing.hybrid_extract.return_ids_only"].get()),
-                    "verify_max_candidates": self.vars["processing.hybrid_extract.verify_max_candidates"].get().strip(),
                 },
             },
             "models": {
@@ -1084,28 +1001,6 @@ class ConfigEditorDialog(tk.Toplevel):
             file_frame.grid()
 
     def _update_processing_visibility(self) -> None:
-        path = self.vars["processing.path"].get().strip()
-        if path == "full_context":
-            self.processing_note_label.configure(text="full_context：采购需求和评分标准均不做章节级处理。")
-            self.processing_full_context_frame.pack(fill=tk.X, pady=(0, 12))
-            self.processing_legacy_frame.pack_forget()
-            self.processing_hybrid_frame.pack_forget()
-            self.processing_hybrid_advanced_frame.pack_forget()
-        elif path == "hybrid_extract":
-            self.processing_note_label.configure(text="hybrid_extract：使用检索摘录链路，并支持 lexical / vector / verify 高级参数。")
-            self.processing_full_context_frame.pack_forget()
-            self.processing_legacy_frame.pack_forget()
-            self.processing_hybrid_frame.pack(fill=tk.X, pady=(0, 12))
-            self.processing_hybrid_advanced_frame.pack(fill=tk.X, pady=(0, 12))
-        else:
-            note = "legacy_rule：使用规则链路提炼采购需求和评分标准。"
-            if path == "mixed":
-                note = "检测到旧 mixed-mode 配置，请先明确选择统一的 processing.path。"
-            self.processing_note_label.configure(text=note)
-            self.processing_full_context_frame.pack_forget()
-            self.processing_hybrid_frame.pack_forget()
-            self.processing_hybrid_advanced_frame.pack_forget()
-            self.processing_legacy_frame.pack(fill=tk.X, pady=(0, 12))
         self._schedule_refresh()
 
     def _show_current_section(self) -> None:

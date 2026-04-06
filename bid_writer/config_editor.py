@@ -14,7 +14,7 @@ import yaml
 
 
 _MISSING = object()
-_PROCESSING_PATHS = {"full_context", "legacy_rule", "hybrid_extract"}
+_PROCESSING_PATHS = {"auto"}
 _PROCESSING_PATHS_WITH_MIXED = _PROCESSING_PATHS | {"mixed"}
 
 
@@ -90,8 +90,8 @@ def load_config_editor_document(config_path: str | Path) -> ConfigEditorDocument
 
 def build_editor_notes(model: dict[str, Any], raw_config: dict[str, Any]) -> list[str]:
     notes: list[str] = []
-    if model["processing"]["path"] == "mixed":
-        notes.append("当前文件来自旧 mixed-mode 配置，请先明确选择统一的 processing.path 再保存。")
+    if model["processing"]["path"] != "auto":
+        notes.append("当前配置不是 auto 模式，编辑器已统一切换为 auto。保存后将使用 auto 模式。")
 
     if "context_pruning" in raw_config or "prompt" in raw_config or "api" in raw_config:
         notes.append("当前文件包含旧 schema 字段，保存后会按 canonical schema 标准化。")
@@ -238,7 +238,7 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
             ),
         },
         "processing": {
-            "path": processing_path,
+            "path": "auto",
             "context_view": {
                 "include_ancestors": _coerce_bool(
                     _first_defined(raw_config, ("processing", "context_view", "include_ancestors"), ("context_pruning", "local_outline", "include_ancestors"), default=True),
@@ -253,52 +253,25 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     default=8,
                 ),
             },
-            "legacy_rule": {
-                "scoring_max_rows": _coerce_int(
-                    _first_defined(raw_config, ("processing", "legacy_rule", "scoring_max_rows"), ("context_pruning", "scoring", "max_rows"), default=4),
-                    default=4,
+            "auto": {
+                "project_background_enabled": _coerce_bool(
+                    _first_defined(raw_config, ("processing", "project_background", "enabled"), default=True),
+                    default=True,
                 ),
-                "requirements_max_quotes": _coerce_int(
-                    _first_defined(raw_config, ("processing", "legacy_rule", "requirements_max_quotes"), ("context_pruning", "requirements", "max_quotes"), default=4),
-                    default=4,
+                "project_background_max_chars": _coerce_int(
+                    _first_defined(raw_config, ("processing", "project_background", "max_chars"), default=800),
+                    default=800,
                 ),
-                "requirements_max_quote_chars": _coerce_int(
-                    _first_defined(raw_config, ("processing", "legacy_rule", "requirements_max_quote_chars"), ("context_pruning", "requirements", "max_quote_chars"), default=220),
-                    default=220,
-                ),
-                "requirement_brief_enabled": _coerce_bool(
-                    _first_defined(raw_config, ("processing", "legacy_rule", "requirement_brief_enabled"), ("context_pruning", "requirements_brief", "enabled"), default=False),
-                    default=False,
-                ),
-                "requirement_brief_fallback": _coerce_str(
-                    _first_defined(raw_config, ("processing", "legacy_rule", "requirement_brief_fallback"), ("context_pruning", "requirements_brief", "fallback"), default="rule_only")
-                ),
-            },
-            "hybrid_extract": {
-                "unavailable_policy": _coerce_str(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "unavailable_policy"), ("context_pruning", "unavailable_policy"), default="fallback_legacy")
+                "requirements_top_k": _coerce_int(
+                    _first_defined(raw_config, ("processing", "auto", "requirements_top_k"), default=8),
+                    default=8,
                 ),
                 "scoring_parse_mode": _coerce_str(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "scoring_parse_mode"), ("context_pruning", "scoring", "parse_mode"), default="auto")
+                    _first_defined(raw_config, ("processing", "hybrid_extract", "scoring_parse_mode"), default="auto")
                 ),
                 "scoring_max_rows": _coerce_int(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "scoring_max_rows"), ("context_pruning", "scoring", "max_rows"), default=4),
-                    default=4,
-                ),
-                "requirements_max_quotes": _coerce_int(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "requirements_max_quotes"), ("context_pruning", "requirements", "max_quotes"), default=4),
-                    default=4,
-                ),
-                "requirements_max_quote_chars": _coerce_int(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "requirements_max_quote_chars"), ("context_pruning", "requirements", "max_quote_chars"), default=220),
-                    default=220,
-                ),
-                "requirement_brief_enabled": _coerce_bool(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "requirement_brief_enabled"), ("context_pruning", "requirements_brief", "enabled"), default=False),
-                    default=False,
-                ),
-                "requirement_brief_fallback": _coerce_str(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "requirement_brief_fallback"), ("context_pruning", "requirements_brief", "fallback"), default="rule_only")
+                    _first_defined(raw_config, ("processing", "hybrid_extract", "scoring_max_rows"), ("context_pruning", "scoring", "max_rows"), default=20),
+                    default=20,
                 ),
                 "retrieval": {
                     "lexical_enabled": _coerce_bool(
@@ -309,22 +282,8 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                         _first_defined(raw_config, ("processing", "hybrid_extract", "retrieval", "vector_enabled"), ("context_pruning", "retrieval", "vector_enabled"), default=False),
                         default=False,
                     ),
-                    "verify_enabled": _coerce_bool(
-                        _first_defined(
-                            raw_config,
-                            ("processing", "hybrid_extract", "retrieval", "verify_enabled"),
-                            ("context_pruning", "retrieval", "rerank_enabled"),
-                            ("context_pruning", "extraction", "llm_verify_enabled"),
-                            default=False,
-                        ),
-                        default=False,
-                    ),
                     "top_k_lexical": _coerce_int(
                         _first_defined(raw_config, ("processing", "hybrid_extract", "retrieval", "top_k_lexical"), ("context_pruning", "retrieval", "top_k_lexical"), default=20),
-                        default=20,
-                    ),
-                    "top_k_vector": _coerce_int(
-                        _first_defined(raw_config, ("processing", "hybrid_extract", "retrieval", "top_k_vector"), ("context_pruning", "retrieval", "top_k_vector"), default=20),
                         default=20,
                     ),
                     "top_k_fused": _coerce_int(
@@ -332,26 +291,14 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                         default=30,
                     ),
                     "top_k_final": _coerce_int(
-                        _first_defined(raw_config, ("processing", "hybrid_extract", "retrieval", "top_k_final"), ("context_pruning", "retrieval", "top_k_final"), default=6),
-                        default=6,
+                        _first_defined(raw_config, ("processing", "hybrid_extract", "retrieval", "top_k_final"), ("context_pruning", "retrieval", "top_k_final"), default=8),
+                        default=8,
                     ),
                     "min_fused_score": _coerce_float(
                         _first_defined(raw_config, ("processing", "hybrid_extract", "retrieval", "min_fused_score"), ("context_pruning", "retrieval", "min_fused_score"), default=0.0),
                         default=0.0,
                     ),
                 },
-                "quote_only": _coerce_bool(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "quote_only"), ("context_pruning", "extraction", "quote_only"), default=True),
-                    default=True,
-                ),
-                "return_ids_only": _coerce_bool(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "return_ids_only"), ("context_pruning", "extraction", "return_ids_only"), default=True),
-                    default=True,
-                ),
-                "verify_max_candidates": _coerce_int(
-                    _first_defined(raw_config, ("processing", "hybrid_extract", "verify_max_candidates"), ("context_pruning", "extraction", "llm_verify_max_candidates"), default=8),
-                    default=8,
-                ),
             },
         },
         "models": {
@@ -507,40 +454,36 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         },
         "writing": writing_payload,
         "processing": {
-            "path": model["processing"]["path"],
+            "path": "auto",
             "context_view": {
                 "include_ancestors": bool(model["processing"]["context_view"]["include_ancestors"]),
                 "include_siblings": bool(model["processing"]["context_view"]["include_siblings"]),
                 "max_siblings": int(model["processing"]["context_view"]["max_siblings"]),
             },
-            "legacy_rule": {
-                "scoring_max_rows": int(model["processing"]["legacy_rule"]["scoring_max_rows"]),
-                "requirements_max_quotes": int(model["processing"]["legacy_rule"]["requirements_max_quotes"]),
-                "requirements_max_quote_chars": int(model["processing"]["legacy_rule"]["requirements_max_quote_chars"]),
-                "requirement_brief_enabled": bool(model["processing"]["legacy_rule"]["requirement_brief_enabled"]),
-                "requirement_brief_fallback": model["processing"]["legacy_rule"]["requirement_brief_fallback"],
+            "project_background": {
+                "enabled": bool(model["processing"]["auto"]["project_background_enabled"]),
+                "max_chars": int(model["processing"]["auto"]["project_background_max_chars"]),
+            },
+            "auto": {
+                "requirements_top_k": int(model["processing"]["auto"]["requirements_top_k"]),
             },
             "hybrid_extract": {
-                "unavailable_policy": model["processing"]["hybrid_extract"]["unavailable_policy"],
-                "scoring_parse_mode": model["processing"]["hybrid_extract"]["scoring_parse_mode"],
-                "scoring_max_rows": int(model["processing"]["hybrid_extract"]["scoring_max_rows"]),
-                "requirements_max_quotes": int(model["processing"]["hybrid_extract"]["requirements_max_quotes"]),
-                "requirements_max_quote_chars": int(model["processing"]["hybrid_extract"]["requirements_max_quote_chars"]),
-                "requirement_brief_enabled": bool(model["processing"]["hybrid_extract"]["requirement_brief_enabled"]),
-                "requirement_brief_fallback": model["processing"]["hybrid_extract"]["requirement_brief_fallback"],
+                "unavailable_policy": "fail_fast",
+                "scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
+                "scoring_max_rows": int(model["processing"]["auto"]["scoring_max_rows"]),
                 "retrieval": {
-                    "lexical_enabled": bool(model["processing"]["hybrid_extract"]["retrieval"]["lexical_enabled"]),
-                    "vector_enabled": bool(model["processing"]["hybrid_extract"]["retrieval"]["vector_enabled"]),
-                    "verify_enabled": bool(model["processing"]["hybrid_extract"]["retrieval"]["verify_enabled"]),
-                    "top_k_lexical": int(model["processing"]["hybrid_extract"]["retrieval"]["top_k_lexical"]),
-                    "top_k_vector": int(model["processing"]["hybrid_extract"]["retrieval"]["top_k_vector"]),
-                    "top_k_fused": int(model["processing"]["hybrid_extract"]["retrieval"]["top_k_fused"]),
-                    "top_k_final": int(model["processing"]["hybrid_extract"]["retrieval"]["top_k_final"]),
-                    "min_fused_score": float(model["processing"]["hybrid_extract"]["retrieval"]["min_fused_score"]),
+                    "lexical_enabled": bool(model["processing"]["auto"]["retrieval"]["lexical_enabled"]),
+                    "vector_enabled": bool(model["processing"]["auto"]["retrieval"]["vector_enabled"]),
+                    "verify_enabled": False,
+                    "top_k_lexical": int(model["processing"]["auto"]["retrieval"]["top_k_lexical"]),
+                    "top_k_vector": 20,
+                    "top_k_fused": int(model["processing"]["auto"]["retrieval"]["top_k_fused"]),
+                    "top_k_final": int(model["processing"]["auto"]["retrieval"]["top_k_final"]),
+                    "min_fused_score": float(model["processing"]["auto"]["retrieval"]["min_fused_score"]),
                 },
-                "quote_only": bool(model["processing"]["hybrid_extract"]["quote_only"]),
-                "return_ids_only": bool(model["processing"]["hybrid_extract"]["return_ids_only"]),
-                "verify_max_candidates": int(model["processing"]["hybrid_extract"]["verify_max_candidates"]),
+                "quote_only": True,
+                "return_ids_only": True,
+                "verify_max_candidates": 8,
             },
         },
         "models": {
@@ -588,7 +531,7 @@ def validate_editor_model(
 ) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
     if model["processing"]["path"] not in _PROCESSING_PATHS:
-        messages.append(ValidationMessage("error", "processing.path 必须明确选择为 full_context、legacy_rule 或 hybrid_extract。"))
+        messages.append(ValidationMessage("error", "processing.path 只支持 auto 模式。"))
         return messages
 
     root_dir = _resolve_path(model["project"]["root_dir"] or ".", config_path.parent)
@@ -639,17 +582,14 @@ def validate_editor_model(
     if embedding_cache_dir.exists() and not embedding_cache_dir.is_dir():
         messages.append(ValidationMessage("error", f"embedding.cache_dir 不是目录：{embedding_cache_dir}"))
 
-    if model["processing"]["path"] == "hybrid_extract":
-        retrieval = model["processing"]["hybrid_extract"]["retrieval"]
+    if model["processing"]["path"] == "auto":
+        if not env_status["pruning"].configured:
+            messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型（models.pruning），请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
+        retrieval = model["processing"]["auto"]["retrieval"]
         if not retrieval["lexical_enabled"]:
-            messages.append(ValidationMessage("error", "hybrid_extract 目前要求 lexical_enabled=true。"))
+            messages.append(ValidationMessage("error", "auto 模式要求 lexical_enabled=true。"))
         if retrieval["vector_enabled"] and not env_status["embedding"].configured:
-            messages.append(ValidationMessage("error", "启用 vector_enabled 时，必须先在 .env.local 或现有 YAML 中配置 embedding 连接信息。"))
-        if retrieval["verify_enabled"]:
-            if not env_status["pruning"].configured:
-                messages.append(ValidationMessage("error", "启用 verify_enabled 时，必须先配置 pruning 连接信息。"))
-            if not model["processing"]["hybrid_extract"]["return_ids_only"]:
-                messages.append(ValidationMessage("error", "启用 verify_enabled 时，return_ids_only 必须为 true。"))
+            messages.append(ValidationMessage("error", "启用 vector_enabled 时，必须先在 .env.local 中配置 embedding 连接信息。"))
 
     if not env_status["generation"].configured:
         messages.append(ValidationMessage("warning", "当前未检测到 generation 连接配置，保存后可能无法直接运行生成。"))

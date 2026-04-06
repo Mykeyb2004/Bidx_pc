@@ -15,6 +15,7 @@ from .config import Config
 from .context_pruner import ChapterContext, ChapterContextPruner
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
 from .outline_parser import HeadingNode
+from .project_background import ProjectBackgroundGenerator
 from .timing_logger import write_timing_log
 
 
@@ -58,6 +59,7 @@ class AIWriter:
         ("chapter_task", "Chapter Task", "user"),
         ("structure_rules", "Structure Rules", "user"),
         ("chapter_scope", "Chapter Scope", "user"),
+        ("project_background", "Project Background", "user"),
         ("requirement_context", "Requirement Context", "user"),
         ("scoring_context", "Scoring Context", "user"),
     )
@@ -86,6 +88,11 @@ class AIWriter:
         )
         self.context_pruner = ChapterContextPruner(config)
         self.trace_logger = GenerationTraceLogger(config)
+        self.project_background_generator = (
+            ProjectBackgroundGenerator(config)
+            if config.project_background_enabled
+            else None
+        )
 
     @staticmethod
     def _heading_chain(heading: HeadingNode) -> list[HeadingNode]:
@@ -164,6 +171,7 @@ class AIWriter:
                 f"- 上级标题：{parent_title}",
                 f"- 当前扩写标题：{current_title}",
                 f"- 同级标题：{sibling_text}",
+                "- 约束：本章节聚焦当前标题所指定的主题，不引入同级其他章节负责的内容，不与同级章节重复。",
             ]
         )
 
@@ -185,6 +193,28 @@ class AIWriter:
             lines.append("以下评分项与当前章节最相关，请优先回应其要求：")
 
         lines.append(self._format_scoring_items(pruned_context.scoring_items))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_project_background_section(background: str) -> str:
+        return "\n".join([
+            "## 项目背景",
+            "以下为本项目背景摘要，供理解整体目标和范围，不直接作为正文内容：",
+            background.strip(),
+        ])
+
+    def _build_scoring_labeled_section(
+        self,
+        must_respond: list,
+        reference: list,
+    ) -> str:
+        lines = ["## 评分关注"]
+        if must_respond:
+            lines.append("**必须响应**（以下评分项与本章节所属板块直接相关，正文必须明确覆盖）")
+            lines.append(self._format_scoring_items(must_respond))
+        if reference:
+            lines.append("**参考**（以下评分项间接相关，可适当体现，无需专门论述）")
+            lines.append(self._format_scoring_items(reference))
         return "\n".join(lines)
 
     def _format_first_line(self, heading: HeadingNode) -> str:
@@ -563,6 +593,16 @@ class AIWriter:
                 ],
             },
             {
+                "id": "project_background",
+                "label": "Project Background",
+                "prompt_kind": "user",
+                "section_names": ["project_background"],
+                "source_context": [
+                    "ProjectBackgroundGenerator.get_or_generate"
+                    if "project_background" in section_map else "",
+                ],
+            },
+            {
                 "id": "requirement_context",
                 "label": "Requirement Context",
                 "prompt_kind": "user",
@@ -579,6 +619,8 @@ class AIWriter:
                 "prompt_kind": "user",
                 "section_names": ["scoring_focus", "scoring_criteria"],
                 "source_context": [
+                    "pruned_context.scoring_must_respond" if "scoring_focus" in section_map else "",
+                    "pruned_context.scoring_reference" if "scoring_focus" in section_map else "",
                     "pruned_context.scoring_items" if "scoring_focus" in section_map else "",
                     "pruned_context.response_labels" if "scoring_focus" in section_map else "",
                     "Config.scoring_criteria" if "scoring_criteria" in section_map else "",
@@ -674,9 +716,39 @@ class AIWriter:
             self._build_scope_reference(heading),
         )
 
+        # 项目背景（始终注入，不受裁剪模式影响）
+        background = ""
+        try:
+            if self.project_background_generator is not None:
+                background = self.project_background_generator.get_or_generate()
+        except Exception:
+            background = ""
+        if background:
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "project_background",
+                self._build_project_background_section(background),
+            )
+
         if pruned_context is not None:
             context_mode = "pruned"
-            if pruned_context.scoring_items:
+
+            # 评分注入：优先用分类结果
+            has_classified = bool(
+                pruned_context.scoring_must_respond or pruned_context.scoring_reference
+            )
+            if has_classified:
+                self._append_prompt_section(
+                    prompt_parts,
+                    prompt_sections,
+                    "scoring_focus",
+                    self._build_scoring_labeled_section(
+                        pruned_context.scoring_must_respond,
+                        pruned_context.scoring_reference,
+                    ),
+                )
+            elif pruned_context.scoring_items:
                 self._append_prompt_section(
                     prompt_parts,
                     prompt_sections,

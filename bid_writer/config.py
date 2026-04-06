@@ -312,7 +312,7 @@ class Config:
     @staticmethod
     def _normalize_processing_path_value(value: Any, *, default: str = 'full_context') -> str:
         normalized = str(value).strip().lower() if value is not None else default
-        return normalized if normalized in {'full_context', 'legacy_rule', 'hybrid_extract'} else default
+        return normalized if normalized in {'full_context', 'legacy_rule', 'hybrid_extract', 'auto'} else default
 
     def _legacy_context_pruning_enabled(self) -> bool:
         return self._get_bool(('context_pruning', 'enabled'), default=False)
@@ -1056,9 +1056,22 @@ class Config:
         return bool(self.embedding_api_base_url and self.embedding_api_key)
 
     def validate_context_pruning_runtime(self, raise_on_error: bool = True) -> list[str]:
-        """校验当前 hybrid_extract v1 是否具备运行条件。"""
+        """校验当前 hybrid_extract v1 / auto 模式是否具备运行条件。"""
         errors: list[str] = []
         processing_path = self.processing_path
+
+        if processing_path == 'auto':
+            if not self.pruning_api_is_configured:
+                errors.append(
+                    'auto 模式需要配置辅助模型：BID_WRITER_PRUNING_API_BASE_URL、'
+                    'BID_WRITER_PRUNING_API_KEY、BID_WRITER_PRUNING_MODEL'
+                )
+            if not self.context_pruning_retrieval_lexical_enabled:
+                errors.append('auto 模式要求 lexical_enabled=true')
+            if raise_on_error and errors:
+                raise ValueError('；'.join(errors))
+            return errors
+
         hybrid_requested = (
             self.context_pruning_enabled
             and (
@@ -1166,6 +1179,56 @@ class Config:
     def pruning_api_is_configured(self) -> bool:
         """辅助模型调用所需关键配置是否齐全。"""
         return bool(self.pruning_api_base_url and self.pruning_api_key and self.pruning_model)
+
+    # ── auto 模式专属属性 ──
+
+    @property
+    def project_background_enabled(self) -> bool:
+        """是否启用项目背景生成。"""
+        return self._get_bool(
+            ('processing', 'project_background', 'enabled'),
+            default=True,
+        )
+
+    @property
+    def project_background_cache_dir(self) -> str:
+        """项目背景缓存目录。"""
+        value = self._get_value('processing', 'project_background', 'cache_dir', default=self._MISSING)
+        if value is not self._MISSING:
+            return self._resolve_declared_path(
+                value,
+                resolver=self._resolve_project_path,
+                default=str(self._resolve_project_path('./caches/project_background')),
+            )
+        return str(self._resolve_project_path('./caches/project_background'))
+
+    @property
+    def project_background_max_chars(self) -> int:
+        """项目背景最大字符数。"""
+        return self._get_int(
+            ('processing', 'project_background', 'max_chars'),
+            default=800,
+        )
+
+    @property
+    def scoring_classify_cache_dir(self) -> str:
+        """评分分类缓存目录。"""
+        value = self._get_value('processing', 'scoring_classify', 'cache_dir', default=self._MISSING)
+        if value is not self._MISSING:
+            return self._resolve_declared_path(
+                value,
+                resolver=self._resolve_project_path,
+                default=str(self._resolve_project_path('./caches/scoring_classify')),
+            )
+        return str(self._resolve_project_path('./caches/scoring_classify'))
+
+    @property
+    def auto_requirements_top_k(self) -> int:
+        """auto 模式下需求检索的 top-K 数量。"""
+        return self._get_int(
+            ('processing', 'auto', 'requirements_top_k'),
+            default=8,
+        )
 
     @property
     def generation_trace_enabled(self) -> bool:

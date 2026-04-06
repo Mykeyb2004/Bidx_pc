@@ -95,6 +95,8 @@ class ChapterContext:
     match_keywords: list[str] = field(default_factory=list)
     scoring_items: list[ScoringCriterion] = field(default_factory=list)
     scoring_candidates: list[ScoringCriterion] = field(default_factory=list)
+    scoring_must_respond: list[ScoringCriterion] = field(default_factory=list)
+    scoring_reference: list[ScoringCriterion] = field(default_factory=list)
     requirement_seed: str = ""
     requirement_blocks: list[RequirementBlockMatch] = field(default_factory=list)
     requirement_brief: str = ""
@@ -121,13 +123,17 @@ class ChapterContextPruner:
         context = self._build_signal_context(heading)
         scoring_focus_terms = self._expand_focus_terms(context.chapter_focus_terms)
         processing_path = self.config.processing_path
+        fallback_reasons: list[str] = []
+
+        if processing_path == "auto":
+            return self._build_context_auto(heading, context, scoring_focus_terms)
+
         if processing_path in {"legacy_rule", "hybrid_extract"}:
             scoring_mode = processing_path
             requirements_mode = processing_path
         else:
             scoring_mode = self.config.context_pruning_scoring_mode
             requirements_mode = self.config.context_pruning_requirements_mode
-        fallback_reasons: list[str] = []
 
         runtime_errors = self.config.validate_context_pruning_runtime(raise_on_error=False)
         if runtime_errors:
@@ -214,6 +220,290 @@ class ChapterContextPruner:
             )
         context.fallback_reason = "；".join(reason for reason in fallback_reasons if reason).strip()
         return context
+
+    def _build_context_auto(
+        self,
+        heading: HeadingNode,
+        context: ChapterContext,
+        scoring_focus_terms: list[str],
+    ) -> ChapterContext:
+        """auto 模式：hybrid 检索 + H2 级评分分类 + 原文摘录。"""
+        fallback_reasons: list[str] = []
+
+        # 评分：hybrid_extract 检索
+        try:
+            (
+                context.scoring_items,
+                context.scoring_candidates,
+                context.selected_scoring_unit_ids,
+            ) = self._route_scoring_items_hybrid(
+                heading,
+                context.response_labels,
+                context.match_keywords,
+                scoring_focus_terms,
+            )
+        except Exception as exc:
+            fallback_reasons.append(f"auto 评分检索失败，回退 legacy_rule: {exc}")
+            context.scoring_items, context.scoring_candidates = self._route_scoring_items(
+                heading,
+                context.response_labels,
+                context.match_keywords,
+                scoring_focus_terms,
+            )
+
+        # 评分分类（H2 级缓存）
+        if context.scoring_items and self.llm_verifier is not None:
+            try:
+                context.scoring_must_respond, context.scoring_reference = (
+                    self._classify_scoring_with_h2_cache(heading, context)
+                )
+            except Exception as exc:
+                fallback_reasons.append(f"评分分类失败: {exc}")
+                context.scoring_must_respond = list(context.scoring_items)
+                context.scoring_reference = []
+
+        # 需求：hybrid_extract 检索，原文摘录不压缩
+        try:
+            (
+                context.requirement_seed,
+                context.requirement_blocks,
+                context.selected_requirement_unit_ids,
+            ) = self._build_requirement_seed_hybrid_raw(
+                heading,
+                context.response_labels,
+                context.match_keywords,
+                scoring_focus_terms,
+            )
+        except Exception as exc:
+            fallback_reasons.append(f"auto 需求检索失败，回退 legacy_rule: {exc}")
+            context.requirement_seed, context.requirement_blocks = self._build_requirement_seed(
+                heading,
+                context.response_labels,
+                context.match_keywords,
+                scoring_focus_terms,
+            )
+
+        context.requirement_brief_status = "disabled"
+        context.retrieval_mode = (
+            f"path=auto;"
+            f"vector={'on' if self.config.context_pruning_retrieval_vector_enabled else 'off'};"
+            f"classify={'on' if context.scoring_must_respond or context.scoring_reference else 'off'}"
+        )
+        context.fallback_reason = "；".join(reason for reason in fallback_reasons if reason).strip()
+        return context
+
+    # ── auto 模式：H2 级评分分类缓存 ──
+
+    @staticmethod
+    def _find_h2_ancestor(heading: HeadingNode) -> HeadingNode:
+        """找到 heading 的 H2（level==2）祖先，找不到则返回 parent。"""
+        current: Optional[HeadingNode] = heading
+        while current is not None:
+            if current.level == 2:
+                return current
+            current = current.parent
+        return heading.parent if heading.parent is not None else heading
+
+    def _classify_scoring_with_h2_cache(
+        self,
+        heading: HeadingNode,
+        context: ChapterContext,
+    ) -> tuple[list[ScoringCriterion], list[ScoringCriterion]]:
+        """使用 H4 级缓存对评分项做 must_respond/reference 分类。
+
+        缓存 key 以当前 H4 章节的完整路径为粒度，保证分类结果对本章节精确。
+        分类时传入 H4 标题、完整路径和同级章节信息，让分类器能够区分
+        哪些评分项属于本章节职责范围，哪些应由相邻章节负责。
+        """
+        import hashlib
+        from pathlib import Path
+
+        # 缓存 key：当前章节路径 + 评分标准内容，精确到 H4
+        cache_input = (
+            self.config.scoring_criteria.strip()
+            + heading.full_path
+        )
+        cache_key = hashlib.sha1(cache_input.encode("utf-8")).hexdigest()[:16]
+        cache_dir = Path(self.config.scoring_classify_cache_dir)
+        cache_path = cache_dir / f"h4_{cache_key}.json"
+
+        # 尝试读缓存
+        cached_ids = self._read_classify_cache(cache_path)
+        if cached_ids is not None:
+            return self._split_by_cached_ids(context.scoring_items, cached_ids)
+
+        # 未命中：调用 LLMVerifier，传入当前 H4 节点的信息
+        all_items = [
+            {
+                "id": f"{i}_{item.subitem}",
+                "subitem": item.subitem,
+                "standard": item.standard,
+                "weight": item.weight,
+            }
+            for i, item in enumerate(context.scoring_items)
+        ]
+
+        # 同级章节标题，用于帮助分类器判断边界
+        siblings = []
+        if heading.parent:
+            siblings = [node.title for node in heading.parent.children if node is not heading]
+
+        focus_terms = self._build_focus_terms(heading)
+        response_labels = self._extract_response_labels(heading)
+        # 若当前节点无响应标签，补充 H2 的标签作为上下文
+        if not response_labels:
+            h2 = self._find_h2_ancestor(heading)
+            response_labels = self._extract_response_labels(h2)
+
+        assert self.llm_verifier is not None
+        result = self.llm_verifier.classify_scoring(
+            heading_path=heading.full_path,
+            heading_title=heading.title,
+            response_labels=response_labels,
+            focus_terms=focus_terms,
+            all_scoring_items=all_items,
+            sibling_titles=siblings,
+        )
+
+        # 写缓存
+        self._write_classify_cache(cache_path, result.must_respond_ids, result.reference_ids)
+
+        return self._split_by_ids(
+            context.scoring_items,
+            all_items,
+            result.must_respond_ids,
+            result.reference_ids,
+        )
+
+    @staticmethod
+    def _read_classify_cache(cache_path) -> Optional[dict]:
+        try:
+            if not cache_path.exists():
+                return None
+            import json
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+            if "must_respond_ids" in data and "reference_ids" in data:
+                return data
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _write_classify_cache(cache_path, must_ids: list[str], ref_ids: list[str]) -> None:
+        import json
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(
+                    {"must_respond_ids": must_ids, "reference_ids": ref_ids},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            tmp.replace(cache_path)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _split_by_cached_ids(
+        scoring_items: list[ScoringCriterion],
+        cached: dict,
+    ) -> tuple[list[ScoringCriterion], list[ScoringCriterion]]:
+        """按缓存的 ID 前缀（index_subitem）匹配拆分。"""
+        must_set = set(cached.get("must_respond_ids", []))
+        ref_set = set(cached.get("reference_ids", []))
+        must, ref = [], []
+        for i, item in enumerate(scoring_items):
+            key = f"{i}_{item.subitem}"
+            if key in must_set:
+                must.append(item)
+            elif key in ref_set:
+                ref.append(item)
+            else:
+                must.append(item)
+        return must, ref
+
+    @staticmethod
+    def _split_by_ids(
+        scoring_items: list[ScoringCriterion],
+        all_items: list[dict],
+        must_ids: list[str],
+        ref_ids: list[str],
+    ) -> tuple[list[ScoringCriterion], list[ScoringCriterion]]:
+        must_set = set(must_ids)
+        ref_set = set(ref_ids)
+        must, ref = [], []
+        for item_dict, item in zip(all_items, scoring_items):
+            if item_dict["id"] in must_set:
+                must.append(item)
+            elif item_dict["id"] in ref_set:
+                ref.append(item)
+            else:
+                must.append(item)
+        return must, ref
+
+    # ── auto 模式：原文摘录（不压缩） ──
+
+    def _build_requirement_seed_hybrid_raw(
+        self,
+        heading: HeadingNode,
+        response_labels: list[str],
+        match_keywords: list[str],
+        focus_terms: list[str],
+    ) -> tuple[str, list[RequirementBlockMatch], list[str]]:
+        """与 _build_requirement_seed_hybrid 相同的检索逻辑，但直接拼接原文不压缩。"""
+        text = self.config.bid_requirements.strip()
+        if not text:
+            return "", [], []
+
+        query_text = self.hybrid_retriever.build_query(heading, response_labels, match_keywords)
+        units = [
+            unit
+            for unit in self.source_unit_parser.parse_requirements(text)
+            if not self._is_low_value_requirement_block(unit.source_text_exact or unit.source_text)
+        ]
+        hits = self.hybrid_retriever.retrieve(
+            query_text,
+            units,
+            response_labels=response_labels,
+            keywords=match_keywords,
+            focus_terms=focus_terms,
+            top_k_lexical=self.config.context_pruning_retrieval_top_k_lexical,
+            top_k_vector=self.config.context_pruning_retrieval_top_k_vector,
+            top_k_fused=self.config.context_pruning_retrieval_top_k_fused,
+            embedding_store=self.embedding_store if self.config.context_pruning_retrieval_vector_enabled else None,
+        )
+        top_k = self.config.auto_requirements_top_k
+        selected_hits = self.hybrid_retriever.select_final(
+            hits,
+            top_k_final=top_k,
+            min_score=self.config.context_pruning_retrieval_min_fused_score,
+        )
+        if not selected_hits:
+            selected_hits = [
+                RetrievedUnit(unit=unit, lexical_score=0.0, fused_score=0.0)
+                for unit in units[:3]
+            ]
+
+        selected_ids = [hit.unit.unit_id for hit in selected_hits]
+        selected_blocks = [hit.unit.source_text_exact or hit.unit.source_text for hit in selected_hits]
+        trace_blocks: list[RequirementBlockMatch] = []
+        source_list = hits if hits else selected_hits
+        for hit in source_list[:_TRACE_MAX_REQUIREMENT_BLOCKS]:
+            block = hit.unit.source_text_exact or hit.unit.source_text
+            trace_blocks.append(
+                RequirementBlockMatch(
+                    index=hit.unit.order_index,
+                    score=int(hit.fused_score),
+                    selected=hit.unit.unit_id in selected_ids,
+                    chars=len(block),
+                    block=block,
+                )
+            )
+
+        # auto 模式：直接拼接原文，不经过 _summarize_requirement_blocks
+        return "\n\n".join(selected_blocks), trace_blocks, selected_ids
 
     def _build_signal_context(self, heading: HeadingNode) -> ChapterContext:
         """构建章节级匹配信号，不包含具体命中结果。"""
@@ -1020,6 +1310,8 @@ class ChapterContextPruner:
             f"- match_keywords: {', '.join(context.match_keywords) if context.match_keywords else '（无）'}",
             f"- local_outline_chars: {len(context.local_outline)}",
             f"- scoring_items: {len(context.scoring_items)}",
+            f"- scoring_must_respond: {len(context.scoring_must_respond)}",
+            f"- scoring_reference: {len(context.scoring_reference)}",
             f"- scoring_candidates: {len(context.scoring_candidates)}",
             f"- requirement_blocks: {len(context.requirement_blocks)}",
             f"- requirement_seed_chars: {len(context.requirement_seed)}",
