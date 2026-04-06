@@ -25,6 +25,7 @@ import sys
 DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
 GUI_THEME_NAME = os.environ.get("BID_WRITER_GUI_THEME", "litera")
 GUI_FALLBACK_THEME = "clam"
+GUI_FONT_DELTA_ENV = "BID_WRITER_GUI_FONT_DELTA"
 CONFIG_DIALOG_MIN_WIDTH = 680
 CONFIG_DIALOG_MIN_HEIGHT = 260
 CONFIG_DIALOG_MAX_WIDTH = 920
@@ -35,6 +36,20 @@ MAIN_WORKSPACE_MIN_WIDTH = 460
 POPUP_OUTLINE_DEFAULT_WIDTH = 320
 POPUP_OUTLINE_MIN_WIDTH = 240
 POPUP_CONTENT_MIN_WIDTH = 480
+GENERATION_DIALOG_MIN_WIDTH = 520
+GENERATION_DIALOG_MIN_HEIGHT = 280
+GENERATION_DIALOG_EXTRA_WIDTH = 24
+GENERATION_DIALOG_EXTRA_HEIGHT = 20
+GUI_DEFAULT_FONT_SIZE = 11
+GUI_COMPACT_FONT_SIZE = 10
+GUI_HEADING_FONT_SIZE = 12
+GUI_TREE_ROWHEIGHT = 28
+GUI_DPI_MEDIUM_THRESHOLD = 120.0
+GUI_DPI_LARGE_THRESHOLD = 160.0
+GUI_SCREEN_WIDTH_MEDIUM_THRESHOLD = 1600
+GUI_SCREEN_WIDTH_LARGE_THRESHOLD = 2200
+GUI_SCREEN_HEIGHT_MEDIUM_THRESHOLD = 1000
+GUI_SCREEN_HEIGHT_LARGE_THRESHOLD = 1400
 _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
@@ -46,6 +61,20 @@ class TreeViewState:
 
     mode: str = "all"
     expanded_paths: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class GuiScaleProfile:
+    """GUI 字体与间距缩放档位。"""
+
+    font_delta: int
+    default_font_size: int
+    compact_font_size: int
+    heading_font_size: int
+    tree_rowheight: int
+    button_padding: tuple[int, int]
+    field_padding: tuple[int, int]
+    text_padding: tuple[int, int]
 
 
 def _is_valid_tcl_dir(path: Path) -> bool:
@@ -144,14 +173,132 @@ def _safe_named_font(name: str) -> Optional[tkfont.Font]:
         return None
 
 
-def _configure_named_fonts() -> None:
+def _parse_gui_font_delta(value: Optional[str]) -> int:
+    if not value:
+        return 0
+    try:
+        return int(value.strip())
+    except ValueError:
+        return 0
+
+
+def _compute_gui_font_delta(
+    *,
+    screen_width: Optional[int] = None,
+    screen_height: Optional[int] = None,
+    dpi: Optional[float] = None,
+    manual_delta: int = 0,
+) -> int:
+    auto_delta = 0
+    if (
+        (dpi is not None and dpi >= GUI_DPI_MEDIUM_THRESHOLD)
+        or (screen_width is not None and screen_width >= GUI_SCREEN_WIDTH_MEDIUM_THRESHOLD)
+        or (screen_height is not None and screen_height >= GUI_SCREEN_HEIGHT_MEDIUM_THRESHOLD)
+    ):
+        auto_delta = 1
+    if (
+        (dpi is not None and dpi >= GUI_DPI_LARGE_THRESHOLD)
+        or (screen_width is not None and screen_width >= GUI_SCREEN_WIDTH_LARGE_THRESHOLD)
+        or (screen_height is not None and screen_height >= GUI_SCREEN_HEIGHT_LARGE_THRESHOLD)
+    ):
+        auto_delta = 2
+    return max(-1, min(3, auto_delta + manual_delta))
+
+
+def _build_gui_scale_profile(
+    *,
+    screen_width: Optional[int] = None,
+    screen_height: Optional[int] = None,
+    dpi: Optional[float] = None,
+    manual_delta: int = 0,
+) -> GuiScaleProfile:
+    font_delta = _compute_gui_font_delta(
+        screen_width=screen_width,
+        screen_height=screen_height,
+        dpi=dpi,
+        manual_delta=manual_delta,
+    )
+    default_font_size = max(10, GUI_DEFAULT_FONT_SIZE + font_delta)
+    compact_font_size = max(10, GUI_COMPACT_FONT_SIZE + font_delta)
+    heading_font_size = max(11, GUI_HEADING_FONT_SIZE + font_delta)
+    return GuiScaleProfile(
+        font_delta=font_delta,
+        default_font_size=default_font_size,
+        compact_font_size=compact_font_size,
+        heading_font_size=heading_font_size,
+        tree_rowheight=max(GUI_TREE_ROWHEIGHT, GUI_TREE_ROWHEIGHT + font_delta * 4),
+        button_padding=(max(10, 12 + font_delta * 2), max(6, 7 + font_delta)),
+        field_padding=(max(5, 6 + font_delta), max(4, 5 + font_delta)),
+        text_padding=(max(8, 10 + font_delta), max(6, 8 + font_delta)),
+    )
+
+
+def _compute_dialog_target_size(
+    *,
+    requested_width: int,
+    requested_height: int,
+    min_width: int,
+    min_height: int,
+    current_width: int = 0,
+    current_height: int = 0,
+    extra_width: int = 0,
+    extra_height: int = 0,
+    max_width: Optional[int] = None,
+    max_height: Optional[int] = None,
+) -> tuple[int, int]:
+    width = max(requested_width + extra_width, min_width, current_width)
+    height = max(requested_height + extra_height, min_height, current_height)
+
+    if max_width is not None:
+        width = min(width, max_width)
+    if max_height is not None:
+        height = min(height, max_height)
+
+    return width, height
+
+
+def _get_gui_scale_profile(master: tk.Misc) -> GuiScaleProfile:
+    root = master._root()
+    existing_profile = getattr(root, "_bid_writer_gui_scale_profile", None)
+    if existing_profile is not None:
+        return existing_profile
+
+    screen_width: Optional[int]
+    screen_height: Optional[int]
+    dpi: Optional[float]
+
+    try:
+        screen_width = int(root.winfo_screenwidth())
+        screen_height = int(root.winfo_screenheight())
+    except (tk.TclError, ValueError, TypeError):
+        screen_width = None
+        screen_height = None
+
+    try:
+        dpi = float(root.winfo_fpixels("1i"))
+        if dpi <= 0:
+            dpi = None
+    except (tk.TclError, ValueError, TypeError):
+        dpi = None
+
+    profile = _build_gui_scale_profile(
+        screen_width=screen_width,
+        screen_height=screen_height,
+        dpi=dpi,
+        manual_delta=_parse_gui_font_delta(os.environ.get(GUI_FONT_DELTA_ENV)),
+    )
+    setattr(root, "_bid_writer_gui_scale_profile", profile)
+    return profile
+
+
+def _configure_named_fonts(profile: GuiScaleProfile) -> None:
     """统一调整 Tk 默认字体，保证 ttk 与原生控件观感一致。"""
     font_updates = {
-        "TkDefaultFont": {"size": 11},
-        "TkTextFont": {"size": 11},
-        "TkMenuFont": {"size": 11},
-        "TkFixedFont": {"size": 11},
-        "TkHeadingFont": {"size": 12, "weight": "bold"},
+        "TkDefaultFont": {"size": profile.default_font_size},
+        "TkTextFont": {"size": profile.default_font_size},
+        "TkMenuFont": {"size": profile.default_font_size},
+        "TkFixedFont": {"size": profile.default_font_size},
+        "TkHeadingFont": {"size": profile.heading_font_size, "weight": "bold"},
     }
     for font_name, options in font_updates.items():
         named_font = _safe_named_font(font_name)
@@ -162,12 +309,13 @@ def _configure_named_fonts() -> None:
 def setup_gui_theme(master: tk.Misc) -> ttk.Style:
     """为当前 Tk 应用启用统一主题和基础控件样式。"""
     root = master._root()
+    profile = _get_gui_scale_profile(root)
     existing_style = getattr(root, "_bid_writer_style", None)
     if existing_style is not None:
         return existing_style
 
     root.option_add("*tearOff", False)
-    _configure_named_fonts()
+    _configure_named_fonts(profile)
 
     bootstrap_style = None
     if _can_use_ttkbootstrap() and _TTKBOOTSTRAP_MODULE is not None:
@@ -181,15 +329,15 @@ def setup_gui_theme(master: tk.Misc) -> ttk.Style:
         style.theme_use(GUI_FALLBACK_THEME)
 
     muted_foreground = "#5f6b7a"
-    style.configure("TButton", padding=(12, 7))
-    style.configure("TEntry", padding=(6, 5))
-    style.configure("TCombobox", padding=(6, 5))
-    style.configure("TSpinbox", padding=(6, 5))
-    style.configure("Treeview", rowheight=28)
-    style.configure("Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
-    style.configure("SummaryLabel.TLabel", font=("TkDefaultFont", 10, "bold"))
-    style.configure("SummaryValue.TLabel", font=("TkDefaultFont", 10))
-    style.configure("SectionTitle.TLabel", font=("TkDefaultFont", 11, "bold"))
+    style.configure("TButton", padding=profile.button_padding)
+    style.configure("TEntry", padding=profile.field_padding)
+    style.configure("TCombobox", padding=profile.field_padding)
+    style.configure("TSpinbox", padding=profile.field_padding)
+    style.configure("Treeview", rowheight=profile.tree_rowheight)
+    style.configure("Treeview.Heading", font=("TkDefaultFont", profile.compact_font_size, "bold"))
+    style.configure("SummaryLabel.TLabel", font=("TkDefaultFont", profile.compact_font_size, "bold"))
+    style.configure("SummaryValue.TLabel", font=("TkDefaultFont", profile.compact_font_size))
+    style.configure("SectionTitle.TLabel", font=("TkDefaultFont", profile.default_font_size, "bold"))
     style.configure("Muted.TLabel", foreground=muted_foreground)
 
     setattr(root, "_bid_writer_bootstrap_style", bootstrap_style)
@@ -199,12 +347,13 @@ def setup_gui_theme(master: tk.Misc) -> ttk.Style:
 
 def style_text_widget(widget: tk.Text) -> None:
     """统一原生 Text 控件的观感。"""
+    profile = _get_gui_scale_profile(widget)
     widget.configure(
-        font=("TkFixedFont", 11),
+        font="TkFixedFont",
         relief=tk.FLAT,
         borderwidth=0,
-        padx=10,
-        pady=8,
+        padx=profile.text_padding[0],
+        pady=profile.text_padding[1],
         highlightthickness=1,
         highlightbackground="#d7dee8",
         highlightcolor="#3b82f6",
@@ -447,7 +596,14 @@ class ConfigSelectionDialog(tk.Toplevel):
 
         current_width = max(self.winfo_width(), 1)
         requested_width = max(self.winfo_reqwidth(), CONFIG_DIALOG_MIN_WIDTH)
-        target_width = min(max(requested_width, current_width), CONFIG_DIALOG_MAX_WIDTH)
+        target_width, _ = _compute_dialog_target_size(
+            requested_width=requested_width,
+            requested_height=CONFIG_DIALOG_MIN_HEIGHT,
+            min_width=CONFIG_DIALOG_MIN_WIDTH,
+            min_height=CONFIG_DIALOG_MIN_HEIGHT,
+            current_width=current_width,
+            max_width=CONFIG_DIALOG_MAX_WIDTH,
+        )
 
         self.info_label.configure(
             wraplength=max(target_width - CONFIG_DIALOG_INFO_WRAP_PADDING, 400)
@@ -456,7 +612,13 @@ class ConfigSelectionDialog(tk.Toplevel):
 
         current_height = max(self.winfo_height(), 1)
         requested_height = max(self.winfo_reqheight(), CONFIG_DIALOG_MIN_HEIGHT)
-        target_height = max(requested_height, current_height)
+        _, target_height = _compute_dialog_target_size(
+            requested_width=target_width,
+            requested_height=requested_height,
+            min_width=target_width,
+            min_height=CONFIG_DIALOG_MIN_HEIGHT,
+            current_height=current_height,
+        )
 
         self.geometry(f"{target_width}x{target_height}")
 
@@ -1405,6 +1567,7 @@ class MainWindow(tk.Tk):
 
     def _configure_heading_tree_tags(self, tree: ttk.Treeview) -> None:
         """统一配置大纲树状态颜色与当前焦点高亮。"""
+        profile = _get_gui_scale_profile(tree)
         tree.tag_configure("completed", foreground="#1f7a4d")
         tree.tag_configure("partial", foreground="#8a5a00")
         tree.tag_configure("pending", foreground="#666666")
@@ -1412,7 +1575,7 @@ class MainWindow(tk.Tk):
             "current_focus",
             background="#dbeafe",
             foreground="#0f172a",
-            font=("TkDefaultFont", 10, "bold"),
+            font=("TkDefaultFont", profile.compact_font_size, "bold"),
         )
 
     @staticmethod
@@ -1965,15 +2128,9 @@ class MainWindow(tk.Tk):
         """
         dialog = tk.Toplevel(self)
         dialog.title("生成参数设置")
-        dialog.geometry("500x250")
+        dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
-
-        # 居中对话框
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
-        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
 
         result = {"cancelled": True}
 
@@ -2006,7 +2163,7 @@ class MainWindow(tk.Tk):
 
         # 按钮
         button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=10)
+        button_frame.pack(pady=(12, 0))
 
         def on_ok():
             try:
@@ -2031,7 +2188,6 @@ class MainWindow(tk.Tk):
             text="确定",
             command=on_ok,
             width=10,
-            padding=(15, 8),
             **_bootstyle_kwargs("primary")
         ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
@@ -2039,9 +2195,23 @@ class MainWindow(tk.Tk):
             text="取消",
             command=on_cancel,
             width=10,
-            padding=(15, 8),
             **_bootstyle_kwargs("secondary")
         ).pack(side=tk.LEFT, padx=5)
+
+        dialog.update_idletasks()
+        dialog_width, dialog_height = _compute_dialog_target_size(
+            requested_width=dialog.winfo_reqwidth(),
+            requested_height=dialog.winfo_reqheight(),
+            min_width=GENERATION_DIALOG_MIN_WIDTH,
+            min_height=GENERATION_DIALOG_MIN_HEIGHT,
+            extra_width=GENERATION_DIALOG_EXTRA_WIDTH,
+            extra_height=GENERATION_DIALOG_EXTRA_HEIGHT,
+        )
+        dialog.geometry(f"{dialog_width}x{dialog_height}")
+
+        x = (dialog.winfo_screenwidth() // 2) - (dialog_width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog_height // 2)
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
         # 等待对话框关闭
         self.wait_window(dialog)

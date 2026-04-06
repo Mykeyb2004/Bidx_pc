@@ -25,6 +25,7 @@
 - 运行 GUI 需要本机 Python 具备 Tk 支持
 - 环境支持时默认使用 `ttkbootstrap` 的 `litera` 亮色主题；若桥接不可用则自动回退到内建 `clam`
 - 可通过环境变量 `BID_WRITER_GUI_THEME` 覆盖 `ttkbootstrap` 的内置主题名
+- GUI 会根据屏幕 DPI / 分辨率自动上调字号；如仍偏小，可额外设置 `BID_WRITER_GUI_FONT_DELTA=1`
 
 ## 安装与运行
 

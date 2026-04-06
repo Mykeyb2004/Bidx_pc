@@ -472,6 +472,7 @@
 - 已支持 `保存` 与 `另存为`
 - 已支持保存后对当前配置自动重载，或在另存为后选择切换
 - 已支持 legacy 配置加载、canonical schema 标准化导出和部分兼容字段保留
+- 已与主窗口共享 GUI 主题，并会随屏幕 DPI / 分辨率自动调大默认字号
 - `processing.path` 当前已提供 `auto / full_context` 两个可视化入口；`full_context` 会恢复全文直送链路所需的配置项展示
 - `full_context` 下已支持“章节写作计划”开关和长度上限配置
 
