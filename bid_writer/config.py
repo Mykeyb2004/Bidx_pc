@@ -3,10 +3,32 @@
 负责加载和管理系统配置
 """
 
+import math
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 import yaml
+
+
+@dataclass(frozen=True)
+class TargetWordRange:
+    """章节目标篇幅区间。"""
+
+    baseline: int
+    lower: int
+    upper: int
+
+    @property
+    def display_text(self) -> str:
+        return f"{self.lower}-{self.upper}"
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "baseline": self.baseline,
+            "lower": self.lower,
+            "upper": self.upper,
+        }
 
 
 class Config:
@@ -610,24 +632,81 @@ class Config:
         )
 
     @property
+    def generation_default_target_words(self) -> int:
+        """默认目标篇幅基准值。"""
+        return self._get_int(
+            ('writing', 'target_words', 'default'),
+            ('writing', 'min_words', 'default'),
+            ('generation', 'default_min_words'),
+            'default_min_words',
+            default=500,
+        )
+
+    @property
+    def generation_target_words_min(self) -> int:
+        """目标篇幅基准值下限。"""
+        return self._get_int(
+            ('writing', 'target_words', 'min'),
+            ('writing', 'min_words', 'min'),
+            ('generation', 'min_words_min'),
+            default=100,
+        )
+
+    @property
+    def generation_target_words_max(self) -> int:
+        """目标篇幅基准值上限。"""
+        return self._get_int(
+            ('writing', 'target_words', 'max'),
+            ('writing', 'min_words', 'max'),
+            ('generation', 'min_words_max'),
+            default=15000,
+        )
+
+    @property
+    def generation_target_words_step(self) -> int:
+        """目标篇幅基准值步长。"""
+        return self._get_int(
+            ('writing', 'target_words', 'step'),
+            ('writing', 'min_words', 'step'),
+            ('generation', 'min_words_step'),
+            default=100,
+        )
+
+    @property
+    def generation_target_words_upper_ratio(self) -> float:
+        """目标篇幅区间上沿相对基准值的放宽比例。"""
+        return self._get_float(('writing', 'target_words', 'upper_ratio'), default=1.15)
+
+    def build_target_word_range(self, baseline: int) -> TargetWordRange:
+        """根据基准值推导章节目标篇幅区间。"""
+        lower = max(int(baseline), 0)
+        step = max(int(self.generation_target_words_step), 1)
+        ratio = max(float(self.generation_target_words_upper_ratio), 1.0)
+        raw_upper = lower * ratio
+        rounded_upper = int(math.ceil(raw_upper / step) * step)
+        upper_cap = max(int(self.generation_target_words_max), lower)
+        upper = min(max(rounded_upper, lower), upper_cap)
+        return TargetWordRange(baseline=lower, lower=lower, upper=upper)
+
+    @property
     def generation_default_min_words(self) -> int:
-        """默认最低字数"""
-        return self._get_int(('writing', 'min_words', 'default'), ('generation', 'default_min_words'), 'default_min_words', default=500)
+        """兼容旧调用：默认目标篇幅基准值。"""
+        return self.generation_default_target_words
 
     @property
     def generation_min_words_min(self) -> int:
-        """最低字数下限"""
-        return self._get_int(('writing', 'min_words', 'min'), ('generation', 'min_words_min'), default=100)
+        """兼容旧调用：目标篇幅基准值下限。"""
+        return self.generation_target_words_min
 
     @property
     def generation_min_words_max(self) -> int:
-        """最低字数上限"""
-        return self._get_int(('writing', 'min_words', 'max'), ('generation', 'min_words_max'), default=15000)
+        """兼容旧调用：目标篇幅基准值上限。"""
+        return self.generation_target_words_max
 
     @property
     def generation_min_words_step(self) -> int:
-        """最低字数步长"""
-        return self._get_int(('writing', 'min_words', 'step'), ('generation', 'min_words_step'), default=100)
+        """兼容旧调用：目标篇幅基准值步长。"""
+        return self.generation_target_words_step
 
     @property
     def generation_stream(self) -> bool:

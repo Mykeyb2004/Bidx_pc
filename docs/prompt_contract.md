@@ -31,7 +31,7 @@
 
 当前章节生成请求的 prompt 链路固定如下：
 
-1. `AIWriter.prepare_generation(heading, additional_requirements, min_words, stream, max_mermaid_flowcharts_per_section_override)`
+1. `AIWriter.prepare_generation(heading, additional_requirements, target_words, stream, max_mermaid_flowcharts_per_section_override)`
 2. `AIWriter.build_prompt_result(...)`
 3. 如果 `context_pruning_enabled=True`，则在 `build_prompt_result()` 内调用 `ChapterContextPruner.build_context(heading)`
 4. `AIWriter.build_system_prompt()`
@@ -356,7 +356,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - 当前章节路径
 - 本章重点
 - 可选的章节写作计划
-- 字数要求
+- 篇幅目标区间
 - 输出方式
 - 结构要求
 - 表格控制
@@ -603,7 +603,7 @@ messages = [
 | `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
-| `min_words` | 运行时入参 | 最低字数要求 | 是 |
+| `target_words` | 运行时入参 | 目标篇幅基准值；会进一步推导成区间文案 | 是 |
 | `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 流程图上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
 | `HeadingNode.full_path` | 当前章节节点 | 当前章节完整路径 | 是 |

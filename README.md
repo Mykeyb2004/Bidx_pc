@@ -10,7 +10,7 @@
 - GUI 中展示大纲树，支持多选叶子节点批量生成
 - 支持搜索标题、按“未生成 / 部分完成 / 已完成”筛选章节
 - 启动时自动发现 `config*.yaml` / `config*.yml`，并记住上次成功使用的配置文件
-- 生成前可填写附加要求、设置最低字数
+- 生成前可填写附加要求、设置目标篇幅基准值（系统自动推导目标区间）
 - 生成时流式显示模型输出
 - 批量模式下自动保存，并显示总进度、当前任务、成功/失败统计
 - 根据章节完整路径生成稳定文件名后缀，尽量避免同名标题覆盖
@@ -128,7 +128,7 @@ uv run bid-writer --config config_chatgpt.yaml
 
 1. 启动程序后，系统会优先尝试加载上次使用的配置文件，否则回退到 `config.yaml` 或当前目录下其它 `config*.yaml`
 2. 载入大纲后，在左侧树中展开章节，选择要生成的叶子节点
-3. 按需输入附加扩写要求，并设置最低字数
+3. 按需输入附加扩写要求，并设置目标篇幅基准值
 4. 执行生成
 5. 批量生成时结果会自动保存到输出目录
 6. 单选章节时，主窗口右侧会直接显示已生成正文；生成过程中右侧也会实时显示当前章节内容
@@ -139,7 +139,7 @@ uv run bid-writer --config config_chatgpt.yaml
 项目当前推荐使用按“信息性质”分层的 canonical schema：
 
 - `project`：项目固有信息、输入资源、输出目录
-- `writing`：角色设定、写作规范、提示词约束、字数要求
+- `writing`：角色设定、写作规范、提示词约束、篇幅目标
 - `processing`：业务处理路径与章节级提炼参数
 - `models`：主模型、辅助模型、embedding 的非敏感参数
 - `runtime`：stream、trace、debug、输出细节与合并行为
@@ -168,11 +168,12 @@ project:
 writing:
   role: |
     你是一位专业的标书撰写专家。
-  min_words:
+  target_words:
     default: 3000
     min: 100
     max: 15000
     step: 100
+    upper_ratio: 1.15
   output_format: "纯正文"
   first_line_template: ""
   allow_markdown_headings: false

@@ -128,17 +128,18 @@
 
 ### 4.2 `写作`
 
-目标：编辑写作风格、字数规则和硬约束。
+目标：编辑写作风格、篇幅目标和硬约束。
 
 建议字段：
 
 | 字段 | 控件 |
 | --- | --- |
 | `writing.role_file` / `writing.role` | 单选切换 + 文件选择器 / 多行文本 |
-| `writing.min_words.default` | 数字输入 |
-| `writing.min_words.min` | 数字输入 |
-| `writing.min_words.max` | 数字输入 |
-| `writing.min_words.step` | 数字输入 |
+| `writing.target_words.default` | 数字输入 |
+| `writing.target_words.min` | 数字输入 |
+| `writing.target_words.max` | 数字输入 |
+| `writing.target_words.step` | 数字输入 |
+| `writing.target_words.upper_ratio` | 数字输入 |
 | `writing.output_format` | 下拉框 |
 | `writing.first_line_template` | 单行输入框 |
 | `writing.allow_markdown_headings` | 开关 |

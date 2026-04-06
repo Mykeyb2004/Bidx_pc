@@ -9,7 +9,7 @@
 - `project`
   - 项目固有信息、输入资源、输出目录
 - `writing`
-  - 角色设定、写作规则、提示词约束、字数要求
+  - 角色设定、写作规则、提示词约束、篇幅目标
 - `processing`
   - 章节处理路径与业务提炼参数
 - `models`
@@ -86,11 +86,12 @@ project:
 ```yaml
 writing:
   role_file: "./docs/roles/example_role.md"
-  min_words:
+  target_words:
     default: 1500
     min: 100
     max: 12000
     step: 100
+    upper_ratio: 1.15
   output_format: "纯正文"
   first_line_template: ""
   allow_markdown_headings: false
@@ -106,6 +107,8 @@ writing:
 
 - `writing.role` 或 `writing.role_file` 用于角色设定
 - `writing.role_file` 适合多个项目配置复用同一段长 prompt
+- `writing.target_words.default` 是运行时输入框的基准值，系统会自动推导目标区间并写入 prompt
+- `writing.target_words.upper_ratio` 用于控制区间上沿的自动放宽幅度，默认 `1.15`
 - `writing.extra_rules` 当前不会单独生成 `## 其他写作要求` 区块，而是直接追加到 `## 结构输出硬要求` 的末尾
 
 ### 3.3 `processing`

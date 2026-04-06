@@ -25,11 +25,12 @@ project:
 writing:
   role: |
     你是一位专业的标书撰写专家。
-  min_words:
+  target_words:
     default: 1500
     min: 100
     max: 5000
     step: 100
+    upper_ratio: 1.15
   output_format: "纯正文"
   allow_markdown_headings: false
   max_mermaid_flowcharts_per_section: 3
@@ -90,6 +91,8 @@ runtime:
     assert config.prompt_max_mermaid_flowcharts_per_section == 3
     assert config.generation_stream is False
     assert config.generation_stream_idle_timeout_seconds == 15
+    assert config.generation_default_target_words == 1500
+    assert config.build_target_word_range(1500).to_dict() == {"baseline": 1500, "lower": 1500, "upper": 1800}
 
 
 def test_full_context_chapter_writing_plan_config_is_read(tmp_path: Path):

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from .config import Config
+from .config import Config, TargetWordRange
 from .context_pruner import ChapterContext
 from .outline_parser import HeadingNode
 
@@ -36,7 +36,8 @@ class GenerationTraceSession:
         config: Config,
         heading: HeadingNode,
         additional_requirements: str,
-        min_words: int,
+        target_words: int,
+        target_word_range: TargetWordRange,
         stream: bool,
         system_prompt: str,
         user_prompt: str,
@@ -50,7 +51,8 @@ class GenerationTraceSession:
         self.config = config
         self.heading = heading
         self.additional_requirements = additional_requirements
-        self.min_words = min_words
+        self.target_words = target_words
+        self.target_word_range = target_word_range
         self.stream = stream
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
@@ -90,7 +92,8 @@ class GenerationTraceSession:
             [
                 self.heading.full_path,
                 self.heading.title,
-                str(self.min_words),
+                str(self.target_words),
+                self.target_word_range.display_text,
                 self.additional_requirements.strip(),
                 str(self.stream),
                 _utc_now_string(),
@@ -139,7 +142,8 @@ class GenerationTraceSession:
             "level": self.heading.level,
             "line_number": self.heading.line_number,
             "additional_requirements": self.additional_requirements,
-            "min_words": self.min_words,
+            "target_words": self.target_words,
+            "target_word_range": self.target_word_range.to_dict(),
             "stream": self.stream,
         }
 
@@ -262,6 +266,8 @@ class GenerationTraceSession:
             f"- status: {self.status}",
             f"- processing_path: {self.config.processing_path}",
             f"- context_mode: {self.context_mode}",
+            f"- target_words: {self.target_words}",
+            f"- target_word_range: {self.target_word_range.display_text}",
             f"- system_prompt_chars: {len(self.system_prompt)}",
             f"- user_prompt_chars: {len(self.user_prompt)}",
             f"- output_chars: {len(output_text)}",
@@ -378,7 +384,8 @@ class GenerationTraceLogger:
         self,
         heading: HeadingNode,
         additional_requirements: str,
-        min_words: int,
+        target_words: int,
+        target_word_range: TargetWordRange,
         stream: bool,
         system_prompt: str,
         user_prompt: str,
@@ -396,7 +403,8 @@ class GenerationTraceLogger:
             config=self.config,
             heading=heading,
             additional_requirements=additional_requirements,
-            min_words=min_words,
+            target_words=target_words,
+            target_word_range=target_word_range,
             stream=stream,
             system_prompt=system_prompt,
             user_prompt=user_prompt,

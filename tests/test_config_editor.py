@@ -54,6 +54,7 @@ output:
     assert payload["models"]["generation"]["temperature"] == 0.6
     assert payload["models"]["generation"]["base_url"] == "https://example.invalid/v1"
     assert payload["models"]["generation"]["api_key"] == "secret-key"
+    assert payload["writing"]["target_words"]["default"] == 500
     assert document.model["writing"]["max_mermaid_flowcharts_per_section"] == 5
     assert payload["writing"]["max_mermaid_flowcharts_per_section"] == 5
 

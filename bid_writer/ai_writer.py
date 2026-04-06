@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Generator, Optional
 from openai import OpenAI
 
-from .config import Config
+from .config import Config, TargetWordRange
 from .context_pruner import ChapterContext, ChapterContextPruner
 from .chapter_writing_plan import ChapterWritingPlanGenerator
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
@@ -148,7 +148,7 @@ class AIWriter:
         self,
         heading: HeadingNode,
         pruned_context: Optional[ChapterContext],
-        min_words: int,
+        target_word_range: TargetWordRange,
         chapter_writing_plan: str = "",
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> str:
@@ -165,7 +165,10 @@ class AIWriter:
             f"- 写作场景：为{bidder_name}撰写“{project_title}”投标文件中的当前章节正文。",
             f"- 当前章节路径：{heading.full_path}",
             f"- 本章重点：{'；'.join(focus_terms)}",
-            f"- 字数要求：不少于 {min_words} 字",
+            (
+                "- 篇幅目标：建议控制在 "
+                f"{target_word_range.display_text} 字，优先完整覆盖本章重点，不为凑字数重复展开。"
+            ),
             f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
             "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。",
             f"- 表格控制：{self._build_table_rule_text()}",
@@ -659,7 +662,7 @@ class AIWriter:
                 "source_context": [
                     "HeadingNode.title",
                     "HeadingNode.full_path",
-                    "min_words",
+                    "target_word_range",
                     "prompt.output_format",
                     "prompt_bidder_name",
                     (
@@ -756,8 +759,9 @@ class AIWriter:
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
-        min_words: int = 500,
+        target_words: int = 500,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+        min_words: Optional[int] = None,
     ) -> PromptBuildResult:
         """
         构建扩写提示词
@@ -765,11 +769,14 @@ class AIWriter:
         Args:
             heading: 要扩写的标题节点
             additional_requirements: 用户的附加要求
-            min_words: 最低字数要求
+            target_words: 目标篇幅基准值
             
         Returns:
             完整的提示词
         """
+        if min_words is not None:
+            target_words = min_words
+        target_word_range = self.config.build_target_word_range(target_words)
         prompt_parts: list[str] = []
         prompt_sections: list[dict[str, str]] = []
         pruned_context = None
@@ -828,7 +835,7 @@ class AIWriter:
             self._build_task_card(
                 heading,
                 pruned_context,
-                min_words,
+                target_word_range,
                 chapter_writing_plan=chapter_writing_plan,
                 max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
             ),
@@ -951,23 +958,26 @@ class AIWriter:
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
-        min_words: int = 500,
+        target_words: int = 500,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+        min_words: Optional[int] = None,
     ) -> str:
         return self.build_prompt_result(
             heading,
             additional_requirements,
-            min_words,
+            target_words,
             max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+            min_words=min_words,
         ).prompt
 
     def expand(
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
-        min_words: int = 500,
+        target_words: int = 500,
         stream: bool = True,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+        min_words: Optional[int] = None,
     ) -> Generator[str, None, None] | str:
         """
         扩写指定标题
@@ -975,7 +985,7 @@ class AIWriter:
         Args:
             heading: 要扩写的标题节点
             additional_requirements: 用户的附加要求
-            min_words: 最低字数要求
+            target_words: 目标篇幅基准值
             stream: 是否使用流式输出
             
         Yields/Returns:
@@ -984,9 +994,10 @@ class AIWriter:
         prepared = self.prepare_generation(
             heading,
             additional_requirements=additional_requirements,
-            min_words=min_words,
+            target_words=target_words,
             stream=stream,
             max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+            min_words=min_words,
         )
         raw_result = self.expand_raw(prepared)
 
@@ -1020,15 +1031,19 @@ class AIWriter:
         self,
         heading: HeadingNode,
         additional_requirements: str = "",
-        min_words: int = 500,
+        target_words: int = 500,
         stream: bool = True,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+        min_words: Optional[int] = None,
     ) -> PreparedGeneration:
         """准备模型请求和 trace 会话，但不执行正文后处理。"""
+        if min_words is not None:
+            target_words = min_words
+        target_word_range = self.config.build_target_word_range(target_words)
         prompt_result = self.build_prompt_result(
             heading,
             additional_requirements,
-            min_words,
+            target_words,
             max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
         )
         system_prompt = self.build_system_prompt()
@@ -1041,7 +1056,8 @@ class AIWriter:
         trace_session = self.trace_logger.start_session(
             heading=heading,
             additional_requirements=additional_requirements,
-            min_words=min_words,
+            target_words=target_words,
+            target_word_range=target_word_range,
             stream=stream,
             system_prompt=system_prompt,
             user_prompt=prompt_result.prompt,

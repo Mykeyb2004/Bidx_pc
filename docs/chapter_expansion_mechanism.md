@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，收集附加要求、最低字数和 Mermaid 流程图上限覆盖值
+3. GUI 选择叶子章节，收集附加要求、目标篇幅基准值和 Mermaid 流程图上限覆盖值
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -67,7 +67,7 @@ GUI 中批量生成的主要逻辑位于：
 行为特点：
 
 - 先获取选中的叶子节点
-- 再让用户输入“附加扩写要求”和“最低字数”
+- 再让用户输入“附加扩写要求”和“目标篇幅基准值”
 - 批量模式逐章执行
 - 生成内容在主窗口右侧正文工作区实时显示，完成后自动保存
 
@@ -93,7 +93,7 @@ GUI 中批量生成的主要逻辑位于：
 
 章节扩写主要受以下配置影响：
 
-- `generation.default_min_words`
+- `writing.target_words.default`
 - `generation.stream`
 - `generation.stream_idle_timeout_seconds`
 - `prompt.output_format`
@@ -181,7 +181,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 当前章节路径
 - 本章重点
 - 可选的章节写作计划
-- 字数要求
+- 篇幅目标区间
 - 输出方式
 - 结构要求
 - 表格控制

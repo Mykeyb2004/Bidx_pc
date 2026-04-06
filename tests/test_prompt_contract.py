@@ -63,7 +63,7 @@ def test_legacy_prompt_config_builds_non_empty_prompt(monkeypatch, tmp_path):
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.build_prompt_result(heading, min_words=900)
+    result = writer.build_prompt_result(heading, target_words=900)
 
     assert result.prompt.strip()
     assert [block["id"] for block in result.prompt_contract_blocks] == EXPECTED_BLOCK_IDS
@@ -77,7 +77,7 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     result = writer.build_prompt_result(
         heading,
         additional_requirements="请突出质量控制节点。",
-        min_words=1200,
+        target_words=1200,
     )
 
     assert [block["id"] for block in result.prompt_contract_blocks] == EXPECTED_BLOCK_IDS
@@ -91,7 +91,7 @@ def test_extra_rules_are_folded_into_structure_contract(monkeypatch, tmp_path):
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
     structure_section = next(
         section["content"]
         for section in result.prompt_sections
@@ -101,6 +101,7 @@ def test_extra_rules_are_folded_into_structure_contract(monkeypatch, tmp_path):
     assert "请为以下标书章节撰写投标正文。" not in result.prompt
     assert "## 其他写作要求" not in result.prompt
     assert "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。" in structure_section
+    assert "- 篇幅目标：建议控制在 1200-1400 字，优先完整覆盖本章重点，不为凑字数重复展开。" in result.prompt
 
 
 def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp_path):
@@ -108,7 +109,7 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "- 当前章节路径：综合服务项目投标方案 > 项目实施方案 > 质量保障措施" in result.prompt
     assert "## 章节边界参考" in result.prompt
@@ -120,7 +121,7 @@ def test_task_card_omits_mermaid_control_when_limit_is_zero(monkeypatch, tmp_pat
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "流程图控制" not in result.prompt
 
@@ -131,7 +132,7 @@ def test_task_card_includes_mermaid_control_when_limit_is_positive(monkeypatch, 
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
 
     assert (
         "- 流程图控制：生成的文档中适当绘制不超过3个Mermaid流程图，用于呈现关键流程、步骤衔接或机制闭环；"
@@ -147,7 +148,7 @@ def test_runtime_mermaid_override_can_disable_configured_prompt_rule(monkeypatch
 
     result = writer.build_prompt_result(
         heading,
-        min_words=1200,
+        target_words=1200,
         max_mermaid_flowcharts_per_section_override=0,
     )
 
@@ -174,7 +175,7 @@ def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_p
     )()
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "- 章节写作计划：" in result.prompt
     assert "1. 先回应项目目标。" in result.prompt
@@ -206,7 +207,7 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     writer.chapter_writing_plan_generator = DummyPlanGenerator()
 
     heading = _select_leaf_heading(config, "质量保障措施")
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
 
     assert captured["system_prompt"] == writer.build_system_prompt()
     assert captured["shared_prompt_prefix"].startswith("## 章节边界参考")
@@ -225,7 +226,7 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
     prepared = writer.prepare_generation(
         heading,
         additional_requirements="请保持条理清晰。",
-        min_words=1200,
+        target_words=1200,
         stream=False,
     )
 
@@ -233,12 +234,15 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
 
     context_payload_path = prepared.trace_session.artifact_paths["context_assembly"]
     payload = json.loads(context_payload_path.read_text(encoding="utf-8"))
+    heading_payload = json.loads(prepared.trace_session.artifact_paths["heading"].read_text(encoding="utf-8"))
 
     assert "prompt_contract" in payload
     assert "prompt_sections" in payload
     assert payload["prompt_contract"]["block_order"] == EXPECTED_BLOCK_IDS
     assert [block["id"] for block in payload["prompt_contract"]["blocks"]] == EXPECTED_BLOCK_IDS
     assert payload["prompt_contract"]["blocks"][0]["source_context"]
+    assert heading_payload["target_words"] == 1200
+    assert heading_payload["target_word_range"] == {"baseline": 1200, "lower": 1200, "upper": 1400}
 
 
 @pytest.mark.parametrize("processing_path", ["full_context", "legacy_rule", "hybrid_extract"])
@@ -259,7 +263,7 @@ def test_trace_summary_records_processing_path(monkeypatch, tmp_path, processing
         )
         monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
 
-    prepared = writer.prepare_generation(heading, min_words=1200, stream=False)
+    prepared = writer.prepare_generation(heading, target_words=1200, stream=False)
 
     assert prepared.trace_session is not None
 
@@ -267,6 +271,7 @@ def test_trace_summary_records_processing_path(monkeypatch, tmp_path, processing
     summary = prepared.trace_session.artifact_paths["summary"].read_text(encoding="utf-8")
 
     assert f"- processing_path: {processing_path}" in summary
+    assert "- target_word_range: 1200-1400" in summary
 
 
 def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, tmp_path):
@@ -288,7 +293,7 @@ def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, t
     )
     monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
 
-    result = writer.build_prompt_result(heading, min_words=1200)
+    result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "- 写作依据：优先根据下方评分关注和需求要点组织内容。" in result.prompt
     assert "## 需求要点" in result.prompt

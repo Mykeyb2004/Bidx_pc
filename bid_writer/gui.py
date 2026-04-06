@@ -2001,7 +2001,8 @@ class MainWindow(tk.Tk):
         if params is None:
             return  # 用户取消了
 
-        additional_requirements, min_words, max_mermaid_flowcharts_per_section = params
+        additional_requirements, target_words, max_mermaid_flowcharts_per_section = params
+        target_word_range = self.bid_writer.config.build_target_word_range(target_words)
 
         # 确认对话框
         warning_line = ""
@@ -2012,7 +2013,7 @@ class MainWindow(tk.Tk):
             "确认",
             f"确定要生成 {len(selected_headings)} 个标题吗？\n\n"
             f"附加要求：{additional_requirements or '（无）'}\n"
-            f"最低字数：{min_words}\n"
+            f"目标篇幅：{target_word_range.display_text} 字\n"
             f"Mermaid流程图上限：{max_mermaid_flowcharts_per_section}"
             f"{warning_line}"
         ):
@@ -2022,7 +2023,7 @@ class MainWindow(tk.Tk):
         self._do_batch_generate(
             selected_headings,
             additional_requirements,
-            min_words,
+            target_words,
             max_mermaid_flowcharts_per_section,
         )
 
@@ -2030,7 +2031,7 @@ class MainWindow(tk.Tk):
         self,
         headings: List[HeadingNode],
         additional_requirements: str,
-        min_words: int,
+        target_words: int,
         max_mermaid_flowcharts_per_section: int,
     ):
         """执行批量生成（主线程）"""
@@ -2062,7 +2063,7 @@ class MainWindow(tk.Tk):
                 result = self._generate_into_workspace(
                     heading,
                     additional_requirements,
-                    min_words,
+                    target_words,
                     max_mermaid_flowcharts_per_section,
                 )
 
@@ -2293,7 +2294,7 @@ class MainWindow(tk.Tk):
         获取生成参数对话框
 
         Returns:
-            (additional_requirements, min_words, max_mermaid_flowcharts_per_section) 或 None（用户取消）
+            (additional_requirements, target_words, max_mermaid_flowcharts_per_section) 或 None（用户取消）
         """
         dialog = tk.Toplevel(self)
         dialog.title("生成参数设置")
@@ -2314,22 +2315,35 @@ class MainWindow(tk.Tk):
         req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
         req_text.insert('1.0', "")
 
-        # 最低字数
+        # 目标篇幅基准值
         words_frame = ttk.Frame(dialog)
         words_frame.pack(pady=10, padx=20, fill=tk.X)
 
-        ttk.Label(words_frame, text="最低字数：", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
+        ttk.Label(words_frame, text="目标篇幅基准：", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
 
-        min_words_default = self.bid_writer.config.generation_default_min_words
-        min_words_min = self.bid_writer.config.generation_min_words_min
-        min_words_max = self.bid_writer.config.generation_min_words_max
-        min_words_step = self.bid_writer.config.generation_min_words_step
+        target_words_default = self.bid_writer.config.generation_default_target_words
+        target_words_min = self.bid_writer.config.generation_target_words_min
+        target_words_max = self.bid_writer.config.generation_target_words_max
+        target_words_step = self.bid_writer.config.generation_target_words_step
 
-        words_var = tk.IntVar(value=min_words_default)
-        words_spinbox = ttk.Spinbox(words_frame, from_=min_words_min, to=min_words_max,
+        words_var = tk.IntVar(value=target_words_default)
+        words_spinbox = ttk.Spinbox(words_frame, from_=target_words_min, to=target_words_max,
                                     textvariable=words_var, width=10,
-                                    increment=min_words_step)
+                                    increment=target_words_step)
         words_spinbox.pack(side=tk.LEFT, padx=10)
+        range_hint_var = tk.StringVar()
+        ttk.Label(words_frame, textvariable=range_hint_var, style="SummaryLabel.TLabel").pack(side=tk.LEFT)
+
+        def update_target_range_hint(*_args):
+            try:
+                target_word_range = self.bid_writer.config.build_target_word_range(words_var.get())
+            except (tk.TclError, ValueError):
+                range_hint_var.set("系统会自动推导目标区间")
+                return
+            range_hint_var.set(f"自动推导区间：{target_word_range.display_text} 字")
+
+        words_var.trace_add("write", update_target_range_hint)
+        update_target_range_hint()
 
         mermaid_frame = ttk.Frame(dialog)
         mermaid_frame.pack(pady=(0, 10), padx=20, fill=tk.X)
@@ -2359,9 +2373,9 @@ class MainWindow(tk.Tk):
 
         def on_ok():
             try:
-                min_words = words_var.get()
-                if min_words < min_words_min or min_words > min_words_max:
-                    messagebox.showwarning("警告", f"字数必须在{min_words_min}-{min_words_max}之间")
+                target_words = words_var.get()
+                if target_words < target_words_min or target_words > target_words_max:
+                    messagebox.showwarning("警告", f"目标篇幅基准必须在{target_words_min}-{target_words_max}之间")
                     return
 
                 additional_req = req_text.get('1.0', tk.END).strip()
@@ -2371,11 +2385,11 @@ class MainWindow(tk.Tk):
                     return
                 result["cancelled"] = False
                 result["requirements"] = additional_req
-                result["min_words"] = min_words
+                result["target_words"] = target_words
                 result["max_mermaid_flowcharts_per_section"] = max_mermaid_flowcharts_per_section
                 dialog.destroy()
             except tk.TclError:
-                messagebox.showwarning("警告", "请输入有效的字数和 Mermaid 流程图上限")
+                messagebox.showwarning("警告", "请输入有效的目标篇幅和 Mermaid 流程图上限")
 
         def on_cancel():
             dialog.destroy()
@@ -2417,7 +2431,7 @@ class MainWindow(tk.Tk):
             return None
         return (
             result["requirements"],
-            result["min_words"],
+            result["target_words"],
             result["max_mermaid_flowcharts_per_section"],
         )
 
@@ -2505,7 +2519,7 @@ class MainWindow(tk.Tk):
             heading,
             ai_writer,
             requirements,
-            min_words,
+            target_words,
             max_mermaid_flowcharts_per_section,
         ):
             """启动后台生成线程"""
@@ -2520,7 +2534,7 @@ class MainWindow(tk.Tk):
                     prepared = ai_writer.prepare_generation(
                         heading,
                         requirements,
-                        min_words,
+                        target_words,
                         stream=ai_writer.config.generation_stream,
                         max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section,
                     )
@@ -2585,7 +2599,7 @@ class MainWindow(tk.Tk):
         self,
         heading: HeadingNode,
         additional_requirements: str,
-        min_words: int,
+        target_words: int,
         max_mermaid_flowcharts_per_section: int,
     ) -> str:
         """
@@ -2600,7 +2614,7 @@ class MainWindow(tk.Tk):
             heading,
             self.bid_writer.ai_writer,
             additional_requirements,
-            min_words,
+            target_words,
             max_mermaid_flowcharts_per_section,
         )
 

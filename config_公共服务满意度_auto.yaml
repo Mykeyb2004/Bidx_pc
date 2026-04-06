@@ -7,11 +7,12 @@ project:
     scoring_criteria_file: ./评分标准.md
   output_dir: ./output
 writing:
-  min_words:
+  target_words:
     default: 1500
     min: 100
     max: 12000
     step: 100
+    upper_ratio: 1.15
   output_format: 纯正文
   first_line_template: ''
   allow_markdown_headings: false
@@ -34,7 +35,7 @@ writing:
   extra_rules:
   - 根据以上任务卡，结合采购需求、评分标准撰写投标正文；
   - 内容要求专业、严谨，满足对评分标准高响应、高得分的要求；
-  - 输入尽量不超过最低字数的标准。
+  - 章节篇幅优先控制在目标区间内，不为凑篇幅重复展开。
   role_file: ./docs/roles/公共服务满意度_role.md
 processing:
   path: full_context

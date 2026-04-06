@@ -97,7 +97,8 @@ output/
 - `level`
 - `line_number`
 - `additional_requirements`
-- `min_words`
+- `target_words`
+- `target_word_range`
 - `stream`
 
 ### `02_context_assembly.json`

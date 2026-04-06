@@ -218,10 +218,11 @@ class ConfigEditorDialog(tk.Toplevel):
 
         add_var("writing.role_mode", tk.StringVar())
         add_var("writing.role_file", tk.StringVar())
-        add_var("writing.min_words.default", tk.StringVar())
-        add_var("writing.min_words.min", tk.StringVar())
-        add_var("writing.min_words.max", tk.StringVar())
-        add_var("writing.min_words.step", tk.StringVar())
+        add_var("writing.target_words.default", tk.StringVar())
+        add_var("writing.target_words.min", tk.StringVar())
+        add_var("writing.target_words.max", tk.StringVar())
+        add_var("writing.target_words.step", tk.StringVar())
+        add_var("writing.target_words.upper_ratio", tk.StringVar())
         add_var("writing.output_format", tk.StringVar())
         add_var("writing.first_line_template", tk.StringVar())
         add_var("writing.allow_markdown_headings", tk.BooleanVar())
@@ -459,13 +460,14 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_text_block(self.role_text_frame, "角色正文", "writing.role_text", help_text="内嵌文本模式下会直接写入 YAML。")
         role_card.columnconfigure(1, weight=1)
 
-        min_words = ttk.LabelFrame(content, text="字数规则", padding=12)
-        min_words.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(min_words, 0, "默认最低字数", "writing.min_words.default")
-        self._add_entry_row(min_words, 1, "最低下限", "writing.min_words.min")
-        self._add_entry_row(min_words, 2, "最高上限", "writing.min_words.max")
-        self._add_entry_row(min_words, 3, "步长", "writing.min_words.step")
-        min_words.columnconfigure(1, weight=1)
+        target_words = ttk.LabelFrame(content, text="篇幅目标", padding=12)
+        target_words.pack(fill=tk.X, pady=(0, 12))
+        self._add_entry_row(target_words, 0, "默认目标基准", "writing.target_words.default")
+        self._add_entry_row(target_words, 1, "目标下限", "writing.target_words.min")
+        self._add_entry_row(target_words, 2, "目标上限", "writing.target_words.max")
+        self._add_entry_row(target_words, 3, "步长", "writing.target_words.step")
+        self._add_entry_row(target_words, 4, "区间上沿倍率", "writing.target_words.upper_ratio")
+        target_words.columnconfigure(1, weight=1)
 
         rules = ttk.LabelFrame(content, text="写作与格式", padding=12)
         rules.pack(fill=tk.X, pady=(0, 12))
@@ -778,10 +780,11 @@ class ConfigEditorDialog(tk.Toplevel):
             "project.output_dir": model["project"]["output_dir"],
             "writing.role_mode": model["writing"]["role_mode"],
             "writing.role_file": model["writing"]["role_file"],
-            "writing.min_words.default": str(model["writing"]["min_words_default"]),
-            "writing.min_words.min": str(model["writing"]["min_words_min"]),
-            "writing.min_words.max": str(model["writing"]["min_words_max"]),
-            "writing.min_words.step": str(model["writing"]["min_words_step"]),
+            "writing.target_words.default": str(model["writing"]["target_words_default"]),
+            "writing.target_words.min": str(model["writing"]["target_words_min"]),
+            "writing.target_words.max": str(model["writing"]["target_words_max"]),
+            "writing.target_words.step": str(model["writing"]["target_words_step"]),
+            "writing.target_words.upper_ratio": str(model["writing"]["target_words_upper_ratio"]),
             "writing.output_format": model["writing"]["output_format"],
             "writing.first_line_template": model["writing"]["first_line_template"],
             "writing.allow_markdown_headings": model["writing"]["allow_markdown_headings"],
@@ -881,10 +884,11 @@ class ConfigEditorDialog(tk.Toplevel):
                 "role_mode": self.vars["writing.role_mode"].get().strip() or "file",
                 "role_file": self.vars["writing.role_file"].get().strip(),
                 "role_text": self._get_text_value("writing.role_text"),
-                "min_words_default": self.vars["writing.min_words.default"].get().strip(),
-                "min_words_min": self.vars["writing.min_words.min"].get().strip(),
-                "min_words_max": self.vars["writing.min_words.max"].get().strip(),
-                "min_words_step": self.vars["writing.min_words.step"].get().strip(),
+                "target_words_default": self.vars["writing.target_words.default"].get().strip(),
+                "target_words_min": self.vars["writing.target_words.min"].get().strip(),
+                "target_words_max": self.vars["writing.target_words.max"].get().strip(),
+                "target_words_step": self.vars["writing.target_words.step"].get().strip(),
+                "target_words_upper_ratio": self.vars["writing.target_words.upper_ratio"].get().strip(),
                 "output_format": self.vars["writing.output_format"].get(),
                 "first_line_template": self.vars["writing.first_line_template"].get(),
                 "allow_markdown_headings": bool(self.vars["writing.allow_markdown_headings"].get()),

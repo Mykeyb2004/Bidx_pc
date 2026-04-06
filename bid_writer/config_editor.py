@@ -199,21 +199,50 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
             "role_mode": role_mode,
             "role_file": role_file,
             "role_text": role_text,
-            "min_words_default": _coerce_int(
-                _first_defined(raw_config, ("writing", "min_words", "default"), ("generation", "default_min_words"), "default_min_words", default=500),
+            "target_words_default": _coerce_int(
+                _first_defined(
+                    raw_config,
+                    ("writing", "target_words", "default"),
+                    ("writing", "min_words", "default"),
+                    ("generation", "default_min_words"),
+                    "default_min_words",
+                    default=500,
+                ),
                 default=500,
             ),
-            "min_words_min": _coerce_int(
-                _first_defined(raw_config, ("writing", "min_words", "min"), ("generation", "min_words_min"), default=100),
+            "target_words_min": _coerce_int(
+                _first_defined(
+                    raw_config,
+                    ("writing", "target_words", "min"),
+                    ("writing", "min_words", "min"),
+                    ("generation", "min_words_min"),
+                    default=100,
+                ),
                 default=100,
             ),
-            "min_words_max": _coerce_int(
-                _first_defined(raw_config, ("writing", "min_words", "max"), ("generation", "min_words_max"), default=15000),
+            "target_words_max": _coerce_int(
+                _first_defined(
+                    raw_config,
+                    ("writing", "target_words", "max"),
+                    ("writing", "min_words", "max"),
+                    ("generation", "min_words_max"),
+                    default=15000,
+                ),
                 default=15000,
             ),
-            "min_words_step": _coerce_int(
-                _first_defined(raw_config, ("writing", "min_words", "step"), ("generation", "min_words_step"), default=100),
+            "target_words_step": _coerce_int(
+                _first_defined(
+                    raw_config,
+                    ("writing", "target_words", "step"),
+                    ("writing", "min_words", "step"),
+                    ("generation", "min_words_step"),
+                    default=100,
+                ),
                 default=100,
+            ),
+            "target_words_upper_ratio": _coerce_float(
+                _first_defined(raw_config, ("writing", "target_words", "upper_ratio"), default=1.15),
+                default=1.15,
             ),
             "output_format": _coerce_str(
                 _first_defined(raw_config, ("writing", "output_format"), ("prompt", "output_format"), default="Markdown格式")
@@ -424,11 +453,12 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         project_inputs["scoring_criteria_file"] = model["project"]["scoring_criteria_file"].strip() or "./scoring_criteria.md"
 
     writing_payload: dict[str, Any] = {
-        "min_words": {
-            "default": int(model["writing"]["min_words_default"]),
-            "min": int(model["writing"]["min_words_min"]),
-            "max": int(model["writing"]["min_words_max"]),
-            "step": int(model["writing"]["min_words_step"]),
+        "target_words": {
+            "default": int(model["writing"]["target_words_default"]),
+            "min": int(model["writing"]["target_words_min"]),
+            "max": int(model["writing"]["target_words_max"]),
+            "step": int(model["writing"]["target_words_step"]),
+            "upper_ratio": float(model["writing"]["target_words_upper_ratio"]),
         },
         "output_format": model["writing"]["output_format"],
         "first_line_template": model["writing"]["first_line_template"],
@@ -602,14 +632,17 @@ def validate_editor_model(
         if not role_path.exists():
             messages.append(ValidationMessage("warning", f"role_file 当前不存在：{role_path}"))
 
-    min_value = _coerce_int(model["writing"]["min_words_min"], default=100)
-    default_value = _coerce_int(model["writing"]["min_words_default"], default=500)
-    max_value = _coerce_int(model["writing"]["min_words_max"], default=15000)
-    step_value = _coerce_int(model["writing"]["min_words_step"], default=100)
+    min_value = _coerce_int(model["writing"]["target_words_min"], default=100)
+    default_value = _coerce_int(model["writing"]["target_words_default"], default=500)
+    max_value = _coerce_int(model["writing"]["target_words_max"], default=15000)
+    step_value = _coerce_int(model["writing"]["target_words_step"], default=100)
+    upper_ratio_value = _coerce_float(model["writing"]["target_words_upper_ratio"], default=1.15)
     if not (min_value <= default_value <= max_value):
-        messages.append(ValidationMessage("error", "字数配置需要满足 min <= default <= max。"))
+        messages.append(ValidationMessage("error", "target_words 配置需要满足 min <= default <= max。"))
     if step_value <= 0:
-        messages.append(ValidationMessage("error", "min_words.step 必须大于 0。"))
+        messages.append(ValidationMessage("error", "target_words.step 必须大于 0。"))
+    if upper_ratio_value < 1.0:
+        messages.append(ValidationMessage("error", "target_words.upper_ratio 不能小于 1.0。"))
     if _coerce_int(model["writing"]["max_mermaid_flowcharts_per_section"], default=0) < 0:
         messages.append(ValidationMessage("error", "max_mermaid_flowcharts_per_section 不能小于 0。"))
 
@@ -995,11 +1028,12 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
     "writing": {
         "role": True,
         "role_file": True,
-        "min_words": {
+        "target_words": {
             "default": True,
             "min": True,
             "max": True,
             "step": True,
+            "upper_ratio": True,
         },
         "output_format": True,
         "first_line_template": True,
@@ -1136,6 +1170,7 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
     "scoring_criteria": True,
     "scoring_criteria_file": True,
     "default_min_words": True,
+    "min_words": True,
 }
 
 _LEGACY_API_MANAGED_SCHEMA: dict[str, Any] = {
