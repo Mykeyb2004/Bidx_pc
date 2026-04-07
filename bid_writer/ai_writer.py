@@ -144,6 +144,34 @@ class AIWriter:
             return concise_terms[:3]
         return [title_core] if title_core else [heading.title]
 
+    def _build_task_basis_line(
+        self,
+        *,
+        pruned_context: Optional[ChapterContext],
+        full_context_reference_before_task: bool = False,
+        full_context_has_bid_requirements: bool = False,
+        full_context_has_scoring_criteria: bool = False,
+    ) -> str:
+        if pruned_context is not None:
+            return "- 写作依据：优先根据下方评分关注和需求要点组织内容。"
+
+        references: list[str] = []
+        if full_context_has_bid_requirements:
+            references.append("招标需求")
+        if full_context_has_scoring_criteria:
+            references.append("评分标准")
+
+        if not references:
+            return "- 写作依据：优先围绕当前章节任务卡和章节边界组织内容。"
+
+        reference_text = "与".join(references)
+        if full_context_reference_before_task:
+            return (
+                f"- 写作依据：优先依据前文固定参考材料中的{reference_text}组织内容，"
+                "并严格围绕当前章节任务卡和章节边界展开。"
+            )
+        return f"- 写作依据：优先根据下方{reference_text}参考组织内容。"
+
     def _build_task_card(
         self,
         heading: HeadingNode,
@@ -151,6 +179,7 @@ class AIWriter:
         target_word_range: TargetWordRange,
         chapter_writing_plan: str = "",
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
+        task_basis_line: str = "",
     ) -> str:
         chain = self._heading_chain(heading)
         project_title = chain[0].title if chain else heading.title
@@ -159,6 +188,8 @@ class AIWriter:
         mermaid_rule_text = self._build_mermaid_flowchart_rule_text(
             max_mermaid_flowcharts_per_section_override
         )
+        if not task_basis_line:
+            task_basis_line = self._build_task_basis_line(pruned_context=pruned_context)
 
         lines = [
             "## 章节任务卡",
@@ -172,7 +203,7 @@ class AIWriter:
             f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
             "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。",
             f"- 表格控制：{self._build_table_rule_text()}",
-            "- 写作依据：优先根据下方评分关注和需求要点组织内容。",
+            task_basis_line,
         ]
         if mermaid_rule_text:
             lines.insert(8, f"- 流程图控制：{mermaid_rule_text}")
@@ -552,13 +583,14 @@ class AIWriter:
     def _join_prompt_section_contents(sections: list[tuple[str, str]]) -> str:
         return "\n".join(content for _, content in sections if content)
 
-    def _build_full_context_reference_sections(
+    def _build_full_context_stable_prefix_sections(
         self,
-        scope_reference: str,
         background: str,
         full_context_stats: dict[str, Any],
     ) -> list[tuple[str, str]]:
-        sections: list[tuple[str, str]] = [("scope_reference", scope_reference)]
+        sections: list[tuple[str, str]] = [
+            ("structure_contract", self._build_structure_contract_section())
+        ]
 
         if background:
             sections.append(
@@ -804,12 +836,18 @@ class AIWriter:
 
         full_context_sections: list[tuple[str, str]] = []
         chapter_writing_plan = ""
-        use_shared_prefix_layout = False
+        full_context_has_bid_requirements = False
+        full_context_has_scoring_criteria = False
         if pruned_context is None:
-            full_context_sections = self._build_full_context_reference_sections(
-                scope_reference,
+            full_context_sections = self._build_full_context_stable_prefix_sections(
                 background,
                 full_context_stats,
+            )
+            full_context_has_bid_requirements = any(
+                name == "bid_requirements" for name, _ in full_context_sections
+            )
+            full_context_has_scoring_criteria = any(
+                name == "scoring_criteria" for name, _ in full_context_sections
             )
             shared_prompt_prefix = self._join_prompt_section_contents(full_context_sections)
             if self.chapter_writing_plan_generator is not None:
@@ -818,34 +856,54 @@ class AIWriter:
                         heading,
                         system_prompt=system_prompt,
                         shared_prompt_prefix=shared_prompt_prefix,
+                        scope_reference=scope_reference,
                     )
                 except Exception:
                     chapter_writing_plan = ""
-                use_shared_prefix_layout = bool(shared_prompt_prefix.strip())
 
         full_context_stats["chapter_writing_plan_chars"] = len(chapter_writing_plan)
+        task_basis_line = self._build_task_basis_line(
+            pruned_context=pruned_context,
+            full_context_reference_before_task=pruned_context is None,
+            full_context_has_bid_requirements=full_context_has_bid_requirements,
+            full_context_has_scoring_criteria=full_context_has_scoring_criteria,
+        )
 
-        if use_shared_prefix_layout:
+        if pruned_context is None:
             self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
-
-        self._append_prompt_section(
-            prompt_parts,
-            prompt_sections,
-            "task_card",
-            self._build_task_card(
-                heading,
-                pruned_context,
-                target_word_range,
-                chapter_writing_plan=chapter_writing_plan,
-                max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
-            ),
-        )
-        self._append_prompt_section(
-            prompt_parts,
-            prompt_sections,
-            "structure_contract",
-            self._build_structure_contract_section(),
-        )
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "task_card",
+                self._build_task_card(
+                    heading,
+                    pruned_context,
+                    target_word_range,
+                    chapter_writing_plan=chapter_writing_plan,
+                    max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+                    task_basis_line=task_basis_line,
+                ),
+            )
+        else:
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "task_card",
+                self._build_task_card(
+                    heading,
+                    pruned_context,
+                    target_word_range,
+                    chapter_writing_plan=chapter_writing_plan,
+                    max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+                    task_basis_line=task_basis_line,
+                ),
+            )
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "structure_contract",
+                self._build_structure_contract_section(),
+            )
 
         if first_line:
             self._append_prompt_section(
@@ -922,8 +980,12 @@ class AIWriter:
 """,
                 )
         else:
-            if not use_shared_prefix_layout:
-                self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "scope_reference",
+                scope_reference,
+            )
 
         # 添加用户附加要求
         if additional_requirements:

@@ -32,6 +32,7 @@ class ChapterWritingPlanGenerator:
         *,
         system_prompt: str,
         shared_prompt_prefix: str,
+        scope_reference: str = "",
     ) -> str:
         """返回缓存的章节写作计划，若缓存未命中则调用 LLM 生成。"""
         if not shared_prompt_prefix.strip():
@@ -41,6 +42,7 @@ class ChapterWritingPlanGenerator:
             heading,
             system_prompt=system_prompt,
             shared_prompt_prefix=shared_prompt_prefix,
+            scope_reference=scope_reference,
         )
         if cache_path.exists():
             try:
@@ -59,6 +61,7 @@ class ChapterWritingPlanGenerator:
                 heading,
                 system_prompt=system_prompt,
                 shared_prompt_prefix=shared_prompt_prefix,
+                scope_reference=scope_reference,
             )
             if plan:
                 self._write_cache(cache_path, plan)
@@ -70,6 +73,7 @@ class ChapterWritingPlanGenerator:
         *,
         system_prompt: str,
         shared_prompt_prefix: str,
+        scope_reference: str,
     ) -> Path:
         max_chars = self.config.chapter_writing_plan_max_chars
         hash_input = (
@@ -77,6 +81,7 @@ class ChapterWritingPlanGenerator:
             f"{heading.full_path}\n"
             f"{system_prompt}\n"
             f"{shared_prompt_prefix}\n"
+            f"{scope_reference}\n"
             f"{max_chars}"
         )
         hash_key = hashlib.sha1(hash_input.encode("utf-8")).hexdigest()[:16]
@@ -98,11 +103,13 @@ class ChapterWritingPlanGenerator:
         *,
         system_prompt: str,
         shared_prompt_prefix: str,
+        scope_reference: str,
     ) -> str:
         max_chars = self.config.chapter_writing_plan_max_chars
         prompt = self._build_prompt(
             heading,
             shared_prompt_prefix=shared_prompt_prefix,
+            scope_reference=scope_reference,
             max_chars=max_chars,
         )
 
@@ -134,19 +141,28 @@ class ChapterWritingPlanGenerator:
         heading: HeadingNode,
         *,
         shared_prompt_prefix: str,
+        scope_reference: str,
         max_chars: int,
     ) -> str:
-        return (
-            f"{shared_prompt_prefix}\n\n"
-            "## 当前任务\n"
-            "请先不要写正文，只输出当前章节的“章节写作计划”。\n"
-            f"- 当前章节：{heading.title}\n"
-            f"- 当前章节路径：{heading.full_path}\n\n"
-            "输出要求：\n"
-            "1. 只输出“章节写作计划”内容，不要输出正文\n"
-            "2. 用 4-6 条编号列出本章建议写作结构\n"
-            "3. 每条说明应写清本段要回应的需求或评分关注\n"
-            "4. 重点服务于对应评分标准、项目采购背景与本章边界\n"
-            "5. 不写“根据以上内容”“综上所述”等说明性话术\n"
-            f"6. 总长度控制在 {max_chars} 字以内"
+        parts = [shared_prompt_prefix.strip()]
+        if scope_reference.strip():
+            parts.append(scope_reference.strip())
+        parts.append(
+            "\n".join(
+                [
+                    "## 当前任务",
+                    "请先不要写正文，只输出当前章节的“章节写作计划”。",
+                    f"- 当前章节：{heading.title}",
+                    f"- 当前章节路径：{heading.full_path}",
+                    "",
+                    "输出要求：",
+                    "1. 只输出“章节写作计划”内容，不要输出正文",
+                    "2. 用 4-6 条编号列出本章建议写作结构",
+                    "3. 每条说明应写清本段要回应的需求或评分关注",
+                    "4. 重点服务于对应评分标准、项目采购背景与本章边界",
+                    "5. 不写“根据以上内容”“综上所述”等说明性话术",
+                    f"6. 总长度控制在 {max_chars} 字以内",
+                ]
+            )
         )
+        return "\n\n".join(part for part in parts if part)

@@ -146,7 +146,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 ### 3.2 user prompt 装配顺序
 
-`AIWriter.build_prompt_result()` 是章节 prompt 的核心装配函数。默认顺序为：
+`AIWriter.build_prompt_result()` 是章节 prompt 的核心装配函数。pruned 分支的默认顺序为：
 
 1. `task_card`
 2. `structure_contract`
@@ -160,16 +160,18 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
    - `scoring_criteria`
 7. `additional_requirements`
 
-但在 `full_context + chapter_writing_plan` 这条组合下，会为了 prompt cache 命中率改成“共享参考段落在前、任务段落在后”：
+在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
 
-1. `scope_reference`
+1. `structure_contract`
 2. `project_background`，若存在
 3. `bid_requirements`
 4. `scoring_criteria`
 5. `task_card`
-6. `structure_contract`
-7. `first_line_rule`，若存在
+6. `first_line_rule`，若存在
+7. `scope_reference`
 8. `additional_requirements`
+
+这里不会把 `scope_reference` 放进共享前缀，因为它包含当前标题、上级标题和同级标题，属于章节动态信息；若放在最前面，反而会降低跨 h3/h4 调用的前缀复用率。
 
 这套差异化顺序也是 `docs/prompt_contract.md` 中维护的契约。
 
@@ -192,7 +194,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 - “本章重点”并不是简单使用标题原文，而是优先来自裁剪后的焦点词
 - 当 `processing.path = full_context` 且开启 `processing.full_context.chapter_writing_plan.enabled` 时，会先调用章节写作计划生成器生成简短的“章节写作计划”，再把它插入任务卡
-- 该生成器会优先复用正文扩写所使用的 `system prompt` 与 full-context 共享参考前缀，以提高模型 cache 命中概率
+- 该生成器会优先复用正文扩写所使用的 `system prompt` 与 full-context 稳定前缀；章节边界信息会作为后缀单独追加，以兼顾 cache 命中率和章节边界表达
 - 当 `max_mermaid_flowcharts_per_section` 的配置值或运行时 override 值大于 `0` 时，任务卡会额外插入“流程图控制”一行；值为 `0` 时不会提及 Mermaid
 
 ### 3.4 结构硬约束

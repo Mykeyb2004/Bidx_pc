@@ -112,8 +112,15 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "- 当前章节路径：综合服务项目投标方案 > 项目实施方案 > 质量保障措施" in result.prompt
+    assert (
+        "- 写作依据：优先依据前文固定参考材料中的招标需求与评分标准组织内容，"
+        "并严格围绕当前章节任务卡和章节边界展开。"
+    ) in result.prompt
     assert "## 章节边界参考" in result.prompt
     assert "## 完整总大纲参考" not in result.prompt
+    assert result.prompt.index("## 结构输出硬要求") < result.prompt.index("## 招标需求参考")
+    assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节任务卡")
+    assert result.prompt.index("## 章节任务卡") < result.prompt.index("## 章节边界参考")
 
 
 def test_task_card_omits_mermaid_control_when_limit_is_zero(monkeypatch, tmp_path):
@@ -167,7 +174,7 @@ def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_p
         (),
         {
             "get_or_generate": staticmethod(
-                lambda _heading, *, system_prompt, shared_prompt_prefix: (
+                lambda _heading, *, system_prompt, shared_prompt_prefix, scope_reference: (
                     "1. 先回应项目目标。\n2. 再回应质量评分点。"
                 )
             )
@@ -194,9 +201,10 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
 
     class DummyPlanGenerator:
         @staticmethod
-        def get_or_generate(_heading, *, system_prompt, shared_prompt_prefix):
+        def get_or_generate(_heading, *, system_prompt, shared_prompt_prefix, scope_reference):
             captured["system_prompt"] = system_prompt
             captured["shared_prompt_prefix"] = shared_prompt_prefix
+            captured["scope_reference"] = scope_reference
             return "1. 先回应采购需求。\n2. 再逐条覆盖评分关注。"
 
     writer.project_background_generator = type(
@@ -210,12 +218,15 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert captured["system_prompt"] == writer.build_system_prompt()
-    assert captured["shared_prompt_prefix"].startswith("## 章节边界参考")
+    assert captured["shared_prompt_prefix"].startswith("## 结构输出硬要求")
     assert "## 项目背景" in captured["shared_prompt_prefix"]
     assert "## 招标需求参考" in captured["shared_prompt_prefix"]
     assert "## 评分标准参考" in captured["shared_prompt_prefix"]
+    assert "## 章节边界参考" not in captured["shared_prompt_prefix"]
+    assert captured["scope_reference"].startswith("## 章节边界参考")
     assert result.prompt.startswith(captured["shared_prompt_prefix"])
     assert result.prompt.index("## 章节任务卡") > result.prompt.index("## 评分标准参考")
+    assert result.prompt.index("## 章节边界参考") > result.prompt.index("## 章节任务卡")
 
 
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):
