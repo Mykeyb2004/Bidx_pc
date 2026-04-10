@@ -86,6 +86,27 @@ uv run bid-writer
 uv run python run.py --config config_公共服务满意度_auto.yaml
 ```
 
+## 构建 Windows EXE
+
+仓库已提供 GitHub Actions workflow：[`build-windows-exe.yml`](./.github/workflows/build-windows-exe.yml)。
+
+使用方式：
+
+1. 将代码推送到 `main` 分支，或手动在 GitHub 的 `Actions -> Build Windows EXE -> Run workflow` 触发。
+2. Workflow 会在 `windows-latest` 上安装依赖，并使用 `PyInstaller` 将 [`run.py`](./run.py) 打包为单文件 `bid-writer.exe`。
+3. 构建完成后，可在该次 workflow 的 `Artifacts` 中下载 `bid-writer-windows-exe`，其中包含：
+   - `bid-writer.exe`
+   - `config.example.yaml`
+   - `.env.example`
+   - `README.md`
+4. 如果推送的是形如 `v1.0.0` 的标签，workflow 还会自动创建 GitHub Release，并上传 `bid-writer-v1.0.0-windows.zip` 这样的发布包。
+
+说明：
+
+- 该 workflow 产出的是 Windows 可执行文件，需要在 Windows 环境运行。
+- 首次启动时，仍需要准备配置文件和模型相关环境变量。
+- 常见发版命令示例：`git tag v1.0.0 && git push origin v1.0.0`
+
 ## 使用流程
 
 1. 启动后，程序会按“显式参数 -> 上次成功配置 -> `config.yaml` -> 当前目录下其它 `config*.yaml`”的顺序寻找配置文件。

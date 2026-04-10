@@ -2,6 +2,8 @@
 /杭博满意度投标/
 /output/
 /log/
+/build/
+/dist/
 __pycache__/
 *.pyc
 *.pyo
