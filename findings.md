@@ -204,3 +204,41 @@
 - 对“用户可能不懂参数”的问题，最直接有效的改法不是再挪分组，而是给字段本身补悬停解释；这样用户在编辑现场就能获得解释，不需要来回翻文档。
 - 将 tip 文案单独抽到 `config_editor_tooltips.py` 后，后续可以独立维护字段说明，而不必反复改动 Tk 布局代码。
 - `ScrollableSection` 若直接对每个分区使用 `bind_all("<MouseWheel>")`，在窗口关闭后容易残留全局滚轮回调；这类问题必须在回调里兜底 `TclError`，并在销毁时主动解绑。
+
+## 章节依存关系评估的初步发现
+- `docs/chapter_expansion_mechanism.md` 和 `docs/prompt_contract.md` 都表明，当前 user prompt 只注入“当前章节任务 + 裁剪后的招标需求/评分标准 + 当前章节边界信息”，没有“已写章节结论摘要”区块。
+- 现有 `context_pruning` 主要负责“源文材料到当前章节”的路由，不负责“已生成章节到当前章节”的跨章节一致性传递。
+- 当前 `local_outline` 只帮助界定当前章节与兄弟章节边界，并不会把兄弟章节已写结果回灌到 prompt。
+- 当前 full-context 分支虽然能注入完整需求和评分标准，但这只能缓解“对原始要求理解不一致”，不能解决“前文已做出的具体承诺/口径在后文不一致”。
+- 文档中已有 `chapter_writing_plan` 能在 full-context 模式下先生成“章节写作计划”，说明现有架构允许在正文扩写前插入额外的前置推理/摘要步骤。
+- 从机制上看，“章节依存关系”更适合落在 `AIWriter.build_prompt_result()` 之前或之中，作为与 `scoring_focus` / `requirement_brief` 同级的新 prompt 区块，而不是混进 system prompt。
+
+## 章节依存关系评估的代码级发现
+- `AIWriter.build_prompt_result()` 当前只在 pruned 分支追加 `scope_reference`、`project_background`、`scoring_focus`、`requirement_brief/points`，在 full-context 分支则追加完整 `bid_requirements`、`scoring_criteria`，没有任何“chapter dependency / prior section context”注入口。
+- `AIWriter._build_prompt_contract_blocks()` 已把 prompt 拆成 `system_constraints / chapter_task / structure_rules / chapter_scope / project_background / requirement_context / scoring_context` 七类区块，这为未来新增 `dependency_context` 提供了清晰扩展点。
+- `ChapterWritingPlanGenerator` 已经实现了“在正文前先生成一个短文本、并按 `heading.full_path + prompt 输入` 做缓存”的模式；如果要新增“依存摘要生成器”，这套缓存与请求组织方式基本可以复用。
+- `FileSaver.find_existing_filepath()` 已能基于 `heading_id` 或兼容旧命名规则稳定找到某章节“最近一次生成”的正文文件；`load_section_body()` 还能去掉 front matter 和重复标题，适合作为依存摘要的输入源。
+- 当前 GUI 侧 `_show_heading_preview_in_workspace()` 和 `BidWriter.merge_generated_sections()` 都已经在读回已生成章节正文，但这些读取结果只用于预览和整合，没有进入 `AIWriter`。
+- `context_pruner._build_requirement_brief()` 当前不是调用 LLM 摘要，而是从命中的需求块中抽取短摘录，这说明项目现有偏好是“证据型压缩”而不是“自由总结”；章节依存摘要如果照此风格设计，风险会更低。
+- `Config` 已有 `processing.full_context.chapter_writing_plan.*` 这类前置辅助能力配置入口，新增 `chapter_dependencies.*` 时可以复用同样的 schema 风格，而不必把配置散落到根级字段。
+
+## 章节依存关系评估的建模结论
+- 这个需求本质上不是“扩大原始输入上下文”，而是新增一条“生成结果到后续生成结果”的中间记忆链路。
+- 依存关系至少可分为三类：
+  - 前文承诺继承：后续章节必须沿用前文已确定的目标、口径、组织模式、角色分工、时间节点等
+  - 横向边界避让：当前章节应知道相邻兄弟章节已承担了什么，避免重复
+  - 后文预埋约束：当前章节在写作时应兼顾后续章节将展开的内容边界，避免抢写
+- 真正适合注入 prompt 的，主要是“前文承诺继承”和“横向边界避让”；“后文预埋约束”更适合作为依存选择规则的一部分，而不是直接注入未来未知内容。
+- 依存摘要来源建议分层：
+  - 第一层：直接摘取已写章节中的结构化句子/要点，风险最低
+  - 第二层：对已写章节做受限摘要，只抽“本章已确定事实/承诺/口径”
+  - 第三层：跨多个依存章节再做汇总，适合作为后续增强，不适合首版
+- 配置挂载位置最自然的是 `processing.full_context.chapter_dependencies.*`，因为当前最明显的一致性问题集中在 full-context 直写链路；后续如有需要，再决定是否对 `legacy_rule` / `hybrid_extract` 共享该能力。
+- `config.example.yaml` 与 `docs/config_schema.md` 已有 `processing.full_context.chapter_writing_plan.*` 先例，因此“章节依存摘要”作为同类前置辅助能力加入 schema，不会破坏当前 canonical 设计。
+
+## 章节依存关系评估的最终落点
+- 最核心的改动入口是 `AIWriter.build_prompt_result()`：这里当前负责决定哪些 prompt section 被注入，因此新增 `dependency_context` 区块最顺手。
+- 与之配套的提示词合同扩展点是 `AIWriter._build_prompt_contract_blocks()`；如果实现该能力，需要同步把 `dependency_context` 写入 trace/contract，否则后续难以审计实际注入了哪些依存摘要。
+- 最适合复用的实现模式不是 `context_pruner`，而是 `ChapterWritingPlanGenerator` 这种“按当前章节 + 输入上下文生成短文本并落缓存”的辅助生成器。
+- 读取依存章节正文时，应优先通过 `FileSaver.find_existing_filepath()` + `load_section_body()` 走稳定 ID 路径，而不是直接猜文件名。
+- 若首版坚持“证据型压缩”，也可以先不走 LLM，只复用 `requirement_brief` 类似的摘录逻辑，对已写章节正文抽取 3-5 条短句作为依存摘要。

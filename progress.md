@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-07
+- 新任务：深入评估“章节扩写时引入前后章节依存关系，把已写章节核心内容提炼后注入 prompt”的需求与实现路径。
+- 已按 `planning-with-files` 流程复核项目内现有 `task_plan.md`、`findings.md`、`progress.md`，并在项目根目录续接本轮分析。
+- 已读取 `docs/chapter_expansion_mechanism.md` 与 `docs/prompt_contract.md`，确认当前 prompt 链路只覆盖 system role、章节任务卡、结构约束、采购需求/评分标准裁剪结果和附加要求。
+- 已确认当前系统尚未把“已写章节的核心结论”作为单独上下文块注入后续章节，因此前后章节一致性主要依赖模型对原始需求的理解，而不是对先前生成内容的显式继承。
+- 已将本轮评估目标、阶段与初步发现写入 `task_plan.md` 与 `findings.md`。
+- 已继续下钻 `bid_writer/ai_writer.py`、`bid_writer/context_pruner.py`、`bid_writer/chapter_writing_plan.py`、`bid_writer/file_saver.py`、`bid_writer/main.py`。
+- 已确认三项关键实现基础：
+  - `AIWriter.build_prompt_result()` 当前没有章节依存上下文区块，但已有清晰的 prompt section/block 扩展位
+  - `ChapterWritingPlanGenerator` 已实现“前置生成短计划并缓存”的模式，可复用于依存摘要
+  - `FileSaver.find_existing_filepath()` / `load_section_body()` 已能稳定读取某章节最新正文，可作为依存摘要输入
+- 已读取 `docs/config_schema.md`、`config.example.yaml` 与 `config_公共服务满意度_auto.yaml`，确认 schema 层已有 `processing.full_context.chapter_writing_plan.*` 这类前置辅助能力范式，可自然承接 `chapter_dependencies.*`。
+- 已完成需求建模收敛：本需求本质是新增“已生成章节 -> 后续章节”的中间记忆链路，而不是继续扩大原始招标需求/评分标准上下文。
+- 已补充关键行号定位，确认最核心的实现入口是 `AIWriter.build_prompt_result()` / `_build_prompt_contract_blocks()`，最适合复用的辅助能力模式是 `ChapterWritingPlanGenerator`，最稳妥的正文读取入口是 `FileSaver.find_existing_filepath()` / `load_section_body()`。
+
 ## 2026-04-03
 - 新任务：评估 `config_公共服务满意度*.yaml` 项目文件的结构混乱来源，并给出优化方案。
 - 已读取现有 `task_plan.md`、`findings.md`、`progress.md` 续接上下文，按 `planning-with-files` 流程记录本轮分析。
