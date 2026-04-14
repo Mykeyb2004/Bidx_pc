@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，收集附加要求、目标篇幅基准值和 Mermaid 流程图上限覆盖值
+3. GUI 选择叶子章节，必要时解析章节依赖摘要，再收集附加要求、目标篇幅基准值和 Mermaid 流程图上限覆盖值
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -26,6 +26,9 @@
 
 - `bid_writer/gui.py`
 - `bid_writer/ai_writer.py`
+- `bid_writer/chapter_dependency_store.py`
+- `bid_writer/chapter_summary_store.py`
+- `bid_writer/chapter_summary_generator.py`
 - `bid_writer/context_pruner.py`
 - `bid_writer/file_saver.py`
 - `bid_writer/generation_trace.py`
@@ -67,9 +70,32 @@ GUI 中批量生成的主要逻辑位于：
 行为特点：
 
 - 先获取选中的叶子节点
-- 再让用户输入“附加扩写要求”和“目标篇幅基准值”
+- 单章模式下，若当前章节配置了依赖章节，会先尝试解析关联章节摘要并默认填入“附加扩写要求”
+- 批量模式下，“附加扩写要求”只收集共享要求；关联章节摘要会在实际逐章生成时按章节动态追加
+- 对尚无正文且尚无可复用摘要的依赖章节，GUI 会先提示用户是否现在提炼“规划摘要”
 - 批量模式逐章执行
 - 生成内容在主窗口右侧正文工作区实时显示，完成后自动保存
+
+### 1.4 章节依赖关系与摘要缓存
+
+从 2026-04 起，GUI 额外维护两类项目级 sidecar 数据，默认保存在项目根目录下的 `.bid_writer/`：
+
+- `chapter_dependencies.json`
+  - 记录“目标章节 -> 依赖章节列表”
+  - 使用 `HeadingNode.full_path` 作为稳定键，避免标题重名时误匹配
+- `chapter_summaries.json`
+  - 记录“某个章节当前可复用的摘要”
+  - 摘要按来源分为：
+    - `output`
+      - 基于已生成正文提炼
+    - `planned`
+      - 当正文不存在时，基于章节边界、需求和评分关注提炼的规划摘要
+
+缓存复用规则：
+
+- 若依赖章节已有正文，则优先按正文内容 hash 复用或刷新 `output` 摘要
+- 若依赖章节暂无正文，但已有可复用的 `planned` 摘要，则直接复用
+- 若两者都没有，GUI 会提示用户是否现在生成 `planned` 摘要
 
 ## 二、配置如何影响章节扩写
 
@@ -214,6 +240,22 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - `prompt.extra_rules` 不再单独成段，而是追加到 `## 结构输出硬要求` 的末尾
 
 这两项都属于 user prompt 的结构补充，不属于 system 级约束。
+
+### 3.6 关联章节摘要如何进入 prompt
+
+“关联章节摘要”当前不会作为新的独立 prompt block 接入 `AIWriter.build_prompt_result()`；它仍然走既有的 `additional_requirements` 通道。
+
+也就是说：
+
+- 单章生成时，GUI 会把自动提炼出的关联章节摘要先填入“附加扩写要求”输入框，用户可继续编辑
+- 批量生成时，GUI 只让用户编辑共享要求；每章自己的关联章节摘要会在调用 `prepare_generation()` 前与共享要求做字符串拼接
+- 对 `AIWriter` 而言，它收到的仍然只是最终合并后的 `additional_requirements`
+
+维护影响：
+
+- prompt contract 不新增独立 block
+- trace 中记录的 `additional_requirements` 已包含最终注入结果
+- 若要排查某章实际拿到了哪些关联章节摘要，优先查看该章 trace 的 `01_heading.json` 与 `04_prompt_user.md`
 
 ## 四、章节级上下文裁剪
 

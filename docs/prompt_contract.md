@@ -135,6 +135,11 @@
 - `build_prompt_result()` 里如果 `context_pruner.build_context(...)` 抛异常，会直接静默回退到 full-context 分支
 - 也就是说，只要裁剪失败，大模型看到的就会变成完整大纲、完整采购需求、完整评分标准
 
+补充：
+
+- 从 2026-04 起，GUI 可能会在运行时把“关联章节摘要”拼进 `additional_requirements`
+- 这类摘要属于 GUI 层的注入结果，不会在 `build_prompt_result()` 内形成新的独立 block
+
 ### 4.2 `ChapterContext` 是什么
 
 `ChapterContext` 是章节级裁剪结果，包含：
@@ -331,6 +336,11 @@ pruned 分支里，需求相关内容只会出现一个区块：
    - full-context 分支
 5. 可选 `additional_requirements`
 
+其中 `additional_requirements` 的真实来源可能有两类：
+
+- 操作员手工输入的附加要求
+- GUI 基于章节依赖关系自动注入的“关联章节摘要”文本
+
 这个顺序是硬编码的，没有配置化。
 
 ### 5.2 低层 section 一览
@@ -346,7 +356,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |
 | `bid_requirements` | `## 招标需求参考` | full 分支且有采购需求原文时 | 放完整采购需求 |
 | `scoring_criteria` | `## 评分标准参考` | full 分支且有评分标准原文时 | 放完整评分标准 |
-| `additional_requirements` | `## 用户附加要求` | 用户输入非空时 | 运营侧临时补充要求 |
+| `additional_requirements` | `## 用户附加要求` | 最终附加要求非空时 | 运营侧临时补充要求，或 GUI 自动注入的关联章节摘要 |
 
 ### 5.3 `task_card` 具体写了什么
 
@@ -609,7 +619,7 @@ messages = [
 | `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
 | `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
-| `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
+| `additional_requirements` | 运行时入参 | 操作员临时补充的要求，或 GUI 自动拼入的关联章节摘要 | 是 |
 | `target_words` | 运行时入参 | 目标篇幅基准值；会进一步推导成区间文案 | 是 |
 | `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 流程图上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |

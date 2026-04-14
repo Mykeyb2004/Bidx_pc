@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Optional
 
 from .ai_writer import AIWriter
+from .chapter_dependency_store import ChapterDependencyStore
+from .chapter_summary_generator import ChapterSummaryGenerator, ChapterSummaryResult
+from .chapter_summary_store import ChapterSummaryStore
 from .config import Config
 from .file_saver import FileSaver
 from .outline_parser import HeadingNode, parse_outline
@@ -52,6 +55,14 @@ class BidWriter:
             include_title_header=self.config.output_include_title_header,
             overwrite_existing=self.config.output_overwrite_existing
         )
+        self.chapter_dependency_store = ChapterDependencyStore(self.config)
+        self.chapter_summary_store = ChapterSummaryStore(self.config)
+        self.chapter_summary_generator = ChapterSummaryGenerator(
+            self.config,
+            self.ai_writer,
+            self.file_saver,
+            self.chapter_summary_store,
+        )
 
     def load_outline(self) -> bool:
         """加载并解析大纲"""
@@ -70,6 +81,66 @@ class BidWriter:
         self.config.reload()
         self._rebuild_services()
         self.last_error_message = ""
+
+    def get_dependency_headings(self, heading: HeadingNode) -> list[HeadingNode]:
+        """返回当前章节配置的依赖章节。"""
+        if self.parser is None:
+            return []
+        dependencies: list[HeadingNode] = []
+        seen: set[str] = set()
+        for full_path in self.chapter_dependency_store.list_dependency_paths(heading):
+            dependency = self.parser.find_heading_by_full_path(full_path)
+            if dependency is None or dependency.full_path in seen:
+                continue
+            seen.add(dependency.full_path)
+            dependencies.append(dependency)
+        return dependencies
+
+    def get_all_dependency_source_headings(self) -> list[HeadingNode]:
+        """返回当前项目中所有被依赖章节的去重列表。"""
+        if self.parser is None:
+            return []
+        result: list[HeadingNode] = []
+        seen: set[str] = set()
+        for heading in self.parser.get_all_headings():
+            if heading.children:
+                continue
+            for dependency in self.get_dependency_headings(heading):
+                if dependency.full_path in seen:
+                    continue
+                seen.add(dependency.full_path)
+                result.append(dependency)
+        result.sort(key=lambda item: (item.line_number, item.full_path))
+        return result
+
+    def set_chapter_dependencies(self, heading: HeadingNode, dependencies: list[HeadingNode]) -> None:
+        """保存章节依赖关系。"""
+        self.chapter_dependency_store.set_dependencies(heading, dependencies)
+
+    def get_available_chapter_summary(self, heading: HeadingNode) -> Optional[ChapterSummaryResult]:
+        """优先返回正文摘要，正文不存在时回退到可复用的规划摘要。"""
+        return self.chapter_summary_generator.get_available_summary(heading)
+
+    def ensure_output_chapter_summary(self, heading: HeadingNode) -> Optional[ChapterSummaryResult]:
+        """生成或复用正文摘要。"""
+        return self.chapter_summary_generator.ensure_output_summary(heading)
+
+    def get_output_summary_status(self, heading: HeadingNode) -> str:
+        """返回正文摘要缓存状态。"""
+        return self.chapter_summary_generator.get_output_summary_status(heading)
+
+    def ensure_planned_chapter_summary(self, heading: HeadingNode) -> Optional[ChapterSummaryResult]:
+        """生成或复用规划摘要。"""
+        return self.chapter_summary_generator.ensure_planned_summary(heading)
+
+    def has_cached_chapter_summary(self, heading: HeadingNode) -> bool:
+        """检查是否存在已缓存的章节摘要。"""
+        return self.chapter_summary_store.get(heading) is not None
+
+    @staticmethod
+    def format_dependency_summary_block(entries: list[ChapterSummaryResult]) -> str:
+        """格式化依赖章节摘要块。"""
+        return ChapterSummaryGenerator.format_dependency_summary_block(entries)
 
     @staticmethod
     def _get_heading_chain(heading: HeadingNode) -> list[HeadingNode]:

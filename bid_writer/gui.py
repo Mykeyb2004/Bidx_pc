@@ -848,6 +848,7 @@ class MainWindow(tk.Tk):
 
         # 创建展开/收缩菜单
         self.create_expand_menu()
+        self.create_outline_context_menu()
 
         # 绑定快捷键
         self.bind_shortcuts()
@@ -893,12 +894,14 @@ class MainWindow(tk.Tk):
         menubar.add_cascade(label="文件", menu=file_menu)
 
         # 操作菜单
-        action_menu = tk.Menu(menubar, tearoff=0)
-        action_menu.add_command(label="生成所选", command=self.batch_generate)
-        action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
-        action_menu.add_separator()
-        action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
-        menubar.add_cascade(label="操作", menu=action_menu)
+        self.action_menu = tk.Menu(menubar, tearoff=0)
+        self.action_menu.add_command(label="生成所选", command=self.batch_generate)
+        self.action_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
+        self.action_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
+        self.action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
+        self.action_menu.add_separator()
+        self.action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
+        menubar.add_cascade(label="操作", menu=self.action_menu)
 
         # 帮助菜单
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -922,60 +925,42 @@ class MainWindow(tk.Tk):
         self.action_bar.pack(fill=tk.X)
 
         self.utility_frame = ttk.Frame(self.action_bar)
-
-        self.btn_config = ttk.Button(
+        self.btn_project_menu = ttk.Menubutton(
             self.utility_frame,
-            text="切换配置",
-            command=self.select_and_switch_config,
+            text="项目",
             padding=(12, 8),
             **_bootstyle_kwargs("secondary")
         )
-        self.btn_config.pack(side=tk.LEFT, padx=(0, 6))
+        self.project_tools_menu = tk.Menu(self.btn_project_menu, tearoff=0)
+        self.project_tools_menu.add_command(label="切换配置...", command=self.select_and_switch_config)
+        self.project_tools_menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
+        self.project_tools_menu.add_separator()
+        self.project_tools_menu.add_command(label="重载大纲", command=self.reload_outline)
+        self.project_tools_menu.add_command(label="扫描输出状态", command=self.refresh_status)
+        self.project_tools_menu.add_separator()
+        self.project_tools_menu.add_command(label="打开输出目录", command=self.open_output_dir)
+        self.btn_project_menu["menu"] = self.project_tools_menu
+        self.btn_project_menu.pack(side=tk.LEFT, padx=(0, 6))
 
-        self.btn_edit_config = ttk.Button(
+        self.btn_chapter_tools_menu = ttk.Menubutton(
             self.utility_frame,
-            text="编辑配置",
-            command=self.open_config_editor,
+            text="章节",
             padding=(12, 8),
             **_bootstyle_kwargs("secondary")
         )
-        self.btn_edit_config.pack(side=tk.LEFT, padx=6)
+        self.chapter_tools_menu = tk.Menu(self.btn_chapter_tools_menu, tearoff=0)
+        self.chapter_tools_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
+        self.chapter_tools_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
+        self.btn_chapter_tools_menu["menu"] = self.chapter_tools_menu
+        self.btn_chapter_tools_menu.pack(side=tk.LEFT, padx=6)
 
-        self.btn_reload = ttk.Button(
+        self.btn_view_menu = ttk.Menubutton(
             self.utility_frame,
-            text="重载大纲",
-            command=self.reload_outline,
+            text="视图",
             padding=(12, 8),
             **_bootstyle_kwargs("secondary")
         )
-        self.btn_reload.pack(side=tk.LEFT, padx=6)
-
-        self.btn_refresh = ttk.Button(
-            self.utility_frame,
-            text="扫描输出状态",
-            command=self.refresh_status,
-            padding=(12, 8),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.btn_refresh.pack(side=tk.LEFT, padx=6)
-
-        self.btn_tree_expand = ttk.Button(
-            self.utility_frame,
-            text="展开全部▼",
-            command=self.show_expand_menu,
-            padding=(12, 8),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.btn_tree_expand.pack(side=tk.LEFT, padx=6)
-
-        self.btn_output = ttk.Button(
-            self.utility_frame,
-            text="打开输出目录",
-            command=self.open_output_dir,
-            padding=(12, 8),
-            **_bootstyle_kwargs("info")
-        )
-        self.btn_output.pack(side=tk.LEFT, padx=(6, 0))
+        self.btn_view_menu.pack(side=tk.LEFT, padx=6)
 
         self.action_frame = ttk.Frame(self.action_bar)
 
@@ -1070,23 +1055,17 @@ class MainWindow(tk.Tk):
         self.status_filter_combo.bind("<<ComboboxSelected>>", lambda event: self.apply_tree_filters())
         self.search_filter_group.columnconfigure(1, weight=1)
 
-        self.btn_select_all = ttk.Button(
+        self.btn_selection_menu = ttk.Menubutton(
             self.selection_action_group,
-            text="全选四级标题",
-            command=self.select_all_leaf_titles,
+            text="选择",
             padding=(10, 6),
             **_bootstyle_kwargs("secondary")
         )
-        self.btn_select_all.pack(side=tk.LEFT, padx=(0, 6))
-
-        self.btn_clear_selection = ttk.Button(
-            self.selection_action_group,
-            text="清空选择",
-            command=self.clear_selection,
-            padding=(10, 6),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.btn_clear_selection.pack(side=tk.LEFT)
+        self.selection_tools_menu = tk.Menu(self.btn_selection_menu, tearoff=0)
+        self.selection_tools_menu.add_command(label="全选四级标题", command=self.select_all_leaf_titles)
+        self.selection_tools_menu.add_command(label="清空选择", command=self.clear_selection)
+        self.btn_selection_menu["menu"] = self.selection_tools_menu
+        self.btn_selection_menu.pack(side=tk.LEFT)
 
         # 大纲树（支持多选）
         tree_frame = ttk.Frame(outline_panel)
@@ -1119,6 +1098,9 @@ class MainWindow(tk.Tk):
         self.outline_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.outline_tree.bind("<<TreeviewOpen>>", self.on_tree_open_close)
         self.outline_tree.bind("<<TreeviewClose>>", self.on_tree_open_close)
+        self.outline_tree.bind("<Button-2>", self.on_tree_context_menu)
+        self.outline_tree.bind("<Button-3>", self.on_tree_context_menu)
+        self.outline_tree.bind("<Control-Button-1>", self.on_tree_context_menu)
 
         self._create_workspace_panel(workspace_panel)
 
@@ -1481,6 +1463,28 @@ class MainWindow(tk.Tk):
             label="收缩全部 (Ctrl+0)",
             command=self.collapse_all
         )
+        if hasattr(self, "btn_view_menu"):
+            self.btn_view_menu["menu"] = self.expand_menu
+
+    def create_outline_context_menu(self):
+        """创建章节树右键菜单。"""
+        self.outline_context_menu = tk.Menu(self, tearoff=0)
+        self.outline_context_menu.add_command(
+            label="生成提炼总结",
+            command=self.generate_context_menu_summary,
+        )
+        self.outline_context_menu.add_command(
+            label="设置章节依赖...",
+            command=self.edit_context_menu_dependencies,
+        )
+        self._context_menu_heading: Optional[HeadingNode] = None
+
+    def _summary_menu_label_for_heading(self, heading: HeadingNode) -> str:
+        """根据章节状态生成右键菜单文案。"""
+        output_status = self.bid_writer.get_output_summary_status(heading)
+        if output_status == "missing_output":
+            return "生成规划摘要"
+        return "刷新提炼总结"
 
     def bind_shortcuts(self):
         """绑定快捷键"""
@@ -1495,10 +1499,11 @@ class MainWindow(tk.Tk):
 
     def show_expand_menu(self):
         """显示展开/收缩菜单"""
-        # 获取按钮的屏幕坐标
-        x = self.btn_tree_expand.winfo_rootx()
-        y = self.btn_tree_expand.winfo_rooty() + self.btn_tree_expand.winfo_height()
-        # 在按钮下方显示菜单
+        anchor = getattr(self, "btn_view_menu", None)
+        if anchor is None:
+            return
+        x = anchor.winfo_rootx()
+        y = anchor.winfo_rooty() + anchor.winfo_height()
         self.expand_menu.post(x, y)
 
     def focus_search(self):
@@ -1808,10 +1813,39 @@ class MainWindow(tk.Tk):
             selected_headings.append(heading)
         return selected_headings
 
+    def _get_single_selected_leaf_heading(self) -> Optional[HeadingNode]:
+        """返回唯一选中的叶子章节。"""
+        selected = self._get_selected_leaf_headings()
+        if len(selected) != 1:
+            return None
+        return selected[0]
+
+    def _set_single_heading_selection(self, heading: HeadingNode) -> None:
+        """将树选择切换为指定单个叶子章节。"""
+        for item_id, node in self.tree_node_map.items():
+            if node.full_path != heading.full_path:
+                continue
+            self.outline_tree.selection_set(item_id)
+            self.outline_tree.focus(item_id)
+            self.outline_tree.see(item_id)
+            break
+
     def update_action_states(self):
         """同步顶部操作按钮和统计信息"""
         selected_headings = self._get_selected_leaf_headings()
         selected_count = len(selected_headings)
+        single_selection = selected_count == 1
+        tool_button_state = tk.DISABLED if self.is_generating else tk.NORMAL
+        selection_menu_state = (
+            tk.DISABLED
+            if self.is_generating or (self.visible_leaf_count == 0 and selected_count == 0)
+            else tk.NORMAL
+        )
+        chapter_tools_state = (
+            tk.DISABLED
+            if self.is_generating or self.bid_writer.parser is None
+            else tk.NORMAL
+        )
         self.selection_text.set(str(selected_count))
         self.btn_generate.config(
             text=f"生成所选 {selected_count}",
@@ -1820,23 +1854,27 @@ class MainWindow(tk.Tk):
         self.btn_merge.config(
             state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL)
         )
-        self.btn_select_all.config(
-            state=(tk.DISABLED if self.is_generating or self.visible_leaf_count == 0 else tk.NORMAL)
-        )
-        self.btn_clear_selection.config(
-            state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL)
-        )
+        self.btn_project_menu.config(state=tool_button_state)
+        self.btn_view_menu.config(state=tool_button_state)
+        self.btn_chapter_tools_menu.config(state=chapter_tools_state)
+        self.btn_selection_menu.config(state=selection_menu_state)
 
-        button_state = tk.DISABLED if self.is_generating else tk.NORMAL
-        for widget in (
-            self.btn_config,
-            self.btn_edit_config,
-            self.btn_reload,
-            self.btn_refresh,
-            self.btn_tree_expand,
-            self.btn_output,
-        ):
-            widget.config(state=button_state)
+        self.selection_tools_menu.entryconfigure(
+            "全选四级标题",
+            state=(tk.DISABLED if self.is_generating or self.visible_leaf_count == 0 else tk.NORMAL),
+        )
+        self.selection_tools_menu.entryconfigure(
+            "清空选择",
+            state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL),
+        )
+        self.chapter_tools_menu.entryconfigure(
+            "设置章节依赖...",
+            state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
+        )
+        self.chapter_tools_menu.entryconfigure(
+            "预提炼依赖摘要...",
+            state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
+        )
 
         self.search_entry.config(state=(tk.DISABLED if self.is_generating else tk.NORMAL))
         self.status_filter_combo.config(state=("disabled" if self.is_generating else "readonly"))
@@ -1891,9 +1929,96 @@ class MainWindow(tk.Tk):
         self.update_action_states()
         self._refresh_workspace_from_selection()
 
+    def on_tree_context_menu(self, event):
+        """在叶子章节上显示右键菜单。"""
+        if self.is_generating:
+            return "break"
+
+        item_id = self.outline_tree.identify_row(event.y)
+        if not item_id:
+            return "break"
+
+        heading = self.tree_node_map.get(item_id)
+        if heading is None or heading.children:
+            return "break"
+
+        self.outline_tree.selection_set(item_id)
+        self.outline_tree.focus(item_id)
+        self._context_menu_heading = heading
+        self.outline_context_menu.entryconfigure(
+            0,
+            label=self._summary_menu_label_for_heading(heading),
+        )
+        self.outline_context_menu.tk_popup(event.x_root, event.y_root)
+        self.outline_context_menu.grab_release()
+        return "break"
+
     def on_title_select(self, event):
         """保留空方法，避免旧绑定报错"""
         pass
+
+    def _get_context_menu_heading(self) -> Optional[HeadingNode]:
+        heading = getattr(self, "_context_menu_heading", None)
+        if heading is not None:
+            return heading
+        return self._get_single_selected_leaf_heading()
+
+    def generate_context_menu_summary(self):
+        """为右键选中的章节生成或复用摘要。"""
+        heading = self._get_context_menu_heading()
+        if heading is None:
+            messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
+            return
+        self._set_single_heading_selection(heading)
+
+        output_status = self.bid_writer.get_output_summary_status(heading)
+        summary_kind = "正文摘要"
+        previous_status = self.status_text.get()
+        try:
+            if output_status == "missing_output":
+                should_generate = messagebox.askyesno(
+                    "生成提炼总结",
+                    "该章节当前还没有已生成正文。\n\n是否基于章节边界、需求和评分关注先生成一份规划摘要？",
+                    parent=self,
+                )
+                if not should_generate:
+                    return
+                self.status_text.set(f"正在生成规划摘要：{heading.title}")
+                self.update_idletasks()
+                result = self.bid_writer.ensure_planned_chapter_summary(heading)
+                summary_kind = "规划摘要"
+            else:
+                self.status_text.set(f"正在生成正文摘要：{heading.title}")
+                self.update_idletasks()
+                result = self.bid_writer.ensure_output_chapter_summary(heading)
+                summary_kind = "正文摘要"
+        finally:
+            self.status_text.set(previous_status)
+
+        if result is None:
+            messagebox.showwarning(
+                "提示",
+                "当前未能生成该章节的提炼总结，请稍后重试。",
+                parent=self,
+            )
+            return
+
+        self._show_workspace_message(
+            f"章节摘要：{heading.full_path}",
+            f"已生成并缓存{summary_kind}",
+            result.summary,
+            generated_char_count=_count_text_characters(result.summary),
+        )
+        self.status_text.set(f"已生成{summary_kind}：{heading.title}")
+
+    def edit_context_menu_dependencies(self):
+        """为右键选中的章节设置依赖项。"""
+        heading = self._get_context_menu_heading()
+        if heading is None:
+            messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
+            return
+        self._set_single_heading_selection(heading)
+        self.edit_selected_dependencies()
 
     def on_tree_open_close(self, event):
         """记录用户手动展开/收缩的树状态"""
@@ -1996,8 +2121,29 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("警告", "请先选择要生成的四级标题")
             return
 
+        dependency_summary_blocks = self._prepare_dependency_summary_blocks(selected_headings)
+        is_single_heading = len(selected_headings) == 1
+        initial_requirements = (
+            dependency_summary_blocks.get(selected_headings[0].full_path, "")
+            if is_single_heading
+            else ""
+        )
+        dependency_hint = ""
+        if is_single_heading and initial_requirements:
+            dependency_hint = "已将当前章节的关联章节摘要默认填入下方输入框，你可以直接编辑。"
+        elif not is_single_heading:
+            injected_count = sum(1 for block in dependency_summary_blocks.values() if block.strip())
+            if injected_count:
+                dependency_hint = (
+                    f"本次多章节生成共为 {injected_count} 个章节准备了关联章节摘要；"
+                    "输入框中的内容将作为共享要求，关联章节摘要会在后台按章节分别追加。"
+                )
+
         # 获取生成参数
-        params = self._get_generation_params()
+        params = self._get_generation_params(
+            initial_requirements=initial_requirements,
+            dependency_hint=dependency_hint,
+        )
         if params is None:
             return  # 用户取消了
 
@@ -2008,6 +2154,11 @@ class MainWindow(tk.Tk):
         warning_line = ""
         if len(selected_headings) >= 20:
             warning_line = "\n\n本次任务较大，建议确认筛选范围后再执行。"
+        dependency_summary_line = ""
+        if dependency_summary_blocks:
+            prepared_count = sum(1 for block in dependency_summary_blocks.values() if block.strip())
+            if prepared_count:
+                dependency_summary_line = f"\n关联章节摘要：已按章节准备 {prepared_count} 份"
 
         if not messagebox.askyesno(
             "确认",
@@ -2015,6 +2166,7 @@ class MainWindow(tk.Tk):
             f"附加要求：{additional_requirements or '（无）'}\n"
             f"目标篇幅：{target_word_range.display_text} 字\n"
             f"Mermaid流程图上限：{max_mermaid_flowcharts_per_section}"
+            f"{dependency_summary_line}"
             f"{warning_line}"
         ):
             return
@@ -2025,6 +2177,8 @@ class MainWindow(tk.Tk):
             additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
+            dependency_summary_blocks={} if is_single_heading else None,
+            dynamic_dependency_summaries=not is_single_heading,
         )
 
     def _do_batch_generate(
@@ -2033,6 +2187,8 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
+        dependency_summary_blocks: Optional[dict[str, str]] = None,
+        dynamic_dependency_summaries: bool = False,
     ):
         """执行批量生成（主线程）"""
         total = len(headings)
@@ -2065,6 +2221,8 @@ class MainWindow(tk.Tk):
                     additional_requirements,
                     target_words,
                     max_mermaid_flowcharts_per_section,
+                    dependency_summary_blocks=(dependency_summary_blocks or {}),
+                    dynamic_dependency_summaries=dynamic_dependency_summaries,
                 )
 
                 completed_count = i
@@ -2211,6 +2369,345 @@ class MainWindow(tk.Tk):
                     # 递归处理子节点
                     self._select_all_leaf_nodes(child_id)
 
+    def _dependency_source_status_text(self, heading: HeadingNode) -> str:
+        has_output = self.bid_writer.file_saver.find_existing_filepath(heading) is not None
+        has_summary = self.bid_writer.has_cached_chapter_summary(heading)
+        if has_output and has_summary:
+            return "已有正文/摘要"
+        if has_output:
+            return "已有正文"
+        if has_summary:
+            return "已有摘要"
+        return "未生成"
+
+    def _edit_chapter_dependencies_dialog(self, target_heading: HeadingNode) -> Optional[list[HeadingNode]]:
+        all_leaf_headings = [
+            heading
+            for heading in self.adapter.get_all_headings()
+            if not heading.children and heading.full_path != target_heading.full_path
+        ]
+        current_dependency_paths = {
+            heading.full_path for heading in self.bid_writer.get_dependency_headings(target_heading)
+        }
+
+        dialog = tk.Toplevel(self)
+        dialog.title("设置章节依赖")
+        apply_window_surface(dialog)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.minsize(760, 520)
+
+        ttk.Label(
+            dialog,
+            text=f"目标章节：{target_heading.full_path}",
+            style="SectionTitle.TLabel",
+        ).pack(fill=tk.X, padx=16, pady=(16, 8))
+        ttk.Label(
+            dialog,
+            text="请选择当前章节依赖的关联章节（可多选）。状态仅作参考：已有正文会优先提炼正文摘要，已有摘要会直接复用。",
+            style="Muted.TLabel",
+            wraplength=700,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, padx=16, pady=(0, 10))
+
+        list_frame = ttk.Frame(dialog, padding=(16, 0, 16, 0))
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        dependency_tree = ttk.Treeview(
+            list_frame,
+            columns=("status",),
+            show="tree headings",
+            selectmode="extended",
+        )
+        dependency_tree.heading("#0", text="章节")
+        dependency_tree.heading("status", text="状态")
+        dependency_tree.column("#0", width=540, anchor=tk.W)
+        dependency_tree.column("status", width=140, anchor=tk.CENTER, stretch=False)
+        self._configure_heading_tree_tags(dependency_tree)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=dependency_tree.yview)
+        dependency_tree.configure(yscrollcommand=scrollbar.set)
+        dependency_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        dependency_item_map: dict[str, HeadingNode] = {}
+        for heading in all_leaf_headings:
+            item_id = dependency_tree.insert(
+                "",
+                tk.END,
+                text=heading.full_path,
+                values=(self._dependency_source_status_text(heading),),
+            )
+            dependency_item_map[item_id] = heading
+            if heading.full_path in current_dependency_paths:
+                dependency_tree.selection_add(item_id)
+
+        footer = ttk.Frame(dialog, padding=(16, 12, 16, 16))
+        footer.pack(fill=tk.X)
+
+        status_var = tk.StringVar(
+            value=f"当前已选 {len(current_dependency_paths)} 个依赖章节"
+        )
+        ttk.Label(footer, textvariable=status_var, style="SummaryLabel.TLabel").pack(
+            side=tk.LEFT
+        )
+
+        def _sync_status(*_args):
+            status_var.set(f"当前已选 {len(dependency_tree.selection())} 个依赖章节")
+
+        dependency_tree.bind("<<TreeviewSelect>>", _sync_status)
+
+        result: dict[str, Optional[list[HeadingNode]]] = {"value": None}
+
+        def _save_selection():
+            selected = [
+                dependency_item_map[item_id]
+                for item_id in dependency_tree.selection()
+                if item_id in dependency_item_map
+            ]
+            result["value"] = selected
+            dialog.destroy()
+
+        ttk.Button(
+            footer,
+            text="保存",
+            command=_save_selection,
+            width=10,
+            **_bootstyle_kwargs("primary"),
+        ).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(
+            footer,
+            text="取消",
+            command=dialog.destroy,
+            width=10,
+            **_bootstyle_kwargs("secondary"),
+        ).pack(side=tk.RIGHT)
+
+        dialog.update_idletasks()
+        width = max(dialog.winfo_reqwidth(), 760)
+        height = max(dialog.winfo_reqheight(), 520)
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        self.wait_window(dialog)
+        return result["value"]
+
+    def edit_selected_dependencies(self):
+        """为当前唯一选中的叶子章节设置依赖关系。"""
+        target_heading = self._get_single_selected_leaf_heading()
+        if target_heading is None:
+            messagebox.showwarning("提示", "请先只选择一个叶子章节，再设置依赖关系。", parent=self)
+            return
+
+        selected_dependencies = self._edit_chapter_dependencies_dialog(target_heading)
+        if selected_dependencies is None:
+            return
+
+        self.bid_writer.set_chapter_dependencies(target_heading, selected_dependencies)
+        count = len(selected_dependencies)
+        if count == 0:
+            self.status_text.set(f"已清空章节依赖：{target_heading.title}")
+        else:
+            self.status_text.set(f"已保存章节依赖：{target_heading.title}（{count} 个）")
+
+    def prewarm_dependency_summaries(self):
+        """提前提炼所有被依赖且已有正文的章节摘要。"""
+        dependency_headings = self.bid_writer.get_all_dependency_source_headings()
+        if not dependency_headings:
+            messagebox.showinfo(
+                "预提炼依赖摘要",
+                "当前项目还没有配置任何章节依赖关系。",
+                parent=self,
+            )
+            return
+
+        up_to_date: list[HeadingNode] = []
+        needs_refresh: list[HeadingNode] = []
+        missing_output: list[HeadingNode] = []
+        for heading in dependency_headings:
+            status = self.bid_writer.get_output_summary_status(heading)
+            if status == "up_to_date":
+                up_to_date.append(heading)
+            elif status == "needs_refresh":
+                needs_refresh.append(heading)
+            else:
+                missing_output.append(heading)
+
+        if not needs_refresh:
+            message_lines = [
+                f"当前共有 {len(dependency_headings)} 个被依赖章节。",
+                f"- 已有最新正文摘要：{len(up_to_date)}",
+                f"- 暂无正文，无法预提炼：{len(missing_output)}",
+                "",
+                "目前没有需要预提炼或刷新的正文摘要。",
+            ]
+            messagebox.showinfo(
+                "预提炼依赖摘要",
+                "\n".join(message_lines),
+                parent=self,
+            )
+            return
+
+        preview_lines = [f"- {heading.full_path}" for heading in needs_refresh[:10]]
+        remaining = len(needs_refresh) - len(preview_lines)
+        if remaining > 0:
+            preview_lines.append(f"- 其余 {remaining} 个章节未展开显示")
+
+        should_run = messagebox.askyesno(
+            "预提炼依赖摘要",
+            "\n".join(
+                [
+                    f"当前共有 {len(dependency_headings)} 个被依赖章节。",
+                    f"- 已有最新正文摘要：{len(up_to_date)}",
+                    f"- 需要预提炼/刷新：{len(needs_refresh)}",
+                    f"- 暂无正文，无法预提炼：{len(missing_output)}",
+                    "",
+                    "将处理以下章节：",
+                    *preview_lines,
+                    "",
+                    "是否现在开始预提炼这些依赖摘要？",
+                ]
+            ),
+            parent=self,
+        )
+        if not should_run:
+            return
+
+        previous_status = self.status_text.get()
+        refreshed = 0
+        failed: list[HeadingNode] = []
+        try:
+            for index, heading in enumerate(needs_refresh, 1):
+                self.status_text.set(
+                    f"正在预提炼依赖摘要 {index}/{len(needs_refresh)}: {heading.title}"
+                )
+                self.update_idletasks()
+                result = self.bid_writer.ensure_output_chapter_summary(heading)
+                if result is None:
+                    failed.append(heading)
+                    continue
+                refreshed += 1
+        finally:
+            self.status_text.set(previous_status)
+
+        result_lines = [
+            f"已处理 {len(needs_refresh)} 个需预提炼章节。",
+            f"- 成功刷新/生成摘要：{refreshed}",
+            f"- 已是最新摘要，未处理：{len(up_to_date)}",
+            f"- 暂无正文，已跳过：{len(missing_output)}",
+        ]
+        if failed:
+            result_lines.append(f"- 提炼失败：{len(failed)}")
+        messagebox.showinfo(
+            "预提炼完成",
+            "\n".join(result_lines),
+            parent=self,
+        )
+        self.status_text.set(f"依赖摘要预提炼完成：成功 {refreshed} 个")
+
+    @staticmethod
+    def _merge_additional_requirements(shared_text: str, dependency_block: str) -> str:
+        parts = [shared_text.strip(), dependency_block.strip()]
+        return "\n\n".join(part for part in parts if part)
+
+    def _resolve_dependency_summary_blocks(
+        self,
+        headings: list[HeadingNode],
+        *,
+        allow_planned: bool,
+    ) -> tuple[dict[str, str], list[HeadingNode]]:
+        summary_blocks: dict[str, str] = {}
+        summary_cache: dict[str, object] = {}
+        missing_by_path: dict[str, HeadingNode] = {}
+
+        for heading in headings:
+            summary_entries = []
+            for dependency in self.bid_writer.get_dependency_headings(heading):
+                cached_value = summary_cache.get(dependency.full_path)
+                if cached_value is None:
+                    summary = self.bid_writer.get_available_chapter_summary(dependency)
+                    if summary is None and allow_planned:
+                        summary = self.bid_writer.ensure_planned_chapter_summary(dependency)
+                    if summary is None:
+                        summary_cache[dependency.full_path] = False
+                        missing_by_path.setdefault(dependency.full_path, dependency)
+                        continue
+                    summary_cache[dependency.full_path] = summary
+                    cached_value = summary
+
+                if cached_value is False:
+                    missing_by_path.setdefault(dependency.full_path, dependency)
+                    continue
+                summary_entries.append(cached_value)
+
+            summary_blocks[heading.full_path] = self.bid_writer.format_dependency_summary_block(summary_entries)
+
+        missing_headings = list(missing_by_path.values())
+        missing_headings.sort(key=lambda item: (item.line_number, item.full_path))
+        return summary_blocks, missing_headings
+
+    def _prepare_dependency_summary_blocks(self, headings: list[HeadingNode]) -> dict[str, str]:
+        if not headings:
+            return {}
+
+        try:
+            summary_blocks, missing_headings = self._resolve_dependency_summary_blocks(
+                headings,
+                allow_planned=False,
+            )
+        except Exception as exc:
+            messagebox.showwarning(
+                "提示",
+                f"读取章节依赖摘要失败：{exc}",
+                parent=self,
+            )
+            return {}
+
+        if not missing_headings:
+            return summary_blocks
+
+        preview_lines = [f"- {heading.full_path}" for heading in missing_headings[:12]]
+        remaining = len(missing_headings) - len(preview_lines)
+        if remaining > 0:
+            preview_lines.append(f"- 其余 {remaining} 个章节未展开显示")
+
+        should_generate = messagebox.askyesno(
+            "章节依赖摘要",
+            "以下依赖章节尚无可复用摘要，且当前没有可直接复用的正文摘要。\n\n"
+            + "\n".join(preview_lines)
+            + "\n\n是否现在提炼这些章节的规划摘要，并在生成时作为关联章节摘要使用？",
+            parent=self,
+        )
+        if not should_generate:
+            return summary_blocks
+
+        previous_status = self.status_text.get()
+        self.status_text.set("正在提炼章节依赖摘要...")
+        self.update_idletasks()
+        try:
+            summary_blocks, still_missing = self._resolve_dependency_summary_blocks(
+                headings,
+                allow_planned=True,
+            )
+        except Exception as exc:
+            messagebox.showwarning(
+                "提示",
+                f"提炼章节依赖摘要失败：{exc}",
+                parent=self,
+            )
+            self.status_text.set(previous_status)
+            return summary_blocks
+
+        self.status_text.set(previous_status)
+        if still_missing:
+            missing_preview = "\n".join(f"- {heading.full_path}" for heading in still_missing[:8])
+            messagebox.showwarning(
+                "提示",
+                "以下章节摘要仍未生成，将在本次扩写中跳过：\n\n" + missing_preview,
+                parent=self,
+            )
+        return summary_blocks
+
     def request_stop_generation(self):
         """请求在当前标题完成后停止批量生成"""
         if not self.is_generating:
@@ -2289,7 +2786,7 @@ class MainWindow(tk.Tk):
             # 递归收缩子节点
             self._collapse_all_nodes(child_id)
 
-    def _get_generation_params(self):
+    def _get_generation_params(self, *, initial_requirements: str = "", dependency_hint: str = ""):
         """
         获取生成参数对话框
 
@@ -2313,7 +2810,15 @@ class MainWindow(tk.Tk):
         req_text = tk.Text(dialog, height=5, width=60)
         style_text_widget(req_text)
         req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
-        req_text.insert('1.0', "")
+        req_text.insert('1.0', initial_requirements)
+        if dependency_hint.strip():
+            ttk.Label(
+                dialog,
+                text=dependency_hint,
+                style="Muted.TLabel",
+                wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
+                justify=tk.LEFT,
+            ).pack(padx=20, pady=(0, 10), anchor=tk.W)
 
         # 目标篇幅基准值
         words_frame = ttk.Frame(dialog)
@@ -2601,6 +3106,8 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
+        dependency_summary_blocks: Optional[dict[str, str]] = None,
+        dynamic_dependency_summaries: bool = False,
     ) -> str:
         """
         生成内容并在主窗口右侧工作区展示，完成后自动保存。
@@ -2609,11 +3116,22 @@ class MainWindow(tk.Tk):
             "success" / "failed"
         """
         gen_window = self.GenerationSession(self, heading)
+        dependency_block = (dependency_summary_blocks or {}).get(heading.full_path, "")
+        if dynamic_dependency_summaries:
+            dependency_block, _ = self._resolve_dependency_summary_blocks(
+                [heading],
+                allow_planned=False,
+            )
+            dependency_block = dependency_block.get(heading.full_path, "")
+        final_additional_requirements = self._merge_additional_requirements(
+            additional_requirements,
+            dependency_block,
+        )
 
         gen_window.start_generation(
             heading,
             self.bid_writer.ai_writer,
-            additional_requirements,
+            final_additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
         )

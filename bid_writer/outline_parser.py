@@ -162,6 +162,24 @@ class OutlineParser:
             if heading.title == title:
                 return heading
         return None
+
+    def find_heading_by_full_path(self, full_path: str) -> Optional[HeadingNode]:
+        """
+        根据完整路径查找标题节点。
+
+        Args:
+            full_path: 标题完整路径
+
+        Returns:
+            匹配的标题节点，如果没找到返回None
+        """
+        normalized = full_path.strip()
+        if not normalized:
+            return None
+        for heading in self.headings:
+            if heading.full_path == normalized:
+                return heading
+        return None
     
     def get_siblings(self, heading: HeadingNode) -> List[HeadingNode]:
         """获取同级标题"""
