@@ -33,21 +33,31 @@ class ChapterDependencyStore:
 
     def list_dependency_paths(self, target: HeadingNode | str) -> list[str]:
         target_path = target.full_path if isinstance(target, HeadingNode) else str(target)
-        payload = self._load_payload()
-        item = payload.get("items", {}).get(target_path, {})
-        dependencies = item.get("dependencies", [])
-        if not isinstance(dependencies, list):
+        normalized_target = target_path.strip()
+        if not normalized_target:
             return []
-        result: list[str] = []
-        seen: set[str] = set()
-        for value in dependencies:
-            if not isinstance(value, str):
+        return self.list_all_dependency_paths().get(normalized_target, [])
+
+    def list_all_dependency_paths(self) -> dict[str, list[str]]:
+        """返回当前项目中所有章节依赖关系。"""
+        payload = self._load_payload()
+        items = payload.get("items", {})
+        if not isinstance(items, dict):
+            return {}
+
+        result: dict[str, list[str]] = {}
+        for target_path, item in items.items():
+            if not isinstance(target_path, str):
                 continue
-            normalized = value.strip()
-            if not normalized or normalized in seen:
+            normalized_target = target_path.strip()
+            if not normalized_target:
                 continue
-            seen.add(normalized)
-            result.append(normalized)
+            dependencies = self._normalize_dependency_values(
+                item.get("dependencies", []),
+                exclude_paths={normalized_target},
+            )
+            if dependencies:
+                result[normalized_target] = dependencies
         return result
 
     def set_dependencies(self, target: HeadingNode, dependencies: list[HeadingNode]) -> None:
@@ -73,6 +83,26 @@ class ChapterDependencyStore:
 
         payload["updated_at"] = _now_string()
         _write_json_atomic(self.path, payload)
+
+    @staticmethod
+    def _normalize_dependency_values(
+        dependencies: Any,
+        *,
+        exclude_paths: set[str] | None = None,
+    ) -> list[str]:
+        if not isinstance(dependencies, list):
+            return []
+        seen: set[str] = set(exclude_paths or set())
+        result: list[str] = []
+        for value in dependencies:
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(normalized)
+        return result
 
     def _load_payload(self) -> dict[str, Any]:
         if not self.path.exists():

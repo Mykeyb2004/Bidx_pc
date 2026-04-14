@@ -96,20 +96,73 @@ class BidWriter:
             dependencies.append(dependency)
         return dependencies
 
+    def get_dependency_source_usage_counts(self) -> dict[str, int]:
+        """返回各章节被其他章节依赖的次数。"""
+        return {
+            full_path: len(targets)
+            for full_path, targets in self.get_dependency_source_targets().items()
+        }
+
+    def get_dependency_source_targets(self) -> dict[str, list[HeadingNode]]:
+        """返回各被依赖章节对应的目标章节列表。"""
+        if self.parser is None:
+            return {}
+
+        headings_by_path = {
+            heading.full_path: heading
+            for heading in self.parser.get_all_headings()
+            if not heading.children
+        }
+        dependency_targets: dict[str, list[HeadingNode]] = {}
+        for target_path, dependency_paths in self.chapter_dependency_store.list_all_dependency_paths().items():
+            target_heading = headings_by_path.get(target_path)
+            if target_heading is None:
+                continue
+            for dependency_path in dependency_paths:
+                if dependency_path not in headings_by_path:
+                    continue
+                dependency_targets.setdefault(dependency_path, []).append(target_heading)
+
+        for targets in dependency_targets.values():
+            targets.sort(key=lambda item: (item.line_number, item.full_path))
+        return dependency_targets
+
+    def get_dependency_target_sources(self) -> dict[str, list[HeadingNode]]:
+        """返回各依赖章节对应的源章节列表。"""
+        if self.parser is None:
+            return {}
+
+        headings_by_path = {
+            heading.full_path: heading
+            for heading in self.parser.get_all_headings()
+            if not heading.children
+        }
+        dependency_sources: dict[str, list[HeadingNode]] = {}
+        for target_path, dependency_paths in self.chapter_dependency_store.list_all_dependency_paths().items():
+            target_heading = headings_by_path.get(target_path)
+            if target_heading is None:
+                continue
+            dependency_sources[target_heading.full_path] = [
+                headings_by_path[path]
+                for path in dependency_paths
+                if path in headings_by_path
+            ]
+        return dependency_sources
+
     def get_all_dependency_source_headings(self) -> list[HeadingNode]:
         """返回当前项目中所有被依赖章节的去重列表。"""
         if self.parser is None:
             return []
-        result: list[HeadingNode] = []
-        seen: set[str] = set()
-        for heading in self.parser.get_all_headings():
-            if heading.children:
-                continue
-            for dependency in self.get_dependency_headings(heading):
-                if dependency.full_path in seen:
-                    continue
-                seen.add(dependency.full_path)
-                result.append(dependency)
+        headings_by_path = {
+            heading.full_path: heading
+            for heading in self.parser.get_all_headings()
+            if not heading.children
+        }
+        result = [
+            headings_by_path[path]
+            for path in self.get_dependency_source_usage_counts()
+            if path in headings_by_path
+        ]
         result.sort(key=lambda item: (item.line_number, item.full_path))
         return result
 

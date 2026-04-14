@@ -474,7 +474,7 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_entry_row(rules, 0, "输出格式", "writing.output_format")
         self._add_entry_row(rules, 1, "首行模板", "writing.first_line_template")
         self._add_entry_row(rules, 2, "单节最大表格数", "writing.max_tables_per_section")
-        self._add_entry_row(rules, 3, "单节最大 Mermaid 流程图数", "writing.max_mermaid_flowcharts_per_section")
+        self._add_entry_row(rules, 3, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section")
         self._add_entry_row(rules, 4, "总结标题", "writing.summary_title")
         self._add_check_row(rules, 5, "允许 Markdown 标题", "writing.allow_markdown_headings")
         self._add_check_row(rules, 6, "允许英文术语", "writing.allow_english_terms")

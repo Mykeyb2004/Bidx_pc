@@ -5,16 +5,34 @@ Tkinter GUI 主界面
 """
 
 import os
+import re
+import time
 import tkinter as tk
 from dataclasses import dataclass, field
 from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 from pathlib import Path
+
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from .main import BidWriter
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
-from .gui_state import get_startup_config_candidates, remember_last_config
+from .gui_state import (
+    get_startup_config_candidates,
+    load_gui_state,
+    remember_generation_dialog_settings,
+    remember_last_config,
+)
 from .timing_logger import write_timing_log
 
 import threading
@@ -87,6 +105,29 @@ class GuiColorPalette:
     input_foreground: str
     border_color: str
     accent_color: str
+
+
+@dataclass(frozen=True)
+class GenerationErrorFeedback:
+    """扩写失败时展示给用户的结构化反馈。"""
+
+    stage_label: str
+    category_title: str
+    short_message: str
+    status_text: str
+    workspace_meta_text: str
+    workspace_body_text: str
+    dialog_title: str
+    dialog_message: str
+    append_to_workspace: bool = False
+
+
+class GenerationFailedError(RuntimeError):
+    """包装扩写失败反馈，便于 UI 统一处理。"""
+
+    def __init__(self, feedback: GenerationErrorFeedback):
+        super().__init__(feedback.short_message)
+        self.feedback = feedback
 
 
 def _is_valid_tcl_dir(path: Path) -> bool:
@@ -224,6 +265,318 @@ def _format_workspace_char_count(count: Optional[int]) -> str:
     return f"当前节点已生成字符数：{max(0, count):,}"
 
 
+def _format_heading_tree_title(
+    title: str,
+    *,
+    is_dependency_source: bool = False,
+    depends_on_count: int = 0,
+) -> str:
+    """格式化章节树标题，区分“被依赖”与“依赖他人”两类标记。"""
+    suffixes: list[str] = []
+    if is_dependency_source:
+        suffixes.append("🔗")
+    if depends_on_count > 0:
+        suffixes.append(f"⇢{depends_on_count}章")
+    if not suffixes:
+        return title
+    return f"{title} {' '.join(suffixes)}"
+
+
+def _extract_heading_serial_token(title: str) -> str:
+    """尽量从标题前缀中提取章节序号。"""
+    normalized = title.strip()
+    if not normalized:
+        return ""
+
+    patterns = [
+        r"^(\d+(?:\.\d+)+)",
+        r"^(\d+)[、._\s)]",
+        r"^([一二三四五六七八九十百千]+、)",
+        r"^([（(][一二三四五六七八九十百千]+[)）])",
+        r"^([（(]\d+[)）])",
+        r"^(\d+[.)])",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, normalized)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def _format_dependency_tooltip(dependencies: list["HeadingNode"]) -> str:
+    """格式化依赖章节悬浮提示。"""
+    if not dependencies:
+        return ""
+
+    lines = [f"当前章节依赖了 {len(dependencies)} 个章节：", ""]
+    for dependency in dependencies:
+        serial = _extract_heading_serial_token(dependency.title)
+        if serial:
+            remainder = dependency.title[len(serial):].strip()
+            if remainder:
+                lines.append(f"- {serial} {remainder}")
+            else:
+                lines.append(f"- {serial}")
+        else:
+            lines.append(f"- {dependency.title}")
+    return "\n".join(lines)
+
+
+def _format_dependency_summary_busy_message(mode: str, count: int) -> str:
+    """格式化依赖摘要后台处理提示文案。"""
+    normalized_count = max(0, count)
+    if mode == "generate":
+        return (
+            f"正在后台为 {normalized_count} 个依赖章节提炼关联摘要。\n\n"
+            "完成后会自动继续当前生成流程，请稍候。"
+        )
+    return (
+        f"正在后台检查 {normalized_count} 个依赖章节的关联摘要缓存。\n\n"
+        "若发现缺失或过期摘要，系统会自动刷新可复用结果。"
+    )
+
+
+def _matches_exception_type(
+    exc: BaseException,
+    *,
+    names: tuple[str, ...] = (),
+    types: tuple[type[BaseException], ...] = (),
+) -> bool:
+    """同时兼容真实 SDK 异常和测试里的同名伪异常。"""
+    return isinstance(exc, types) or type(exc).__name__ in names
+
+
+def _normalize_generation_error_detail(exc: BaseException) -> str:
+    detail = _first_non_empty(str(exc), repr(exc))
+    if detail:
+        return " ".join(detail.split())
+    return f"{type(exc).__name__}: 未提供详细错误信息"
+
+
+def _classify_generation_error(exc: BaseException) -> tuple[str, str, list[str]]:
+    """把底层异常归类成用户可读的失败原因。"""
+    detail = _normalize_generation_error_detail(exc)
+    detail_lower = detail.lower()
+    status_code = getattr(exc, "status_code", None)
+
+    if _matches_exception_type(
+        exc,
+        names=("APITimeoutError", "TimeoutError"),
+        types=(APITimeoutError, TimeoutError),
+    ) or "timeout" in detail_lower or "timed out" in detail_lower or "未收到任何内容" in detail:
+        return (
+            "模型调用超时",
+            "模型长时间未返回可用内容。",
+            [
+                "稍后重试，确认当前模型服务没有卡住或排队过久。",
+                "如果经常发生，可检查超时时间配置是否过短，或更换更稳定的模型服务。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
+        names=("AuthenticationError",),
+        types=(AuthenticationError,),
+    ):
+        return (
+            "模型鉴权失败",
+            "当前 API Key 或鉴权配置不可用。",
+            [
+                "检查当前使用的 API Key 是否填写正确、是否已过期。",
+                "确认 base URL、模型服务商和鉴权方式彼此匹配。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
+        names=("PermissionDeniedError",),
+        types=(PermissionDeniedError,),
+    ):
+        return (
+            "模型权限不足",
+            "当前账号没有调用该模型或该接口的权限。",
+            [
+                "检查所选模型是否在当前账号或代理服务中可用。",
+                "确认服务端没有对该模型或接口做权限限制。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
+        names=("RateLimitError",),
+        types=(RateLimitError,),
+    ) or status_code == 429 or "rate limit" in detail_lower or "too many requests" in detail_lower or "quota" in detail_lower:
+        return (
+            "模型请求受限",
+            "请求频率、并发或额度已触发限制。",
+            [
+                "稍后重试，避免短时间内连续高频调用。",
+                "检查当前账号额度、并发上限或代理服务的限流策略。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
+        names=("APIConnectionError", "ConnectionError", "OSError"),
+        types=(APIConnectionError, ConnectionError, OSError),
+    ) or any(
+        keyword in detail_lower
+        for keyword in (
+            "connection error",
+            "failed to establish a new connection",
+            "connection refused",
+            "temporary failure in name resolution",
+            "name or service not known",
+            "nodename nor servname provided",
+            "no route to host",
+        )
+    ):
+        return (
+            "无法连接模型服务",
+            "本地程序未能连通当前模型接口。",
+            [
+                "检查网络连通性，以及 base URL 是否填写正确。",
+                "如果通过代理或中转服务调用，确认该服务当前可访问且没有拦截请求。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
+        names=("BadRequestError",),
+        types=(BadRequestError,),
+    ) or status_code == 400 or "invalid_request" in detail_lower or "context length" in detail_lower or "maximum context length" in detail_lower:
+        return (
+            "模型请求参数无效",
+            "当前请求内容或参数不符合模型接口要求。",
+            [
+                "检查模型名称、最大输出长度、上下文长度和代理兼容性是否正确。",
+                "如果近期改过配置，优先排查 base URL、model、max_tokens 等字段。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
+        names=("InternalServerError",),
+        types=(InternalServerError,),
+    ) or (
+        _matches_exception_type(exc, names=("APIStatusError",), types=(APIStatusError,))
+        and isinstance(status_code, int)
+        and status_code >= 500
+    ) or "server error" in detail_lower:
+        return (
+            "模型服务内部错误",
+            "模型服务端返回了异常状态。",
+            [
+                "稍后重试，确认服务端当前没有故障或维护。",
+                "如果问题持续出现，优先排查代理服务或更换模型节点。",
+            ],
+        )
+
+    return (
+        "模型调用失败",
+        "模型接口返回了未分类异常。",
+        [
+            "检查当前配置中的模型地址、模型名和密钥是否一致。",
+            "查看日志中的原始报错信息，确认是请求参数问题还是服务端异常。",
+        ],
+    )
+
+
+def _build_generation_error_feedback(
+    *,
+    heading_title: str,
+    heading_full_path: str,
+    stage_label: str,
+    exc: BaseException,
+    has_partial_output: bool,
+) -> GenerationErrorFeedback:
+    """生成扩写失败时展示在工作区和弹窗中的完整文案。"""
+    normalized_stage = stage_label.strip() or "调用模型"
+    category_title, summary, suggestions = _classify_generation_error(exc)
+    detail = _normalize_generation_error_detail(exc)
+
+    if has_partial_output:
+        progress_hint = "当前章节已经返回部分正文，已返回内容会保留在工作区。"
+        workspace_body = "\n".join(
+            [
+                "",
+                "",
+                "【生成中断提示】",
+                progress_hint,
+                f"中断阶段：{normalized_stage}",
+                f"判断结果：{category_title}",
+                f"详细信息：{detail}",
+                "",
+                "建议排查：",
+                *[f"{index}. {item}" for index, item in enumerate(suggestions, 1)],
+            ]
+        )
+    else:
+        progress_hint = "当前章节在正文开始输出前就失败了，所以右侧暂时没有生成内容。"
+        workspace_body = "\n".join(
+            [
+                "本次扩写未能完成。",
+                progress_hint,
+                "",
+                f"章节：{heading_full_path}",
+                f"失败阶段：{normalized_stage}",
+                f"判断结果：{category_title}",
+                f"详细信息：{detail}",
+                "",
+                "建议排查：",
+                *[f"{index}. {item}" for index, item in enumerate(suggestions, 1)],
+            ]
+        )
+
+    dialog_lines = [
+        f"章节“{heading_title}”扩写失败。",
+        progress_hint,
+        "",
+        f"失败阶段：{normalized_stage}",
+        f"判断结果：{category_title}",
+        f"详细信息：{detail}",
+        "",
+        "建议排查：",
+        *[f"{index}. {item}" for index, item in enumerate(suggestions, 1)],
+    ]
+
+    short_message = f"{category_title}：{summary}"
+    return GenerationErrorFeedback(
+        stage_label=normalized_stage,
+        category_title=category_title,
+        short_message=short_message,
+        status_text=f"扩写失败：{heading_title}（{category_title}）",
+        workspace_meta_text=f"扩写失败：{category_title}（阶段：{normalized_stage}）",
+        workspace_body_text=workspace_body,
+        dialog_title="章节扩写失败",
+        dialog_message="\n".join(dialog_lines),
+        append_to_workspace=has_partial_output,
+    )
+
+
+def _format_batch_generation_failure_message(failed_titles: list[str]) -> str:
+    """批量生成结束后，对失败章节做一次集中提示。"""
+    if not failed_titles:
+        return ""
+
+    display_titles = failed_titles[:5]
+    remaining = len(failed_titles) - len(display_titles)
+    lines = [
+        f"本次批量生成中有 {len(failed_titles)} 个章节失败：",
+        "",
+    ]
+    lines.extend(f"- {title}" for title in display_titles)
+    if remaining > 0:
+        lines.append(f"- 其余 {remaining} 个章节请查看右侧工作区和底部状态栏")
+    lines.extend(
+        [
+            "",
+            "系统已经把最近一次失败的详细原因写到右侧工作区，可直接按提示排查后重试。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _compute_gui_font_delta(
     *,
     screen_width: Optional[int] = None,
@@ -297,6 +650,40 @@ def _compute_dialog_target_size(
         height = min(height, max_height)
 
     return width, height
+
+
+def _clamp_persisted_int(value: Optional[int], *, fallback: int, min_value: int, max_value: int) -> int:
+    """把持久化数值约束到当前界面允许范围内。"""
+    if value is None:
+        return fallback
+    return max(min_value, min(max_value, int(value)))
+
+
+def _resolve_generation_dialog_defaults(
+    *,
+    persisted_target_words: Optional[int],
+    persisted_max_mermaid_flowcharts_per_section: Optional[int],
+    target_words_default: int,
+    target_words_min: int,
+    target_words_max: int,
+    mermaid_default: int = 0,
+    mermaid_max: int = 999,
+) -> tuple[int, int]:
+    """计算生成参数弹窗的默认值。"""
+    return (
+        _clamp_persisted_int(
+            persisted_target_words,
+            fallback=target_words_default,
+            min_value=target_words_min,
+            max_value=target_words_max,
+        ),
+        _clamp_persisted_int(
+            persisted_max_mermaid_flowcharts_per_section,
+            fallback=mermaid_default,
+            min_value=0,
+            max_value=mermaid_max,
+        ),
+    )
 
 
 def _build_gui_color_palette(style: ttk.Style) -> GuiColorPalette:
@@ -389,6 +776,113 @@ def style_paned_window(widget: tk.PanedWindow) -> None:
     """统一 PanedWindow 分隔色，避免出现突兀的硬编码色块。"""
     palette = _get_gui_color_palette(widget)
     widget.configure(background=palette.border_color)
+
+
+class TreeviewHoverTooltip:
+    """为 Treeview 行提供悬浮提示。"""
+
+    def __init__(
+        self,
+        tree: ttk.Treeview,
+        text_provider: Callable[[str], str],
+        *,
+        delay_ms: int = 450,
+    ) -> None:
+        self.tree = tree
+        self.text_provider = text_provider
+        self.delay_ms = delay_ms
+        self.tip_window: Optional[tk.Toplevel] = None
+        self._after_id: Optional[str] = None
+        self._pending_item_id = ""
+        self._pending_text = ""
+        self._last_pointer = (0, 0)
+        self._active_item_id = ""
+
+        tree.bind("<Motion>", self._on_motion, add="+")
+        tree.bind("<Leave>", self._hide, add="+")
+        tree.bind("<ButtonPress>", self._hide, add="+")
+        tree.bind("<Destroy>", self._hide, add="+")
+
+    def _cancel_pending(self) -> None:
+        if self._after_id is None:
+            return
+        try:
+            self.tree.after_cancel(self._after_id)
+        except tk.TclError:
+            pass
+        self._after_id = None
+
+    def _on_motion(self, event) -> None:
+        try:
+            item_id = self.tree.identify_row(event.y)
+        except tk.TclError:
+            self._hide()
+            return
+
+        text = self.text_provider(item_id) if item_id else ""
+        if not item_id or not text:
+            self._hide()
+            return
+
+        self._last_pointer = (event.x_root, event.y_root)
+        if item_id == self._active_item_id and self.tip_window is not None:
+            return
+        if item_id == self._pending_item_id and text == self._pending_text:
+            return
+
+        self._hide()
+        self._pending_item_id = item_id
+        self._pending_text = text
+        try:
+            self._after_id = self.tree.after(self.delay_ms, self._show)
+        except tk.TclError:
+            self._after_id = None
+
+    def _show(self) -> None:
+        self._after_id = None
+        if (
+            not self._pending_item_id
+            or not self._pending_text
+            or self.tip_window is not None
+        ):
+            return
+        try:
+            if not self.tree.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        x = self._last_pointer[0] + 16
+        y = self._last_pointer[1] + 18
+
+        tip = tk.Toplevel(self.tree)
+        apply_window_surface(tip)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+
+        container = ttk.Frame(tip, padding=(10, 8))
+        container.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(
+            container,
+            text=self._pending_text,
+            justify=tk.LEFT,
+            wraplength=360,
+        ).pack(fill=tk.BOTH, expand=True)
+
+        self.tip_window = tip
+        self._active_item_id = self._pending_item_id
+
+    def _hide(self, _event=None) -> None:
+        self._cancel_pending()
+        self._pending_item_id = ""
+        self._pending_text = ""
+        self._active_item_id = ""
+        if self.tip_window is not None:
+            try:
+                self.tip_window.destroy()
+            except tk.TclError:
+                pass
+            self.tip_window = None
 
 
 def _configure_named_fonts(profile: GuiScaleProfile) -> None:
@@ -822,6 +1316,7 @@ class MainWindow(tk.Tk):
         self._action_layout_mode = ""
         self._control_layout_mode = ""
         self._preserve_workspace_on_sync = False
+        self._outline_tree_tooltips: dict[str, str] = {}
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -1101,6 +1596,10 @@ class MainWindow(tk.Tk):
         self.outline_tree.bind("<Button-2>", self.on_tree_context_menu)
         self.outline_tree.bind("<Button-3>", self.on_tree_context_menu)
         self.outline_tree.bind("<Control-Button-1>", self.on_tree_context_menu)
+        self._outline_tree_tooltip = TreeviewHoverTooltip(
+            self.outline_tree,
+            lambda item_id: self._outline_tree_tooltips.get(item_id, ""),
+        )
 
         self._create_workspace_panel(workspace_panel)
 
@@ -1267,7 +1766,7 @@ class MainWindow(tk.Tk):
         """在右侧工作区初始化当前章节的流式生成视图。"""
         self._show_workspace_message(
             f"当前章节：{heading.full_path}",
-            "正在生成正文...",
+            "正在准备扩写请求...",
             "",
             generated_char_count=0,
         )
@@ -1286,6 +1785,48 @@ class MainWindow(tk.Tk):
             content,
             generated_char_count=_count_text_characters(content),
         )
+
+    def _show_generation_failure_in_workspace(
+        self,
+        heading: HeadingNode,
+        feedback: GenerationErrorFeedback,
+    ) -> None:
+        """将扩写失败信息直接写到右侧工作区。"""
+        heading_text = f"当前章节：{heading.full_path}"
+        if feedback.append_to_workspace:
+            self.workspace_heading_var.set(heading_text)
+            self.workspace_meta_var.set(feedback.workspace_meta_text)
+            self._set_workspace_text(
+                feedback.workspace_body_text,
+                append=True,
+                scroll_to_end=True,
+                generated_char_count=self._workspace_generated_char_count,
+            )
+            return
+
+        self._show_workspace_message(
+            heading_text,
+            feedback.workspace_meta_text,
+            feedback.workspace_body_text,
+            generated_char_count=0,
+        )
+
+    def _report_generation_failure(
+        self,
+        heading: HeadingNode,
+        feedback: GenerationErrorFeedback,
+        *,
+        show_dialog: bool,
+    ) -> None:
+        """统一处理扩写失败后的工作区、状态栏和弹窗。"""
+        self._show_generation_failure_in_workspace(heading, feedback)
+        self.status_text.set(feedback.status_text)
+        if show_dialog:
+            messagebox.showerror(
+                feedback.dialog_title,
+                feedback.dialog_message,
+                parent=self,
+            )
 
     def on_window_resize(self, event):
         """窗口尺寸变化后刷新自适应布局"""
@@ -1629,14 +2170,24 @@ class MainWindow(tk.Tk):
             self.outline_tree.delete(item)
 
         self.tree_node_map.clear()
+        self._outline_tree_tooltips.clear()
         self.visible_leaf_count = 0
 
         root_headings = self.adapter.get_outline_tree()
         query = self.search_var.get().strip() if hasattr(self, "search_var") else ""
         status_filter = self.status_filter_var.get() if hasattr(self, "status_filter_var") else "全部"
+        dependency_source_targets = self.bid_writer.get_dependency_source_targets()
+        dependency_target_sources = self.bid_writer.get_dependency_target_sources()
 
         for heading in root_headings:
-            self._add_tree_node("", heading, query, status_filter)
+            self._add_tree_node(
+                "",
+                heading,
+                query,
+                status_filter,
+                dependency_source_targets,
+                dependency_target_sources,
+            )
 
     def reset_tree_view_state(self):
         """重置大纲树视图状态为默认全部展开"""
@@ -1778,7 +2329,15 @@ class MainWindow(tk.Tk):
 
         paned_window.after_idle(place_sash)
 
-    def _add_tree_node(self, parent: str, heading: HeadingNode, query: str = "", status_filter: str = "全部"):
+    def _add_tree_node(
+        self,
+        parent: str,
+        heading: HeadingNode,
+        query: str = "",
+        status_filter: str = "全部",
+        dependency_source_targets: Optional[dict[str, list[HeadingNode]]] = None,
+        dependency_target_sources: Optional[dict[str, list[HeadingNode]]] = None,
+    ):
         """递归添加树节点"""
         if not self._heading_or_descendant_matches(heading, query, status_filter):
             return
@@ -1786,20 +2345,37 @@ class MainWindow(tk.Tk):
         status, progress_info, row_tag = self._get_heading_tree_row_values(heading)
         if not heading.children:
             self.visible_leaf_count += 1
+        source_targets = (dependency_source_targets or {}).get(heading.full_path, [])
+        dependency_sources = (dependency_target_sources or {}).get(heading.full_path, [])
+        display_title = _format_heading_tree_title(
+            heading.title,
+            is_dependency_source=bool(source_targets),
+            depends_on_count=len(dependency_sources),
+        )
 
         node_id = self.outline_tree.insert(
             parent, 'end',
-            text=heading.title,
+            text=display_title,
             values=(status, progress_info),
             tags=(row_tag,)
         )
 
         # 保存节点映射
         self.tree_node_map[node_id] = heading
+        tooltip_text = _format_dependency_tooltip(dependency_sources)
+        if tooltip_text:
+            self._outline_tree_tooltips[node_id] = tooltip_text
 
         # 递归添加子节点
         for child in heading.children:
-            self._add_tree_node(node_id, child, query, status_filter)
+            self._add_tree_node(
+                node_id,
+                child,
+                query,
+                status_filter,
+                dependency_source_targets,
+                dependency_target_sources,
+            )
 
     def _get_selected_leaf_headings(self) -> List[HeadingNode]:
         """返回当前选中的四级标题"""
@@ -2165,7 +2741,7 @@ class MainWindow(tk.Tk):
             f"确定要生成 {len(selected_headings)} 个标题吗？\n\n"
             f"附加要求：{additional_requirements or '（无）'}\n"
             f"目标篇幅：{target_word_range.display_text} 字\n"
-            f"Mermaid流程图上限：{max_mermaid_flowcharts_per_section}"
+            f"Mermaid图示上限：{max_mermaid_flowcharts_per_section}"
             f"{dependency_summary_line}"
             f"{warning_line}"
         ):
@@ -2194,6 +2770,7 @@ class MainWindow(tk.Tk):
         total = len(headings)
         success_count = 0
         fail_count = 0
+        failed_titles: list[str] = []
         completed_count = 0
         stopped_early = False
 
@@ -2223,6 +2800,7 @@ class MainWindow(tk.Tk):
                     max_mermaid_flowcharts_per_section,
                     dependency_summary_blocks=(dependency_summary_blocks or {}),
                     dynamic_dependency_summaries=dynamic_dependency_summaries,
+                    show_error_dialog=(total == 1),
                 )
 
                 completed_count = i
@@ -2233,6 +2811,7 @@ class MainWindow(tk.Tk):
                     success_count += 1
                 else:
                     fail_count += 1
+                    failed_titles.append(heading.title)
 
                 if self.stop_requested:
                     stopped_early = True
@@ -2258,6 +2837,12 @@ class MainWindow(tk.Tk):
             self.status_text.set(
                 f"批量生成完成 - 成功: {success_count}, 失败: {fail_count}"
             )
+            if fail_count > 0 and total > 1:
+                messagebox.showwarning(
+                    "批量生成有失败章节",
+                    _format_batch_generation_failure_message(failed_titles),
+                    parent=self,
+                )
 
     def preview_selected(self):
         """将当前选中章节显示到主窗口右侧工作区。"""
@@ -2504,6 +3089,7 @@ class MainWindow(tk.Tk):
             return
 
         self.bid_writer.set_chapter_dependencies(target_heading, selected_dependencies)
+        self.apply_tree_filters()
         count = len(selected_dependencies)
         if count == 0:
             self.status_text.set(f"已清空章节依赖：{target_heading.title}")
@@ -2650,10 +3236,27 @@ class MainWindow(tk.Tk):
         if not headings:
             return {}
 
+        dependency_paths = {
+            dependency.full_path
+            for heading in headings
+            for dependency in self.bid_writer.get_dependency_headings(heading)
+        }
+        if not dependency_paths:
+            return {}
+
         try:
-            summary_blocks, missing_headings = self._resolve_dependency_summary_blocks(
-                headings,
-                allow_planned=False,
+            summary_blocks, missing_headings = self._run_background_task_with_busy_dialog(
+                title="正在检查关联摘要",
+                message=_format_dependency_summary_busy_message(
+                    "check",
+                    len(dependency_paths),
+                ),
+                status_text="正在后台检查章节依赖摘要...",
+                task_text="当前任务: 正在后台检查关联章节摘要",
+                worker=lambda: self._resolve_dependency_summary_blocks(
+                    headings,
+                    allow_planned=False,
+                ),
             )
         except Exception as exc:
             messagebox.showwarning(
@@ -2682,12 +3285,19 @@ class MainWindow(tk.Tk):
             return summary_blocks
 
         previous_status = self.status_text.get()
-        self.status_text.set("正在提炼章节依赖摘要...")
-        self.update_idletasks()
         try:
-            summary_blocks, still_missing = self._resolve_dependency_summary_blocks(
-                headings,
-                allow_planned=True,
+            summary_blocks, still_missing = self._run_background_task_with_busy_dialog(
+                title="正在生成关联摘要",
+                message=_format_dependency_summary_busy_message(
+                    "generate",
+                    len(missing_headings),
+                ),
+                status_text="正在后台生成章节依赖摘要...",
+                task_text=f"当前任务: 正在后台提炼 {len(missing_headings)} 个依赖摘要",
+                worker=lambda: self._resolve_dependency_summary_blocks(
+                    headings,
+                    allow_planned=True,
+                ),
             )
         except Exception as exc:
             messagebox.showwarning(
@@ -2707,6 +3317,108 @@ class MainWindow(tk.Tk):
                 parent=self,
             )
         return summary_blocks
+
+    def _run_background_task_with_busy_dialog(
+        self,
+        *,
+        title: str,
+        message: str,
+        status_text: str,
+        task_text: str,
+        worker: Callable[[], Any],
+        show_after_ms: int = 180,
+    ) -> Any:
+        """在后台线程执行任务，必要时显示忙碌提示弹窗。"""
+        result: dict[str, Any] = {
+            "done": False,
+            "value": None,
+            "error": None,
+        }
+        previous_status = self.status_text.get()
+        previous_task = self.task_text.get()
+        self.status_text.set(status_text)
+        self.task_text.set(task_text)
+
+        dialog: Optional[tk.Toplevel] = None
+        progress_bar: Optional[ttk.Progressbar] = None
+
+        def _create_dialog() -> tuple[tk.Toplevel, ttk.Progressbar]:
+            busy_dialog = tk.Toplevel(self)
+            busy_dialog.title(title)
+            apply_window_surface(busy_dialog)
+            busy_dialog.transient(self)
+            busy_dialog.grab_set()
+            busy_dialog.resizable(False, False)
+            busy_dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+
+            container = ttk.Frame(busy_dialog, padding=(20, 18, 20, 18))
+            container.pack(fill=tk.BOTH, expand=True)
+
+            ttk.Label(
+                container,
+                text=title,
+                style="SectionTitle.TLabel",
+            ).pack(anchor=tk.W)
+            ttk.Label(
+                container,
+                text=message,
+                style="Muted.TLabel",
+                justify=tk.LEFT,
+                wraplength=360,
+            ).pack(anchor=tk.W, pady=(8, 14))
+
+            indicator = ttk.Progressbar(
+                container,
+                mode="indeterminate",
+                length=340,
+            )
+            indicator.pack(fill=tk.X)
+            indicator.start(10)
+
+            busy_dialog.update_idletasks()
+            width, height = _compute_dialog_target_size(
+                requested_width=busy_dialog.winfo_reqwidth(),
+                requested_height=busy_dialog.winfo_reqheight(),
+                min_width=420,
+                min_height=150,
+                extra_width=20,
+                extra_height=16,
+            )
+            x = (busy_dialog.winfo_screenwidth() // 2) - (width // 2)
+            y = (busy_dialog.winfo_screenheight() // 2) - (height // 2)
+            busy_dialog.geometry(f"{width}x{height}+{x}+{y}")
+            return busy_dialog, indicator
+
+        def _worker_wrapper() -> None:
+            try:
+                result["value"] = worker()
+            except Exception as exc:  # pragma: no cover - exercised via caller path
+                result["error"] = exc
+            finally:
+                result["done"] = True
+
+        thread = threading.Thread(target=_worker_wrapper, daemon=True)
+        thread.start()
+        started_at = time.monotonic()
+
+        try:
+            while not result["done"]:
+                elapsed_ms = (time.monotonic() - started_at) * 1000
+                if dialog is None and elapsed_ms >= show_after_ms:
+                    dialog, progress_bar = _create_dialog()
+                self.update()
+                self.after(50)
+        finally:
+            self.task_text.set(previous_task)
+            self.status_text.set(previous_status)
+            if progress_bar is not None:
+                progress_bar.stop()
+            if dialog is not None and dialog.winfo_exists():
+                dialog.destroy()
+
+        if result["error"] is not None:
+            raise result["error"]
+        return result["value"]
 
     def request_stop_generation(self):
         """请求在当前标题完成后停止批量生成"""
@@ -2830,8 +3542,18 @@ class MainWindow(tk.Tk):
         target_words_min = self.bid_writer.config.generation_target_words_min
         target_words_max = self.bid_writer.config.generation_target_words_max
         target_words_step = self.bid_writer.config.generation_target_words_step
+        persisted_state = load_gui_state()
+        initial_target_words, initial_mermaid_limit = _resolve_generation_dialog_defaults(
+            persisted_target_words=persisted_state.last_generation_target_words,
+            persisted_max_mermaid_flowcharts_per_section=(
+                persisted_state.last_max_mermaid_flowcharts_per_section
+            ),
+            target_words_default=target_words_default,
+            target_words_min=target_words_min,
+            target_words_max=target_words_max,
+        )
 
-        words_var = tk.IntVar(value=target_words_default)
+        words_var = tk.IntVar(value=initial_target_words)
         words_spinbox = ttk.Spinbox(words_frame, from_=target_words_min, to=target_words_max,
                                     textvariable=words_var, width=10,
                                     increment=target_words_step)
@@ -2853,9 +3575,9 @@ class MainWindow(tk.Tk):
         mermaid_frame = ttk.Frame(dialog)
         mermaid_frame.pack(pady=(0, 10), padx=20, fill=tk.X)
 
-        ttk.Label(mermaid_frame, text="Mermaid流程图上限：", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
+        ttk.Label(mermaid_frame, text="Mermaid图示上限：", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
 
-        mermaid_var = tk.IntVar(value=0)
+        mermaid_var = tk.IntVar(value=initial_mermaid_limit)
         mermaid_spinbox = ttk.Spinbox(
             mermaid_frame,
             from_=0,
@@ -2886,15 +3608,19 @@ class MainWindow(tk.Tk):
                 additional_req = req_text.get('1.0', tk.END).strip()
                 max_mermaid_flowcharts_per_section = mermaid_var.get()
                 if max_mermaid_flowcharts_per_section < 0:
-                    messagebox.showwarning("警告", "Mermaid流程图上限不能小于 0")
+                    messagebox.showwarning("警告", "Mermaid图示上限不能小于 0")
                     return
                 result["cancelled"] = False
                 result["requirements"] = additional_req
                 result["target_words"] = target_words
                 result["max_mermaid_flowcharts_per_section"] = max_mermaid_flowcharts_per_section
+                remember_generation_dialog_settings(
+                    target_words,
+                    max_mermaid_flowcharts_per_section,
+                )
                 dialog.destroy()
             except tk.TclError:
-                messagebox.showwarning("警告", "请输入有效的目标篇幅和 Mermaid 流程图上限")
+                messagebox.showwarning("警告", "请输入有效的目标篇幅和 Mermaid 图示上限")
 
         def on_cancel():
             dialog.destroy()
@@ -2948,7 +3674,7 @@ class MainWindow(tk.Tk):
             self.heading = heading
             self.text_queue = queue.Queue()
             self.is_generating = False
-            self.error = None
+            self.error: Optional[GenerationErrorFeedback] = None
             self.result_data = None
             self._queue_poll_id = None
             self.parent._show_generation_start_in_workspace(heading)
@@ -2997,6 +3723,8 @@ class MainWindow(tk.Tk):
                         # 更新状态
                         if hasattr(self.parent, "workspace_meta_var"):
                             self.parent.workspace_meta_var.set(data)
+                        if hasattr(self.parent, "status_text"):
+                            self.parent.status_text.set(f"{self.heading.title}：{data}")
 
                     elif msg_type == "done":
                         # 生成完成
@@ -3032,24 +3760,40 @@ class MainWindow(tk.Tk):
 
             def _background_generate():
                 """后台线程执行生成"""
-                try:
-                    self.text_queue.put(("status", "正在生成内容..."))
+                current_stage = "准备扩写请求"
+                content_parts: list[str] = []
 
-                    content_parts = []
+                def _publish_status(stage_label: str, message: str) -> None:
+                    nonlocal current_stage
+                    current_stage = stage_label
+                    self.text_queue.put(("status", message))
+
+                try:
+                    _publish_status("准备扩写请求", "正在准备扩写请求...")
                     prepared = ai_writer.prepare_generation(
                         heading,
                         requirements,
                         target_words,
                         stream=ai_writer.config.generation_stream,
                         max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section,
+                        status_callback=_publish_status,
                     )
+                    if prepared.stream:
+                        _publish_status("等待模型首批输出", "正在请求大模型并等待首批内容...")
+                    else:
+                        _publish_status("请求大模型", "正在请求大模型并等待完整返回...")
                     result = ai_writer.expand_raw(prepared)
 
                     if isinstance(result, str):
+                        _publish_status("接收模型输出", "已收到模型完整输出，正在写入工作区...")
                         content_parts.append(result)
                         self.text_queue.put(("text", result))
                     else:
+                        received_first_chunk = False
                         for chunk in result:
+                            if not received_first_chunk:
+                                _publish_status("接收模型输出", "正在接收模型输出...")
+                                received_first_chunk = True
                             content_parts.append(chunk)
                             self.text_queue.put(("text", chunk))
 
@@ -3072,9 +3816,21 @@ class MainWindow(tk.Tk):
                         "generation_background_error",
                         heading_title=heading.title,
                         heading_full_path=heading.full_path,
+                        stage=current_stage,
                         error=str(e),
                     )
-                    self.text_queue.put(("error", str(e)))
+                    self.text_queue.put(
+                        (
+                            "error",
+                            _build_generation_error_feedback(
+                                heading_title=heading.title,
+                                heading_full_path=heading.full_path,
+                                stage_label=current_stage,
+                                exc=e,
+                                has_partial_output=bool(content_parts),
+                            ),
+                        )
+                    )
 
             # 启动后台线程
             thread = threading.Thread(target=_background_generate, daemon=True)
@@ -3092,7 +3848,7 @@ class MainWindow(tk.Tk):
                 self.parent.after(100)
 
             if self.error:
-                raise Exception(self.error)
+                raise GenerationFailedError(self.error)
 
             return self.result_data  # (content, word_count)
 
@@ -3108,6 +3864,7 @@ class MainWindow(tk.Tk):
         max_mermaid_flowcharts_per_section: int,
         dependency_summary_blocks: Optional[dict[str, str]] = None,
         dynamic_dependency_summaries: bool = False,
+        show_error_dialog: bool = True,
     ) -> str:
         """
         生成内容并在主窗口右侧工作区展示，完成后自动保存。
@@ -3138,10 +3895,28 @@ class MainWindow(tk.Tk):
 
         try:
             raw_content, _word_count, trace_session = gen_window.wait_completion()
+        except GenerationFailedError as e:
+            gen_window.close()
+            self._report_generation_failure(
+                heading,
+                e.feedback,
+                show_dialog=show_error_dialog,
+            )
+            return "failed"
         except Exception as e:
             gen_window.close()
-            self.workspace_meta_var.set(f"生成失败：{str(e)[:80]}")
-            self.status_text.set(f"生成失败: {str(e)[:50]}...")
+            feedback = _build_generation_error_feedback(
+                heading_title=heading.title,
+                heading_full_path=heading.full_path,
+                stage_label="等待生成结果",
+                exc=e,
+                has_partial_output=False,
+            )
+            self._report_generation_failure(
+                heading,
+                feedback,
+                show_dialog=show_error_dialog,
+            )
             return "failed"
 
         write_timing_log(

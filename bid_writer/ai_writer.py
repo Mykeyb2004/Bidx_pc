@@ -8,7 +8,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Generator, Optional
+from typing import Any, Callable, Generator, Optional
 from openai import OpenAI
 
 from .config import Config, TargetWordRange
@@ -441,8 +441,8 @@ class AIWriter:
         if max_flowcharts <= 0:
             return ""
         return (
-            f"生成的文档中适当绘制不超过{max_flowcharts}个Mermaid流程图，用于呈现关键流程、步骤衔接或机制闭环；"
-            "必须使用```mermaid代码块，统一采用flowchart TD语法，节点文案保持简洁。"
+            f"生成的文档中适当绘制不超过{max_flowcharts}个Mermaid图示，用于呈现关键流程、步骤衔接、角色协作或机制闭环；"
+            "必须使用```mermaid代码块，可按内容需要选择合适的 Mermaid 图类型，图内文案保持简洁。"
         )
 
     def _build_english_rule_text(self) -> str:
@@ -794,6 +794,7 @@ class AIWriter:
         target_words: int = 500,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
         min_words: Optional[int] = None,
+        status_callback: Optional[Callable[[str, str], None]] = None,
     ) -> PromptBuildResult:
         """
         构建扩写提示词
@@ -820,6 +821,8 @@ class AIWriter:
             "chapter_writing_plan_chars": 0,
         }
         if self.config.context_pruning_enabled:
+            if status_callback is not None:
+                status_callback("分析章节上下文", "正在分析章节上下文...")
             try:
                 pruned_context = self.context_pruner.build_context(heading)
             except Exception:
@@ -830,6 +833,8 @@ class AIWriter:
         background = ""
         try:
             if self.project_background_generator is not None:
+                if status_callback is not None:
+                    status_callback("整理项目背景", "正在整理项目背景...")
                 background = self.project_background_generator.get_or_generate()
         except Exception:
             background = ""
@@ -851,6 +856,8 @@ class AIWriter:
             )
             shared_prompt_prefix = self._join_prompt_section_contents(full_context_sections)
             if self.chapter_writing_plan_generator is not None:
+                if status_callback is not None:
+                    status_callback("生成章节写作计划", "正在生成章节写作计划...")
                 try:
                     chapter_writing_plan = self.chapter_writing_plan_generator.get_or_generate(
                         heading,
@@ -1097,6 +1104,7 @@ class AIWriter:
         stream: bool = True,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
         min_words: Optional[int] = None,
+        status_callback: Optional[Callable[[str, str], None]] = None,
     ) -> PreparedGeneration:
         """准备模型请求和 trace 会话，但不执行正文后处理。"""
         if min_words is not None:
@@ -1107,6 +1115,7 @@ class AIWriter:
             additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+            status_callback=status_callback,
         )
         system_prompt = self.build_system_prompt()
 

@@ -142,8 +142,8 @@ def test_task_card_includes_mermaid_control_when_limit_is_positive(monkeypatch, 
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert (
-        "- 流程图控制：生成的文档中适当绘制不超过3个Mermaid流程图，用于呈现关键流程、步骤衔接或机制闭环；"
-        "必须使用```mermaid代码块，统一采用flowchart TD语法，节点文案保持简洁。"
+        "- 流程图控制：生成的文档中适当绘制不超过3个Mermaid图示，用于呈现关键流程、步骤衔接、角色协作或机制闭环；"
+        "必须使用```mermaid代码块，可按内容需要选择合适的 Mermaid 图类型，图内文案保持简洁。"
     ) in result.prompt
 
 

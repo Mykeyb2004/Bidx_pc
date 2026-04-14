@@ -19,6 +19,8 @@ class GUIState:
     """GUI 持久化状态"""
 
     last_config_path: Optional[str] = None
+    last_generation_target_words: Optional[int] = None
+    last_max_mermaid_flowcharts_per_section: Optional[int] = None
 
 
 def _base_dir(base_dir: Optional[Path] = None) -> Path:
@@ -64,7 +66,28 @@ def load_gui_state(base_dir: Optional[Path] = None) -> GUIState:
     if not isinstance(last_config_path, str) or not last_config_path.strip():
         last_config_path = None
 
-    return GUIState(last_config_path=last_config_path)
+    def parse_optional_int(key: str) -> Optional[int]:
+        value = data.get(key)
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str) and value.strip():
+            try:
+                return int(value.strip())
+            except ValueError:
+                return None
+        return None
+
+    return GUIState(
+        last_config_path=last_config_path,
+        last_generation_target_words=parse_optional_int("last_generation_target_words"),
+        last_max_mermaid_flowcharts_per_section=parse_optional_int(
+            "last_max_mermaid_flowcharts_per_section"
+        ),
+    )
 
 
 def save_gui_state(state: GUIState, base_dir: Optional[Path] = None) -> None:
@@ -83,6 +106,19 @@ def remember_last_config(config_path: str, base_dir: Optional[Path] = None) -> N
     resolved_path = resolve_config_path(config_path, base)
     state = load_gui_state(base)
     state.last_config_path = _serialize_path(resolved_path, base)
+    save_gui_state(state, base)
+
+
+def remember_generation_dialog_settings(
+    target_words: int,
+    max_mermaid_flowcharts_per_section: int,
+    base_dir: Optional[Path] = None,
+) -> None:
+    """记录最近一次确认的生成参数弹窗数值。"""
+    base = _base_dir(base_dir)
+    state = load_gui_state(base)
+    state.last_generation_target_words = int(target_words)
+    state.last_max_mermaid_flowcharts_per_section = int(max_mermaid_flowcharts_per_section)
     save_gui_state(state, base)
 
 

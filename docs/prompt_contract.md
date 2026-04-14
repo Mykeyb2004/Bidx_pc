@@ -381,6 +381,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - “输出方式”只引用 `prompt_output_format` 这段配置文本
 - “表格控制”来自 `prompt_max_tables_per_section`
 - “流程图控制”只在 `prompt_max_mermaid_flowcharts_per_section > 0` 或运行时 override 值 `> 0` 时出现
+- 该约束只要求使用 Mermaid 代码块，不再把图类型固定为 `flowchart TD`
 - 在 pruned 分支中，“写作依据”固定写成“优先根据下方评分关注和需求要点组织内容”
 - 在 full-context 分支中，“写作依据”会改成引用前文固定参考材料，避免在稳定前缀前置后出现“下方”指代错位
 
@@ -621,7 +622,7 @@ messages = [
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求，或 GUI 自动拼入的关联章节摘要 | 是 |
 | `target_words` | 运行时入参 | 目标篇幅基准值；会进一步推导成区间文案 | 是 |
-| `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 流程图上限；`0` 时不注入流程图控制提示 | 条件性进入 |
+| `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 图示上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
 | `HeadingNode.full_path` | 当前章节节点 | 当前章节完整路径 | 是 |
 | `response_labels` | 标题链解析结果 | 用于路由评分项和需求块 | 间接进入 |

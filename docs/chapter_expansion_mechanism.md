@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，必要时解析章节依赖摘要，再收集附加要求、目标篇幅基准值和 Mermaid 流程图上限覆盖值
+3. GUI 选择叶子章节，必要时解析章节依赖摘要，再收集附加要求、目标篇幅基准值和 Mermaid 图示上限覆盖值
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -75,6 +75,13 @@ GUI 中批量生成的主要逻辑位于：
 - 对尚无正文且尚无可复用摘要的依赖章节，GUI 会先提示用户是否现在提炼“规划摘要”
 - 批量模式逐章执行
 - 生成内容在主窗口右侧正文工作区实时显示，完成后自动保存
+
+从 2026-04-14 起，扩写过程中的用户可见反馈进一步收紧为：
+
+- 在正文开始返回前，右侧工作区的状态文案会依次显示“准备扩写请求”“分析章节上下文”“整理项目背景”“生成章节写作计划”“请求大模型/等待首批输出”等阶段
+- 若模型在正文首批内容返回前失败，右侧工作区会直接替换为失败说明，明确指出“当前章节尚未开始输出正文”以及失败阶段、错误判断和排查建议
+- 若模型在流式输出过程中中断，已返回的正文会保留，工作区尾部会追加“生成中断提示”
+- 单章生成失败会立即弹出错误框；批量生成失败则在工作区保留最近一次失败详情，并在批量结束后给出集中告警
 
 ### 1.4 章节依赖关系与摘要缓存
 
@@ -222,6 +229,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 当 `processing.path = full_context` 且开启 `processing.full_context.chapter_writing_plan.enabled` 时，会先调用章节写作计划生成器生成简短的“章节写作计划”，再把它插入任务卡
 - 该生成器会优先复用正文扩写所使用的 `system prompt` 与 full-context 稳定前缀；章节边界信息会作为后缀单独追加，以兼顾 cache 命中率和章节边界表达
 - 当 `max_mermaid_flowcharts_per_section` 的配置值或运行时 override 值大于 `0` 时，任务卡会额外插入“流程图控制”一行；值为 `0` 时不会提及 Mermaid
+- 该提示不再把图类型固定为 `flowchart TD`，模型可以按内容需要选择合适的 Mermaid 图类型
 
 ### 3.4 结构硬约束
 
@@ -375,7 +383,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 2. 调用 `build_system_prompt()` 组装 system prompt
 3. 调用 `_build_request_options()` 生成模型请求参数
 
-GUI 主链路会把“生成参数设置”弹窗中的 Mermaid 流程图上限作为运行时 override 传给 `prepare_generation()`；该值默认是 `0`，并直接覆盖配置文件中的同名参数。
+GUI 主链路会把“生成参数设置”弹窗中的 Mermaid 图示上限作为运行时 override 传给 `prepare_generation()`；首次打开时该值默认是 `0`，之后会优先回填用户上次确认的 Mermaid 图示上限，并直接覆盖配置文件中的同名参数。目标篇幅基准值也会按同样方式记住最近一次确认值。
 
 最终消息格式是标准 Chat Completions 结构：
 

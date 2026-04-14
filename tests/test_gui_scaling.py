@@ -1,11 +1,18 @@
 from bid_writer.gui import (
     _build_gui_scale_profile,
+    _build_generation_error_feedback,
     _count_text_characters,
     _compute_dialog_target_size,
     _compute_gui_font_delta,
+    _format_dependency_summary_busy_message,
+    _format_batch_generation_failure_message,
+    _format_dependency_tooltip,
+    _format_heading_tree_title,
     _format_workspace_char_count,
+    _extract_heading_serial_token,
     _shift_hex_color,
 )
+from bid_writer.outline_parser import HeadingNode
 
 
 def test_compute_gui_font_delta_keeps_standard_display_unchanged():
@@ -83,3 +90,104 @@ def test_format_workspace_char_count_uses_placeholder_without_active_node():
 
 def test_format_workspace_char_count_formats_large_numbers_for_readability():
     assert _format_workspace_char_count(12345) == "当前节点已生成字符数：12,345"
+
+
+def test_format_heading_tree_title_adds_dependency_marker():
+    assert _format_heading_tree_title("进度计划安排", is_dependency_source=True) == "进度计划安排 🔗"
+
+
+def test_format_heading_tree_title_shows_dependency_count_when_reused_multiple_times():
+    assert _format_heading_tree_title("进度计划安排", depends_on_count=3) == "进度计划安排 ⇢3章"
+
+
+def test_format_heading_tree_title_shows_both_source_and_target_markers():
+    assert (
+        _format_heading_tree_title(
+            "进度计划安排",
+            is_dependency_source=True,
+            depends_on_count=2,
+        )
+        == "进度计划安排 🔗 ⇢2章"
+    )
+
+
+def test_extract_heading_serial_token_supports_multilevel_numbers():
+    assert _extract_heading_serial_token("3.2.1 质量保障措施") == "3.2.1"
+
+
+def test_extract_heading_serial_token_supports_chinese_outline_numbers():
+    assert _extract_heading_serial_token("（三）实施方案") == "（三）"
+
+
+def test_format_dependency_tooltip_lists_dependency_titles():
+    dependencies = [
+        HeadingNode(level=3, title="3.2.1 质量保障措施", full_path="", line_number=1),
+        HeadingNode(level=3, title="应急保障机制", full_path="", line_number=2),
+    ]
+
+    tooltip = _format_dependency_tooltip(dependencies)
+
+    assert "当前章节依赖了 2 个章节" in tooltip
+    assert "- 3.2.1 质量保障措施" in tooltip
+    assert "- 应急保障机制" in tooltip
+
+
+def test_format_dependency_summary_busy_message_for_check_mode():
+    message = _format_dependency_summary_busy_message("check", 2)
+
+    assert "正在后台检查 2 个依赖章节" in message
+    assert "自动刷新可复用结果" in message
+
+
+def test_format_dependency_summary_busy_message_for_generate_mode():
+    message = _format_dependency_summary_busy_message("generate", 3)
+
+    assert "正在后台为 3 个依赖章节提炼关联摘要" in message
+    assert "自动继续当前生成流程" in message
+
+
+def test_build_generation_error_feedback_for_timeout_before_output():
+    class APITimeoutError(Exception):
+        pass
+
+    feedback = _build_generation_error_feedback(
+        heading_title="实施方案",
+        heading_full_path="项目 > 实施方案",
+        stage_label="等待模型首批输出",
+        exc=APITimeoutError("timed out while waiting for response"),
+        has_partial_output=False,
+    )
+
+    assert feedback.category_title == "模型调用超时"
+    assert not feedback.append_to_workspace
+    assert "正文开始输出前就失败了" in feedback.workspace_body_text
+    assert "等待模型首批输出" in feedback.dialog_message
+
+
+def test_build_generation_error_feedback_for_partial_output_connection_error():
+    class APIConnectionError(Exception):
+        pass
+
+    feedback = _build_generation_error_feedback(
+        heading_title="服务保障",
+        heading_full_path="项目 > 服务保障",
+        stage_label="接收模型输出",
+        exc=APIConnectionError("Connection error."),
+        has_partial_output=True,
+    )
+
+    assert feedback.category_title == "无法连接模型服务"
+    assert feedback.append_to_workspace
+    assert "已返回内容会保留在工作区" in feedback.workspace_body_text
+    assert "接收模型输出" in feedback.workspace_body_text
+
+
+def test_format_batch_generation_failure_message_summarizes_titles():
+    message = _format_batch_generation_failure_message(
+        ["第一章", "第二章", "第三章", "第四章", "第五章", "第六章"]
+    )
+
+    assert "有 6 个章节失败" in message
+    assert "- 第一章" in message
+    assert "- 第五章" in message
+    assert "其余 1 个章节" in message

@@ -34,7 +34,7 @@ FIELD_TOOLTIPS: dict[str, str] = {
     "writing.allow_markdown_headings": "是否允许正文里出现 Markdown 标题符号。政府标书正文通常建议关闭。",
     "writing.allow_english_terms": "是否允许必要英文术语。专业场景可开启，但一般不建议让正文出现过多英文混排。",
     "writing.max_tables_per_section": "单节允许出现的最大表格数。数值越大，模型越容易输出表格。",
-    "writing.max_mermaid_flowcharts_per_section": "单节允许出现的 Mermaid 流程图上限。设为 0 时不注入流程图控制提示。",
+    "writing.max_mermaid_flowcharts_per_section": "单节允许出现的 Mermaid 图示上限。设为 0 时不注入流程图控制提示。",
     "writing.summary_title": "章节小结标题名称。若不希望正文出现小结标题，可以结合提示词策略一起调整。",
     "writing.hard_constraints_text": "高优先级硬约束，每行一条。这里适合写绝对不能违反的格式规则和禁用表达。",
     "writing.extra_rules_text": "补充写作规则，每行一条。当前会追加到“结构输出硬要求”的末尾，适合放必须跟随结构要求一起传达的业务写作口径。",

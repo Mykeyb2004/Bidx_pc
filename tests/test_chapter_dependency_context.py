@@ -115,9 +115,29 @@ def test_bid_writer_can_persist_and_resolve_chapter_dependencies(tmp_path: Path,
     bid_writer.set_chapter_dependencies(target, [dep_a, dep_b])
     resolved = bid_writer.get_dependency_headings(target)
     all_sources = bid_writer.get_all_dependency_source_headings()
+    source_counts = bid_writer.get_dependency_source_usage_counts()
+    source_targets = bid_writer.get_dependency_source_targets()
+    target_sources = bid_writer.get_dependency_target_sources()
 
     assert [heading.full_path for heading in resolved] == [dep_a.full_path, dep_b.full_path]
     assert [heading.full_path for heading in all_sources] == [dep_a.full_path, dep_b.full_path]
+    assert source_counts == {
+        dep_a.full_path: 1,
+        dep_b.full_path: 1,
+    }
+    assert {
+        source_path: [heading.title for heading in targets]
+        for source_path, targets in source_targets.items()
+    } == {
+        dep_a.full_path: [target.title],
+        dep_b.full_path: [target.title],
+    }
+    assert {
+        target_path: [heading.title for heading in sources]
+        for target_path, sources in target_sources.items()
+    } == {
+        target.full_path: [dep_a.title, dep_b.title],
+    }
     assert bid_writer.chapter_dependency_store.path.exists()
 
 

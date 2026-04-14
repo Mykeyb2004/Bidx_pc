@@ -756,7 +756,7 @@ class Config:
 
     @property
     def prompt_max_mermaid_flowcharts_per_section(self) -> int:
-        """单节最大 Mermaid 流程图数"""
+        """单节最大 Mermaid 图示数"""
         return self._get_int(
             ('writing', 'max_mermaid_flowcharts_per_section'),
             ('prompt', 'max_mermaid_flowcharts_per_section'),
