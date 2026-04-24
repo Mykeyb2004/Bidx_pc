@@ -326,6 +326,24 @@ class Config:
             return default
         return str(resolve(normalized))
 
+    def _resolve_declared_paths(
+        self,
+        values: Any,
+        *,
+        resolver: Optional[Callable[[str], Path]] = None,
+    ) -> list[str]:
+        """把声明式路径列表解析成绝对路径字符串列表。"""
+        resolved: list[str] = []
+        seen: set[str] = set()
+        raw_values = values if isinstance(values, list) else [values]
+        for raw_value in raw_values:
+            path_value = self._resolve_declared_path(raw_value, resolver=resolver, default="")
+            if not path_value or path_value in seen:
+                continue
+            seen.add(path_value)
+            resolved.append(path_value)
+        return resolved
+
     @staticmethod
     def _normalize_mode(value: Any, *, default: str = 'legacy_rule') -> str:
         normalized = str(value).strip().lower() if value is not None else default
@@ -589,6 +607,38 @@ class Config:
         )
 
     @property
+    def knowledge_files(self) -> list[str]:
+        """用户声明的知识文档路径列表。"""
+        project_value = self._get_value('project', 'inputs', 'knowledge_files', default=self._MISSING)
+        if project_value is not self._MISSING:
+            return self._resolve_declared_paths(project_value, resolver=self._resolve_project_path)
+        legacy_value = self._get_first_defined(('inputs', 'knowledge_files'), 'knowledge_files', default=[])
+        return self._resolve_declared_paths(legacy_value, resolver=self._resolve_path)
+
+    @property
+    def knowledge_directory(self) -> str:
+        """知识文档自动扫描目录。"""
+        project_value = self._get_value('project', 'inputs', 'knowledge_directory', default=self._MISSING)
+        if project_value is not self._MISSING:
+            return self._resolve_declared_path(
+                project_value,
+                resolver=self._resolve_project_path,
+                default="",
+            )
+        value = self._get_first_defined(('inputs', 'knowledge_directory'), 'knowledge_directory', default='')
+        return self._resolve_declared_path(value, resolver=self._resolve_path, default="")
+
+    @property
+    def knowledge_enabled(self) -> bool:
+        """是否启用知识库注入。"""
+        return self._get_bool(('processing', 'knowledge', 'enabled'), ('knowledge', 'enabled'), default=True)
+
+    @property
+    def knowledge_max_chars(self) -> int:
+        """知识库注入的最大字符数预算。"""
+        return self._get_int(('processing', 'knowledge', 'max_chars'), ('knowledge', 'max_chars'), default=800)
+
+    @property
     def output_prefix(self) -> str:
         """输出文件名前缀"""
         return self._get_first_defined(('runtime', 'output', 'prefix'), ('output', 'prefix'), default='')
@@ -783,6 +833,29 @@ class Config:
     def prompt_extra_rules(self) -> list[str]:
         """额外提示规则"""
         return self._get_string_list(('writing', 'extra_rules'), ('prompt', 'extra_rules'), default=[])
+
+    @property
+    def chapter_facts_enabled(self) -> bool:
+        """是否启用章节事实提炼。"""
+        return self._get_bool(('processing', 'chapter_facts', 'enabled'), ('chapter_facts', 'enabled'), default=True)
+
+    @property
+    def chapter_facts_auto_extract_on_batch(self) -> bool:
+        """批量生成后是否自动提炼章节 facts。"""
+        return self._get_bool(
+            ('processing', 'chapter_facts', 'auto_extract_on_batch'),
+            ('chapter_facts', 'auto_extract_on_batch'),
+            default=True,
+        )
+
+    @property
+    def chapter_facts_max_facts_per_chapter(self) -> int:
+        """单章节最大提炼 facts 条数。"""
+        return self._get_int(
+            ('processing', 'chapter_facts', 'max_facts_per_chapter'),
+            ('chapter_facts', 'max_facts_per_chapter'),
+            default=15,
+        )
 
     @property
     def context_pruning_enabled(self) -> bool:

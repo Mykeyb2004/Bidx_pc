@@ -137,7 +137,7 @@
 
 补充：
 
-- 从 2026-04 起，GUI 可能会在运行时把“关联章节摘要”拼进 `additional_requirements`
+- 从 2026-04 起，`additional_requirements` 默认只承载操作员手工输入，不再自动拼入“关联章节摘要”
 - 这类摘要属于 GUI 层的注入结果，不会在 `build_prompt_result()` 内形成新的独立 block
 
 ### 4.2 `ChapterContext` 是什么
@@ -336,10 +336,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
    - full-context 分支
 5. 可选 `additional_requirements`
 
-其中 `additional_requirements` 的真实来源可能有两类：
-
-- 操作员手工输入的附加要求
-- GUI 基于章节依赖关系自动注入的“关联章节摘要”文本
+`additional_requirements` 当前只承载操作员手工输入的附加要求。
 
 这个顺序是硬编码的，没有配置化。
 
@@ -351,12 +348,13 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `structure_contract` | `## 结构输出硬要求` | 总是出现 | 定义正文结构硬要求 |
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
+| `knowledge_context` | `## 投标方知识库` | 启用了知识库且成功读取到知识文档时 | 注入用户手写知识文档，经预算截断后作为一致性参考 |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
 | `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |
 | `bid_requirements` | `## 招标需求参考` | full 分支且有采购需求原文时 | 放完整采购需求 |
 | `scoring_criteria` | `## 评分标准参考` | full 分支且有评分标准原文时 | 放完整评分标准 |
-| `additional_requirements` | `## 用户附加要求` | 最终附加要求非空时 | 运营侧临时补充要求，或 GUI 自动注入的关联章节摘要 |
+| `additional_requirements` | `## 用户附加要求` | 最终附加要求非空时 | 运营侧临时补充要求 |
 
 ### 5.3 `task_card` 具体写了什么
 
@@ -417,9 +415,11 @@ pruned 分支里，需求相关内容只会出现一个区块：
 当 `pruned_context` 成功构建后，user prompt 会追加以下内容：
 
 1. 公共段落中的 `## 章节边界参考`
-2. 如果命中评分项，则追加 `## 评分关注`
-3. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
-4. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
+2. 如果存在项目背景摘要，则追加 `## 项目背景`
+3. 如果启用了知识库且成功读取到知识文档，则追加 `## 投标方知识库`
+4. 如果命中评分项，则追加 `## 评分关注`
+5. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
+6. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
 
 这条分支不会把完整 `bid_requirements` 和完整 `scoring_criteria` 直接放进 user prompt。
 
@@ -434,8 +434,9 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 1. `## 结构输出硬要求`
 2. `## 项目背景`，仅在项目背景摘要存在时出现
-3. `## 招标需求参考`
-4. `## 评分标准参考`
+3. `## 投标方知识库`，仅在知识文档存在时出现
+4. `## 招标需求参考`
+5. `## 评分标准参考`
 
 对应原文非空时，该 section 才会真正出现。之后再进入章节动态段落，例如 `task_card`、`first_line_rule`、`scope_reference`。
 
@@ -620,7 +621,11 @@ messages = [
 | `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
 | `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
-| `additional_requirements` | 运行时入参 | 操作员临时补充的要求，或 GUI 自动拼入的关联章节摘要 | 是 |
+| `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
+| `knowledge_files` | `project.inputs.knowledge_files` | 手写知识文档显式声明列表 | 条件性进入 |
+| `knowledge_directory` | `project.inputs.knowledge_directory` | 手写知识目录扫描入口 | 条件性进入 |
+| `knowledge_enabled` | `processing.knowledge.enabled` | 控制是否注入 `knowledge_context` | 是 |
+| `knowledge_max_chars` | `processing.knowledge.max_chars` | 控制 `knowledge_context` 的预算截断 | 是 |
 | `target_words` | 运行时入参 | 目标篇幅基准值；会进一步推导成区间文案 | 是 |
 | `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 图示上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
@@ -691,7 +696,9 @@ flowchart TD
     H1 --> H2[structure_contract]
     H2 --> H3[first_line_rule 可选]
     H3 --> H4[scope_reference]
-    H4 --> H5{pruned 还是 full}
+    H4 --> H4a[project_background 可选]
+    H4a --> H4b[knowledge_context 可选]
+    H4b --> H5{pruned 还是 full}
     H5 -- pruned --> H6[scoring_focus 可选]
     H6 --> H7[requirement_brief 或 requirement_seed]
     H5 -- full --> H8[bid_requirements 可选]

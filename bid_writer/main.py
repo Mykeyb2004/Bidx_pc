@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from .ai_writer import AIWriter
+from .chapter_fact_extractor import ChapterFactExtractor, ChapterFactResult
+from .chapter_fact_store import ChapterFactStore
 from .chapter_dependency_store import ChapterDependencyStore
 from .chapter_summary_generator import ChapterSummaryGenerator, ChapterSummaryResult
 from .chapter_summary_store import ChapterSummaryStore
@@ -56,6 +58,12 @@ class BidWriter:
             overwrite_existing=self.config.output_overwrite_existing
         )
         self.chapter_dependency_store = ChapterDependencyStore(self.config)
+        self.chapter_fact_store = ChapterFactStore(self.config)
+        self.chapter_fact_extractor = ChapterFactExtractor(
+            self.config,
+            self.file_saver,
+            self.chapter_fact_store,
+        )
         self.chapter_summary_store = ChapterSummaryStore(self.config)
         self.chapter_summary_generator = ChapterSummaryGenerator(
             self.config,
@@ -63,6 +71,7 @@ class BidWriter:
             self.file_saver,
             self.chapter_summary_store,
         )
+        self.knowledge_assembler = self.ai_writer.knowledge_assembler
 
     def load_outline(self) -> bool:
         """加载并解析大纲"""
@@ -182,9 +191,17 @@ class BidWriter:
         """返回正文摘要缓存状态。"""
         return self.chapter_summary_generator.get_output_summary_status(heading)
 
+    def get_output_fact_status(self, heading: HeadingNode) -> str:
+        """返回正文 facts 缓存状态。"""
+        return self.chapter_fact_extractor.get_output_fact_status(heading)
+
     def ensure_planned_chapter_summary(self, heading: HeadingNode) -> Optional[ChapterSummaryResult]:
         """生成或复用规划摘要。"""
         return self.chapter_summary_generator.ensure_planned_summary(heading)
+
+    def ensure_output_chapter_facts(self, heading: HeadingNode) -> Optional[ChapterFactResult]:
+        """生成或复用正文 facts。"""
+        return self.chapter_fact_extractor.ensure_output_facts(heading)
 
     def has_cached_chapter_summary(self, heading: HeadingNode) -> bool:
         """检查是否存在已缓存的章节摘要。"""

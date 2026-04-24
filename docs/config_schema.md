@@ -73,6 +73,9 @@ project:
     outline_file: "./outline.md"
     bid_requirements_file: "./采购需求.md"
     scoring_criteria_file: "./评分标准.md"
+    knowledge_files:
+      - "./knowledge/公司简介.md"
+    knowledge_directory: "./knowledge"
   output_dir: "./output"
 ```
 
@@ -80,6 +83,8 @@ project:
 
 - `project.root_dir` 用于声明项目资料根目录
 - `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
+- `project.inputs.knowledge_files` 允许显式声明知识文档，声明顺序优先于目录扫描顺序
+- `project.inputs.knowledge_directory` 会按文件名排序扫描目录下的 `.md` 文件，并补齐未显式声明的知识文档
 
 ### 3.2 `writing`
 
@@ -119,6 +124,13 @@ processing:
   project_background:
     enabled: true
     max_chars: 800
+  knowledge:
+    enabled: true
+    max_chars: 800
+  chapter_facts:
+    enabled: true
+    auto_extract_on_batch: true
+    max_facts_per_chapter: 15
   full_context:
     chapter_writing_plan:
       enabled: false
@@ -157,6 +169,8 @@ processing:
 
 - `processing.path` 决定当前项目跑哪条链路
 - `processing.project_background.*` 当前会在 `auto` 和 `full_context` 下生效
+- `processing.knowledge.*` 控制是否注入 `knowledge_context`，phase 1 仅做按条目/段落边界的硬截断
+- `processing.chapter_facts.*` 控制正文 facts 提炼与缓存刷新边界；`auto_extract_on_batch` 只建议用于批量生成路径
 - `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”
 - 开启后会增加一次辅助 LLM 调用；当前实现会尽量复用正文扩写的 system prompt 与 full-context 参考前缀，以改善 prompt cache 命中率
 - 每条链路自己的参数挂在各自子块下

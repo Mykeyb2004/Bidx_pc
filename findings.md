@@ -1,5 +1,24 @@
 # Findings
 
+## 知识库方案阶段一规划相关发现
+- `docs/knowledge_base_plan.md` 现已统一 `chapter_facts` 缓存为单文件 `.{bid_writer}/chapter_facts.json`，并补充了避免落地分叉的实现约束。
+- 当前真正进入模型的 user prompt 是由 `AIWriter.build_prompt_result()` 中的 `_append_prompt_section(...)` 组装的；仅修改 `_PROMPT_CONTRACT_BLOCKS` 不会自动把 `knowledge_context` 注入到真实 prompt。
+- `AIWriter._build_prompt_contract_blocks()` 还维护了一套独立的 `block_specs` 映射，因此 `knowledge_context` 需要同时补 section 注入和 block spec，trace 才能与真实 prompt 对齐。
+- `AIWriter.build_prompt_result()` 目前有 `pruned_context is None` 和 `pruned_context is not None` 两条主路径；知识注入必须覆盖两条路径，且插入位置要与文档约定一致，放在 `project_background` 之后、`requirement_context` 之前。
+- `Config` 已经具备可复用的路径与列表读取基础能力：`_get_string_list()`、`_resolve_path()`、`_resolve_project_path()`，适合直接承接 `knowledge_files` / `knowledge_directory` 的阶段一实现。
+- 仓库约定要求：只要配置结构相关字段发生变化，就要同步维护 `docs/config_schema.md`、`config.example.yaml`、相关 `config_*.yaml` 与测试夹具，不能只改代码。
+- 项目根目录已经长期使用 `task_plan.md`、`findings.md`、`progress.md` 作为持久 planning 文件，本轮应在现有文件上续接，而不是覆盖为通用模板。
+- 当前阶段一目标只涉及“用户手写知识 -> prompt”的新链路，不应把既有“章节依赖摘要”或未来“章节事实提炼”混入本轮最小实现范围。
+
+## Resources
+- 方案文档：`docs/knowledge_base_plan.md`
+- Prompt 接入点：`bid_writer/ai_writer.py`
+- 配置接入点：`bid_writer/config.py`
+- 运行时服务组装：`bid_writer/main.py`
+- 后续 GUI 触发相关参考：`bid_writer/gui.py`
+
+---
+
 ## config 项目文件结构评估补充发现
 - README 已明确推荐把输入资源写在 `inputs` 下，但 `Config` 仍同时兼容根级 `outline_file` / `bid_requirements` / `scoring_criteria`，形成双轨写法。
 - 当前公共服务满意度项目配置仍使用根级旧写法，而且 `bid_requirements` / `scoring_criteria` / `outline_file` 采用“多行文本字段里只放一个路径”的兼容形态，可读性较差。

@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，必要时解析章节依赖摘要，再收集附加要求、目标篇幅基准值和 Mermaid 图示上限覆盖值
+3. GUI 选择叶子章节，收集附加要求、目标篇幅基准值和 Mermaid 图示上限覆盖值；关联章节事实通过 `knowledge_context` 注入，不再经 `additional_requirements` 自动拼接
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -70,8 +70,8 @@ GUI 中批量生成的主要逻辑位于：
 行为特点：
 
 - 先获取选中的叶子节点
-- 单章模式下，若当前章节配置了依赖章节，会先尝试解析关联章节摘要并默认填入“附加扩写要求”
-- 批量模式下，“附加扩写要求”只收集共享要求；关联章节摘要会在实际逐章生成时按章节动态追加
+- 单章模式下，“附加扩写要求”只承载用户手工输入
+- 批量模式下，“附加扩写要求”仍只承载共享要求；关联章节事实改由 `knowledge_context` 主链路注入
 - 对尚无正文且尚无可复用摘要的依赖章节，GUI 会先提示用户是否现在提炼“规划摘要”
 - 批量模式逐章执行
 - 生成内容在主窗口右侧正文工作区实时显示，完成后自动保存
@@ -185,24 +185,27 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 2. `structure_contract`
 3. `first_line_rule`，仅在配置了首行模板时出现
 4. `scope_reference`
-5. 若有裁剪上下文：
+5. `project_background`，若存在
+6. `knowledge_context`，若存在
+7. 若有裁剪上下文：
    - `scoring_focus`
    - `requirement_brief` 或 `requirement_points`
-6. 若没有裁剪上下文：
+8. 若没有裁剪上下文：
    - `bid_requirements`
    - `scoring_criteria`
-7. `additional_requirements`
+9. `additional_requirements`
 
 在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
 
 1. `structure_contract`
 2. `project_background`，若存在
-3. `bid_requirements`
-4. `scoring_criteria`
-5. `task_card`
-6. `first_line_rule`，若存在
-7. `scope_reference`
-8. `additional_requirements`
+3. `knowledge_context`，若存在
+4. `bid_requirements`
+5. `scoring_criteria`
+6. `task_card`
+7. `first_line_rule`，若存在
+8. `scope_reference`
+9. `additional_requirements`
 
 这里不会把 `scope_reference` 放进共享前缀，因为它包含当前标题、上级标题和同级标题，属于章节动态信息；若放在最前面，反而会降低跨 h3/h4 调用的前缀复用率。
 
@@ -249,21 +252,18 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 这两项都属于 user prompt 的结构补充，不属于 system 级约束。
 
-### 3.6 关联章节摘要如何进入 prompt
+### 3.6 关联章节事实如何进入 prompt
 
-“关联章节摘要”当前不会作为新的独立 prompt block 接入 `AIWriter.build_prompt_result()`；它仍然走既有的 `additional_requirements` 通道。
+当前章节间的事实传递主路径是 `knowledge_context`：
 
-也就是说：
-
-- 单章生成时，GUI 会把自动提炼出的关联章节摘要先填入“附加扩写要求”输入框，用户可继续编辑
-- 批量生成时，GUI 只让用户编辑共享要求；每章自己的关联章节摘要会在调用 `prepare_generation()` 前与共享要求做字符串拼接
-- 对 `AIWriter` 而言，它收到的仍然只是最终合并后的 `additional_requirements`
+- 用户手写知识文档直接进入 `knowledge_context`
+- 已提炼并缓存的依赖章节 facts 在命中当前章节依赖关系时，也会进入 `knowledge_context`
+- `additional_requirements` 回归只承载用户输入，不再自动拼接依赖摘要
 
 维护影响：
 
-- prompt contract 不新增独立 block
-- trace 中记录的 `additional_requirements` 已包含最终注入结果
-- 若要排查某章实际拿到了哪些关联章节摘要，优先查看该章 trace 的 `01_heading.json` 与 `04_prompt_user.md`
+- facts 是否成功进入 prompt，优先查看 trace 中的 `prompt_sections.knowledge_context`
+- 若要排查依赖 facts 来源，优先查看 `.bid_writer/chapter_facts.json` 与 `chapter_dependencies.json`
 
 ## 四、章节级上下文裁剪
 
@@ -455,12 +455,14 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 
 ### 7.1 投标主体统一
 
-`_normalize_bidder_references()` 会把以下词替换成配置中的 `prompt.bidder_name`：
+`_normalize_bidder_references()` 会把以下主体自称替换成配置中的 `prompt.bidder_name`：
 
 - `我方`
 - `我司`
 - `本公司`
 - `本单位`
+
+替换时会跳过已知专业术语中的嵌套片段，避免把 `基本单位`、`样本单位`、`标本单位`、`成本单位` 这类固定词组误替换成投标主体名称。
 
 ### 7.2 输出问题检测
 
@@ -533,14 +535,16 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 
 ### 9.2 Prompt Contract 摘要层
 
-当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含六个 block：
+当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含八个 block：
 
 1. `system_constraints`
 2. `chapter_task`
 3. `structure_rules`
 4. `chapter_scope`
-5. `requirement_context`
-6. `scoring_context`
+5. `project_background`
+6. `knowledge_context`
+7. `requirement_context`
+8. `scoring_context`
 
 这层不是替代原始 prompt sections，而是为了让维护者更快看懂“一次章节扩写到底喂给了模型什么”。
 

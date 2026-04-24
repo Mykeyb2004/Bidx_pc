@@ -5,6 +5,10 @@ project:
     outline_file: "./outline.md"
     bid_requirements_file: "./项目要求/项目采购需求.md"
     scoring_criteria_file: "./项目要求/评分标准.md"
+    knowledge_files:
+      - "./knowledge/公司简介.md"
+      - "./knowledge/项目团队.md"
+    knowledge_directory: "./knowledge"
   output_dir: "./output"
 
 writing:
@@ -34,6 +38,13 @@ processing:
   project_background:
     enabled: true
     max_chars: 800
+  knowledge:
+    enabled: true
+    max_chars: 800
+  chapter_facts:
+    enabled: true
+    auto_extract_on_batch: true
+    max_facts_per_chapter: 15
   full_context:
     chapter_writing_plan:
       enabled: false

@@ -1,3 +1,37 @@
+# 知识库方案阶段一（用户手写知识注入）实施计划
+
+## 目标
+- 落地 `docs/knowledge_base_plan.md` 的阶段一最小可用版本：新增用户手写知识读取与 `knowledge_context` prompt 注入，在不引入新增 LLM 调用的前提下提升投标方事实一致性。
+
+## 阶段
+- [x] 复核方案文档并统一实现约束
+- [x] 对照现有代码确认真实接入点与受影响文件
+- [ ] 锁定阶段一最小实现边界与对象职责
+- [ ] 实现配置读取：`knowledge_files` / `knowledge_directory` / `knowledge_enabled` / `knowledge_max_chars`
+- [ ] 实现 `KnowledgeAssembler`：文件发现、去重排序、读取、格式渲染、预算硬截断
+- [ ] 在 prompt 构造中接入 `knowledge_context`，并同步 prompt contract / trace
+- [ ] 同步文档与示例配置：`docs/config_schema.md`、`config.example.yaml`、相关 `config_*.yaml` 与测试夹具
+- [ ] 运行验证：配置解析、prompt 构造、空知识目录回退、预算截断、回归检查
+
+## 关键决策
+- 本轮范围严格限定为文档阶段一，不引入 `ChapterFactExtractor` / `ChapterFactStore` / GUI 异步事实提炼。
+- `knowledge_context` 需要同时进入真实 user prompt 和 `prompt_contract_blocks`，不能只改 `_PROMPT_CONTRACT_BLOCKS`。
+- 预算超限只做硬截断，不做摘要压缩，保持阶段一“零新增 LLM 调用”约束。
+- 配置结构相关改动必须同步维护 `docs/config_schema.md`、`config.example.yaml`、相关 `config_*.yaml` 和测试夹具，遵守仓库约定。
+- 章节事实相关的 scope 过滤、去重、stale 缓存规则作为后续阶段约束保留，但不进入本轮实现范围。
+
+## 风险
+- `knowledge_files` 与 `knowledge_directory` 的合并顺序和去重规则若不稳定，会导致 prompt 与 trace 波动。
+- `knowledge_context` 若只改 trace 映射不改真实 prompt，会出现“文档看起来支持、运行时实际未注入”的假阳性。
+- 知识文件路径解析若不与现有输入文件规则保持一致，真实项目配置很容易出现“文件存在但运行时找不到”。
+- `AIWriter.build_prompt_result()` 目前存在 pruned / full-context 两条主路径，知识注入若只覆盖其中一条会形成模式缺口。
+
+## 待回答问题
+- `KnowledgeAssembler` 首版由 `AIWriter` 直接持有，还是按方案文档放在 `BidWriter` 层统一持有后再传入。
+- 阶段一测试应新增独立测试文件，还是并入现有 `Config` / `AIWriter` 相关测试集中。
+
+---
+
 # 转义文件名方案评估
 
 ## 目标

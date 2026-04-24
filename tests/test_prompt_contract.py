@@ -18,6 +18,7 @@ EXPECTED_BLOCK_IDS = [
     "structure_rules",
     "chapter_scope",
     "project_background",
+    "knowledge_context",
     "requirement_context",
     "scoring_context",
 ]
@@ -83,6 +84,7 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     assert [block["id"] for block in result.prompt_contract_blocks] == EXPECTED_BLOCK_IDS
     assert result.prompt_contract_blocks[0]["prompt_kind"] == "system"
     assert result.prompt_contract_blocks[1]["section_names"] == ["task_card", "additional_requirements"]
+    assert result.prompt_contract_blocks[5]["section_names"] == ["knowledge_context"]
     assert "source_context" in result.prompt_contract_blocks[0]
 
 
@@ -119,8 +121,48 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert "## 章节边界参考" in result.prompt
     assert "## 完整总大纲参考" not in result.prompt
     assert result.prompt.index("## 结构输出硬要求") < result.prompt.index("## 招标需求参考")
+    assert result.prompt.index("## 投标方知识库") < result.prompt.index("## 招标需求参考")
     assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节任务卡")
     assert result.prompt.index("## 章节任务卡") < result.prompt.index("## 章节边界参考")
+
+
+def test_full_context_prompt_can_include_knowledge_context(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+
+    assert "## 投标方知识库" in result.prompt
+    assert "公司名称：测试投标主体" in result.prompt
+    assert "项目经理：张三" in result.prompt
+    assert "（来源：knowledge_company.md）" in result.prompt
+
+
+def test_finalize_generation_does_not_replace_bidder_alias_inside_technical_term(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("project", {})["bidder_name"] = "杭州菲尔德咨询"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.finalize_generation(heading, "项目分析应覆盖基本单位划分原则，并明确样本单位抽取范围。")
+
+    assert result.content == "项目分析应覆盖基本单位划分原则，并明确样本单位抽取范围。"
+    assert result.postprocess["bidder_reference_normalized"] is False
+    assert result.postprocess["bidder_reference_replacements"] == 0
+
+
+def test_finalize_generation_still_replaces_standalone_bidder_alias(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("project", {})["bidder_name"] = "杭州菲尔德咨询"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.finalize_generation(heading, "项目组织由本单位负责统筹实施与质量控制。")
+
+    assert result.content == "项目组织由杭州菲尔德咨询负责统筹实施与质量控制。"
+    assert result.postprocess["bidder_reference_normalized"] is True
+    assert result.postprocess["bidder_reference_replacements"] == 1
 
 
 def test_task_card_omits_mermaid_control_when_limit_is_zero(monkeypatch, tmp_path):
@@ -219,6 +261,7 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
 
     assert captured["system_prompt"] == writer.build_system_prompt()
     assert captured["shared_prompt_prefix"].startswith("## 结构输出硬要求")
+    assert "## 投标方知识库" in captured["shared_prompt_prefix"]
     assert "## 项目背景" in captured["shared_prompt_prefix"]
     assert "## 招标需求参考" in captured["shared_prompt_prefix"]
     assert "## 评分标准参考" in captured["shared_prompt_prefix"]
@@ -251,6 +294,7 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
     assert "prompt_sections" in payload
     assert payload["prompt_contract"]["block_order"] == EXPECTED_BLOCK_IDS
     assert [block["id"] for block in payload["prompt_contract"]["blocks"]] == EXPECTED_BLOCK_IDS
+    assert payload["prompt_contract"]["blocks"][5]["section_names"] == ["knowledge_context"]
     assert payload["prompt_contract"]["blocks"][0]["source_context"]
     assert heading_payload["target_words"] == 1200
     assert heading_payload["target_word_range"] == {"baseline": 1200, "lower": 1200, "upper": 1400}

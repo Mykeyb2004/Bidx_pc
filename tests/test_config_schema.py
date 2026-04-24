@@ -131,6 +131,60 @@ processing:
     assert config.chapter_writing_plan_cache_dir == str(project_root / "plan-cache")
 
 
+def test_new_schema_reads_knowledge_paths_and_budget(tmp_path: Path):
+    project_root = tmp_path / "project-data"
+    project_root.mkdir()
+    knowledge_dir = project_root / "knowledge"
+    knowledge_dir.mkdir()
+    (knowledge_dir / "团队.md").write_text("- 项目经理：张三\n", encoding="utf-8")
+    (project_root / "公司简介.md").write_text("- 公司名称：测试投标主体\n", encoding="utf-8")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "./project-data"
+  inputs:
+    knowledge_files:
+      - "./公司简介.md"
+    knowledge_directory: "./knowledge"
+
+processing:
+  knowledge:
+    enabled: true
+    max_chars: 360
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.knowledge_files == [str(project_root / "公司简介.md")]
+    assert config.knowledge_directory == str(project_root / "knowledge")
+    assert config.knowledge_enabled is True
+    assert config.knowledge_max_chars == 360
+
+
+def test_new_schema_reads_chapter_fact_settings(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  chapter_facts:
+    enabled: true
+    auto_extract_on_batch: false
+    max_facts_per_chapter: 9
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.chapter_facts_enabled is True
+    assert config.chapter_facts_auto_extract_on_batch is False
+    assert config.chapter_facts_max_facts_per_chapter == 9
+
+
 def test_legacy_schema_still_derives_full_context_and_reads_inputs(tmp_path: Path):
     (tmp_path / "outline.md").write_text("# 项目\n## 章节\n### 质量保障措施\n", encoding="utf-8")
     (tmp_path / "bid_requirements.md").write_text("旧配置采购需求", encoding="utf-8")

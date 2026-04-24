@@ -18,6 +18,8 @@ project:
     outline_file: "./outline.md"
     bid_requirements_file: "./bid_requirements.md"
     scoring_criteria_file: "./scoring_criteria.md"
+    knowledge_files:
+      - "./knowledge_company.md"
   output_dir: "./output"
 
 writing:
@@ -42,6 +44,9 @@ writing:
 
 processing:
   path: "full_context"
+  knowledge:
+    enabled: true
+    max_chars: 400
   context_view:
     include_ancestors: true
     include_siblings: true

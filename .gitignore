@@ -16,3 +16,4 @@ __pycache__/
 !.env.example
 /llm_reference_code/
 /caches/
+.omx/

@@ -1,10 +1,10 @@
 project:
-  root_dir: /Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2025 年度社会公众对公共文化服务的满意度调查项目
+  root_dir: /Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2026年浙江省文化广电和旅游统计名录库维护、基层报表审核及数据处理项目
   bidder_name: 杭州菲尔德咨询
   inputs:
-    outline_file: ./投标大纲.md
-    bid_requirements_file: ./采购需求.md
-    scoring_criteria_file: ./评分标准.md
+    outline_file: 投标大纲 v02.md
+    bid_requirements_file: 采购需求.md
+    scoring_criteria_file: 评分标准.md
     knowledge_files: []
     knowledge_directory: ./knowledge
   output_dir: ./output
@@ -38,7 +38,7 @@ writing:
   - 根据以上任务卡，结合采购需求、评分标准撰写投标正文；
   - 内容要求专业、严谨，满足对评分标准高响应、高得分的要求；
   - 章节篇幅优先控制在目标区间内，不为凑篇幅重复展开。
-  role_file: ./docs/roles/公共服务满意度_role.md
+  role_file: docs/roles/通用投标角色.md
 processing:
   path: full_context
   context_view:
@@ -50,13 +50,6 @@ processing:
     max_chars: 800
   auto:
     requirements_top_k: 8
-  knowledge:
-    enabled: true
-    max_chars: 800
-  chapter_facts:
-    enabled: true
-    auto_extract_on_batch: true
-    max_facts_per_chapter: 15
   full_context:
     chapter_writing_plan:
       enabled: false
@@ -77,15 +70,22 @@ processing:
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8
+  knowledge:
+    enabled: true
+    max_chars: 800
+  chapter_facts:
+    enabled: true
+    auto_extract_on_batch: true
+    max_facts_per_chapter: 15
 models:
   generation:
-    model: gpt-5.4
+    model: Qwen3.6-35B-A3B-4bit
     temperature: 0.7
     max_tokens: 10000
     timeout_seconds: 120
     max_retries: 3
   pruning:
-    model: gpt-5.4
+    model: Qwen3.6-35B-A3B-4bit
     temperature: 0.2
     max_tokens: 1200
     timeout_seconds: 60

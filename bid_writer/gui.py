@@ -1393,6 +1393,7 @@ class MainWindow(tk.Tk):
         self.action_menu.add_command(label="生成所选", command=self.batch_generate)
         self.action_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
         self.action_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
+        self.action_menu.add_command(label="提炼当前章节事实", command=self.extract_selected_facts)
         self.action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
         self.action_menu.add_separator()
         self.action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
@@ -1446,6 +1447,7 @@ class MainWindow(tk.Tk):
         self.chapter_tools_menu = tk.Menu(self.btn_chapter_tools_menu, tearoff=0)
         self.chapter_tools_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
         self.chapter_tools_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
+        self.chapter_tools_menu.add_command(label="提炼当前章节事实", command=self.extract_selected_facts)
         self.btn_chapter_tools_menu["menu"] = self.chapter_tools_menu
         self.btn_chapter_tools_menu.pack(side=tk.LEFT, padx=6)
 
@@ -2018,6 +2020,10 @@ class MainWindow(tk.Tk):
             label="设置章节依赖...",
             command=self.edit_context_menu_dependencies,
         )
+        self.outline_context_menu.add_command(
+            label="提炼事实",
+            command=self.extract_context_menu_facts,
+        )
         self._context_menu_heading: Optional[HeadingNode] = None
 
     def _summary_menu_label_for_heading(self, heading: HeadingNode) -> str:
@@ -2451,6 +2457,10 @@ class MainWindow(tk.Tk):
             "预提炼依赖摘要...",
             state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
         )
+        self.chapter_tools_menu.entryconfigure(
+            "提炼当前章节事实",
+            state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
+        )
 
         self.search_entry.config(state=(tk.DISABLED if self.is_generating else tk.NORMAL))
         self.status_filter_combo.config(state=("disabled" if self.is_generating else "readonly"))
@@ -2697,44 +2707,19 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("警告", "请先选择要生成的四级标题")
             return
 
-        dependency_summary_blocks = self._prepare_dependency_summary_blocks(selected_headings)
-        is_single_heading = len(selected_headings) == 1
-        initial_requirements = (
-            dependency_summary_blocks.get(selected_headings[0].full_path, "")
-            if is_single_heading
-            else ""
-        )
-        dependency_hint = ""
-        if is_single_heading and initial_requirements:
-            dependency_hint = "已将当前章节的关联章节摘要默认填入下方输入框，你可以直接编辑。"
-        elif not is_single_heading:
-            injected_count = sum(1 for block in dependency_summary_blocks.values() if block.strip())
-            if injected_count:
-                dependency_hint = (
-                    f"本次多章节生成共为 {injected_count} 个章节准备了关联章节摘要；"
-                    "输入框中的内容将作为共享要求，关联章节摘要会在后台按章节分别追加。"
-                )
-
         # 获取生成参数
-        params = self._get_generation_params(
-            initial_requirements=initial_requirements,
-            dependency_hint=dependency_hint,
-        )
+        params = self._get_generation_params()
         if params is None:
             return  # 用户取消了
 
         additional_requirements, target_words, max_mermaid_flowcharts_per_section = params
         target_word_range = self.bid_writer.config.build_target_word_range(target_words)
+        is_single_heading = len(selected_headings) == 1
 
         # 确认对话框
         warning_line = ""
         if len(selected_headings) >= 20:
             warning_line = "\n\n本次任务较大，建议确认筛选范围后再执行。"
-        dependency_summary_line = ""
-        if dependency_summary_blocks:
-            prepared_count = sum(1 for block in dependency_summary_blocks.values() if block.strip())
-            if prepared_count:
-                dependency_summary_line = f"\n关联章节摘要：已按章节准备 {prepared_count} 份"
 
         if not messagebox.askyesno(
             "确认",
@@ -2742,7 +2727,6 @@ class MainWindow(tk.Tk):
             f"附加要求：{additional_requirements or '（无）'}\n"
             f"目标篇幅：{target_word_range.display_text} 字\n"
             f"Mermaid图示上限：{max_mermaid_flowcharts_per_section}"
-            f"{dependency_summary_line}"
             f"{warning_line}"
         ):
             return
@@ -2753,8 +2737,11 @@ class MainWindow(tk.Tk):
             additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
-            dependency_summary_blocks={} if is_single_heading else None,
-            dynamic_dependency_summaries=not is_single_heading,
+            auto_extract_facts=(
+                (not is_single_heading)
+                and self.bid_writer.config.chapter_facts_enabled
+                and self.bid_writer.config.chapter_facts_auto_extract_on_batch
+            ),
         )
 
     def _do_batch_generate(
@@ -2763,8 +2750,7 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
-        dependency_summary_blocks: Optional[dict[str, str]] = None,
-        dynamic_dependency_summaries: bool = False,
+        auto_extract_facts: bool = False,
     ):
         """执行批量生成（主线程）"""
         total = len(headings)
@@ -2798,8 +2784,7 @@ class MainWindow(tk.Tk):
                     additional_requirements,
                     target_words,
                     max_mermaid_flowcharts_per_section,
-                    dependency_summary_blocks=(dependency_summary_blocks or {}),
-                    dynamic_dependency_summaries=dynamic_dependency_summaries,
+                    auto_extract_facts=auto_extract_facts,
                     show_error_dialog=(total == 1),
                 )
 
@@ -3096,6 +3081,59 @@ class MainWindow(tk.Tk):
         else:
             self.status_text.set(f"已保存章节依赖：{target_heading.title}（{count} 个）")
 
+    def extract_selected_facts(self):
+        """为当前唯一选中的章节提炼 facts。"""
+        heading = self._get_single_selected_leaf_heading()
+        if heading is None:
+            messagebox.showwarning("提示", "请先选中一个可扩写章节。", parent=self)
+            return
+        self._extract_facts_for_heading(heading)
+
+    def extract_context_menu_facts(self):
+        """为右键选中的章节提炼 facts。"""
+        heading = self._get_context_menu_heading()
+        if heading is None:
+            messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
+            return
+        self._set_single_heading_selection(heading)
+        self._extract_facts_for_heading(heading)
+
+    def _extract_facts_for_heading(self, heading: HeadingNode):
+        """同步提炼指定章节 facts。"""
+        if not self.bid_writer.config.chapter_facts_enabled:
+            messagebox.showinfo("提示", "当前配置已关闭章节事实提炼。", parent=self)
+            return
+
+        output_status = self.bid_writer.get_output_fact_status(heading)
+        if output_status == "missing_output":
+            messagebox.showwarning("提示", "该章节当前还没有已生成正文，无法提炼事实。", parent=self)
+            return
+
+        previous_status = self.status_text.get()
+        try:
+            self.status_text.set(f"正在提炼章节事实：{heading.title}")
+            self.update_idletasks()
+            result = self.bid_writer.ensure_output_chapter_facts(heading)
+        finally:
+            self.status_text.set(previous_status)
+
+        if result is None:
+            messagebox.showwarning("提示", "当前未能提炼该章节事实，请稍后重试。", parent=self)
+            return
+
+        detail = (
+            "\n".join(f"- [{fact.scope}] {fact.category}: {fact.value}" for fact in result.facts)
+            if result.facts
+            else "无可提取事实"
+        )
+        self._show_workspace_message(
+            f"章节事实：{heading.full_path}",
+            "已提炼并缓存章节 facts",
+            detail,
+            generated_char_count=_count_text_characters(detail),
+        )
+        self.status_text.set(f"已提炼章节事实：{heading.title}")
+
     def prewarm_dependency_summaries(self):
         """提前提炼所有被依赖且已有正文的章节摘要。"""
         dependency_headings = self.bid_writer.get_all_dependency_source_headings()
@@ -3190,133 +3228,6 @@ class MainWindow(tk.Tk):
             parent=self,
         )
         self.status_text.set(f"依赖摘要预提炼完成：成功 {refreshed} 个")
-
-    @staticmethod
-    def _merge_additional_requirements(shared_text: str, dependency_block: str) -> str:
-        parts = [shared_text.strip(), dependency_block.strip()]
-        return "\n\n".join(part for part in parts if part)
-
-    def _resolve_dependency_summary_blocks(
-        self,
-        headings: list[HeadingNode],
-        *,
-        allow_planned: bool,
-    ) -> tuple[dict[str, str], list[HeadingNode]]:
-        summary_blocks: dict[str, str] = {}
-        summary_cache: dict[str, object] = {}
-        missing_by_path: dict[str, HeadingNode] = {}
-
-        for heading in headings:
-            summary_entries = []
-            for dependency in self.bid_writer.get_dependency_headings(heading):
-                cached_value = summary_cache.get(dependency.full_path)
-                if cached_value is None:
-                    summary = self.bid_writer.get_available_chapter_summary(dependency)
-                    if summary is None and allow_planned:
-                        summary = self.bid_writer.ensure_planned_chapter_summary(dependency)
-                    if summary is None:
-                        summary_cache[dependency.full_path] = False
-                        missing_by_path.setdefault(dependency.full_path, dependency)
-                        continue
-                    summary_cache[dependency.full_path] = summary
-                    cached_value = summary
-
-                if cached_value is False:
-                    missing_by_path.setdefault(dependency.full_path, dependency)
-                    continue
-                summary_entries.append(cached_value)
-
-            summary_blocks[heading.full_path] = self.bid_writer.format_dependency_summary_block(summary_entries)
-
-        missing_headings = list(missing_by_path.values())
-        missing_headings.sort(key=lambda item: (item.line_number, item.full_path))
-        return summary_blocks, missing_headings
-
-    def _prepare_dependency_summary_blocks(self, headings: list[HeadingNode]) -> dict[str, str]:
-        if not headings:
-            return {}
-
-        dependency_paths = {
-            dependency.full_path
-            for heading in headings
-            for dependency in self.bid_writer.get_dependency_headings(heading)
-        }
-        if not dependency_paths:
-            return {}
-
-        try:
-            summary_blocks, missing_headings = self._run_background_task_with_busy_dialog(
-                title="正在检查关联摘要",
-                message=_format_dependency_summary_busy_message(
-                    "check",
-                    len(dependency_paths),
-                ),
-                status_text="正在后台检查章节依赖摘要...",
-                task_text="当前任务: 正在后台检查关联章节摘要",
-                worker=lambda: self._resolve_dependency_summary_blocks(
-                    headings,
-                    allow_planned=False,
-                ),
-            )
-        except Exception as exc:
-            messagebox.showwarning(
-                "提示",
-                f"读取章节依赖摘要失败：{exc}",
-                parent=self,
-            )
-            return {}
-
-        if not missing_headings:
-            return summary_blocks
-
-        preview_lines = [f"- {heading.full_path}" for heading in missing_headings[:12]]
-        remaining = len(missing_headings) - len(preview_lines)
-        if remaining > 0:
-            preview_lines.append(f"- 其余 {remaining} 个章节未展开显示")
-
-        should_generate = messagebox.askyesno(
-            "章节依赖摘要",
-            "以下依赖章节尚无可复用摘要，且当前没有可直接复用的正文摘要。\n\n"
-            + "\n".join(preview_lines)
-            + "\n\n是否现在提炼这些章节的规划摘要，并在生成时作为关联章节摘要使用？",
-            parent=self,
-        )
-        if not should_generate:
-            return summary_blocks
-
-        previous_status = self.status_text.get()
-        try:
-            summary_blocks, still_missing = self._run_background_task_with_busy_dialog(
-                title="正在生成关联摘要",
-                message=_format_dependency_summary_busy_message(
-                    "generate",
-                    len(missing_headings),
-                ),
-                status_text="正在后台生成章节依赖摘要...",
-                task_text=f"当前任务: 正在后台提炼 {len(missing_headings)} 个依赖摘要",
-                worker=lambda: self._resolve_dependency_summary_blocks(
-                    headings,
-                    allow_planned=True,
-                ),
-            )
-        except Exception as exc:
-            messagebox.showwarning(
-                "提示",
-                f"提炼章节依赖摘要失败：{exc}",
-                parent=self,
-            )
-            self.status_text.set(previous_status)
-            return summary_blocks
-
-        self.status_text.set(previous_status)
-        if still_missing:
-            missing_preview = "\n".join(f"- {heading.full_path}" for heading in still_missing[:8])
-            messagebox.showwarning(
-                "提示",
-                "以下章节摘要仍未生成，将在本次扩写中跳过：\n\n" + missing_preview,
-                parent=self,
-            )
-        return summary_blocks
 
     def _run_background_task_with_busy_dialog(
         self,
@@ -3862,8 +3773,7 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
-        dependency_summary_blocks: Optional[dict[str, str]] = None,
-        dynamic_dependency_summaries: bool = False,
+        auto_extract_facts: bool = False,
         show_error_dialog: bool = True,
     ) -> str:
         """
@@ -3873,22 +3783,11 @@ class MainWindow(tk.Tk):
             "success" / "failed"
         """
         gen_window = self.GenerationSession(self, heading)
-        dependency_block = (dependency_summary_blocks or {}).get(heading.full_path, "")
-        if dynamic_dependency_summaries:
-            dependency_block, _ = self._resolve_dependency_summary_blocks(
-                [heading],
-                allow_planned=False,
-            )
-            dependency_block = dependency_block.get(heading.full_path, "")
-        final_additional_requirements = self._merge_additional_requirements(
-            additional_requirements,
-            dependency_block,
-        )
 
         gen_window.start_generation(
             heading,
             self.bid_writer.ai_writer,
-            final_additional_requirements,
+            additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
         )
@@ -3953,8 +3852,31 @@ class MainWindow(tk.Tk):
             content,
             meta_text=f"已自动保存：{filepath.name} · {word_count} 字",
         )
+        if auto_extract_facts and self.bid_writer.config.chapter_facts_enabled:
+            self._trigger_async_fact_extraction(heading)
         self.status_text.set(f"已自动保存: {filepath.name}")
         return "success"
+
+    def _trigger_async_fact_extraction(self, heading: HeadingNode) -> None:
+        """批量生成后异步提炼章节 facts，不阻塞 UI。"""
+
+        def worker() -> None:
+            try:
+                self.bid_writer.ensure_output_chapter_facts(heading)
+                write_timing_log(
+                    "chapter_fact_extraction_finished",
+                    heading_title=heading.title,
+                    heading_full_path=heading.full_path,
+                )
+            except Exception as exc:
+                write_timing_log(
+                    "chapter_fact_extraction_failed",
+                    heading_title=heading.title,
+                    heading_full_path=heading.full_path,
+                    error=str(exc),
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def open_output_dir(self):
         """打开输出目录"""
