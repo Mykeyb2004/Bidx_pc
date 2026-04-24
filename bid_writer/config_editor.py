@@ -153,8 +153,7 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
     role_mode, role_file, role_text = _normalize_text_source(
         inline_value=_first_defined(raw_config, ("writing", "role"), "role", default=""),
         file_value=_first_defined(raw_config, ("writing", "role_file"), "role_file", default=""),
-        default_file="./docs/roles/example_role.md",
-        default_text="你是一位专业的标书撰写专家。",
+        default_file="./roles/example_role.md",
     )
 
     processing_path = _derive_processing_path(raw_config)
@@ -473,7 +472,7 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
     if model["writing"]["role_mode"] == "inline":
         writing_payload["role"] = model["writing"]["role_text"]
     else:
-        writing_payload["role_file"] = model["writing"]["role_file"].strip() or "./docs/roles/example_role.md"
+        writing_payload["role_file"] = model["writing"]["role_file"].strip() or "./roles/example_role.md"
 
     generation_payload = _strip_none_values(
         {
@@ -628,7 +627,7 @@ def validate_editor_model(
         if not _coerce_str(model["writing"]["role_text"]).strip():
             messages.append(ValidationMessage("error", "写作角色当前为内嵌文本模式，但内容为空。"))
     else:
-        role_path = _resolve_path(model["writing"]["role_file"] or "./docs/roles/example_role.md", config_path.parent)
+        role_path = _resolve_path(model["writing"]["role_file"] or "./roles/example_role.md", config_path.parent)
         if not role_path.exists():
             messages.append(ValidationMessage("warning", f"role_file 当前不存在：{role_path}"))
 

@@ -34,7 +34,10 @@ def _prepare_config_workspace(tmp_path: Path, config_name: str) -> Config:
     workspace.mkdir()
 
     for fixture in FIXTURES_DIR.iterdir():
-        if fixture.is_file():
+        destination = workspace / fixture.name
+        if fixture.is_dir():
+            shutil.copytree(fixture, destination)
+        elif fixture.is_file():
             shutil.copy2(fixture, workspace / fixture.name)
 
     config_path = workspace / config_name
@@ -102,8 +105,79 @@ def test_extra_rules_are_folded_into_structure_contract(monkeypatch, tmp_path):
 
     assert "请为以下标书章节撰写投标正文。" not in result.prompt
     assert "## 其他写作要求" not in result.prompt
+    assert "请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。" in structure_section
     assert "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。" in structure_section
+    assert "内容要专业、严谨，符合标书撰写规范。" in structure_section
+    assert (
+        "- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。"
+        in structure_section
+    )
+    assert (
+        "- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。"
+        in structure_section
+    )
     assert "- 篇幅目标：建议控制在 1200-1400 字，优先完整覆盖本章重点，不为凑字数重复展开。" in result.prompt
+    assert "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。" not in result.prompt
+
+
+def test_system_prompt_keeps_global_gate_rules(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+
+    system_prompt = writer.build_system_prompt()
+
+    assert system_prompt.startswith("你是一位专业的标书撰写专家。")
+    assert "【最高优先级输出强约束】" in system_prompt
+    assert "投标主体统一使用“测试投标主体”表述" in system_prompt
+    assert "严禁使用Markdown标题符号（#）。" in system_prompt
+    assert "默认使用正式层级序号组织正文" in system_prompt
+    assert "旧字段不应再进入 system prompt" not in system_prompt
+
+
+def test_system_prompt_fails_fast_when_global_gate_file_missing(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    gate_file = Path(config.config_path).parent / "roles" / "system_gate_rules.md"
+    gate_file.unlink()
+    writer = _build_writer(monkeypatch, config)
+
+    with pytest.raises(FileNotFoundError, match="system_gate_rules.md"):
+        writer.build_system_prompt()
+
+
+def test_system_prompt_ignores_legacy_gate_switches(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+
+    system_prompt = writer.build_system_prompt()
+
+    assert "严禁使用Markdown标题符号（#）。" in system_prompt
+    assert "禁止输出不必要的英文、英文缩写或中英对照。" in system_prompt
+    assert "旧字段不应再进入 system prompt" not in system_prompt
+
+
+def test_full_context_prompt_uses_short_system_reminder_instead_of_repeating_global_rules(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+
+    assert "请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。" in result.prompt
+    assert "## 结构输出硬要求" not in result.prompt
+    assert "本次正文默认采用显式层级结构" not in result.prompt
+    assert "严禁使用Markdown标题符号（#）。" not in result.prompt
+
+
+def test_user_prompt_still_keeps_task_side_extra_rules(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+
+    assert "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。" in result.prompt
+    assert "内容要专业、严谨，符合标书撰写规范。" in result.prompt
+    assert "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。" not in result.prompt
 
 
 def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp_path):
@@ -120,7 +194,7 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     ) in result.prompt
     assert "## 章节边界参考" in result.prompt
     assert "## 完整总大纲参考" not in result.prompt
-    assert result.prompt.index("## 结构输出硬要求") < result.prompt.index("## 招标需求参考")
+    assert result.prompt.index("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。") < result.prompt.index("## 招标需求参考")
     assert result.prompt.index("## 投标方知识库") < result.prompt.index("## 招标需求参考")
     assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节任务卡")
     assert result.prompt.index("## 章节任务卡") < result.prompt.index("## 章节边界参考")
@@ -260,7 +334,7 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert captured["system_prompt"] == writer.build_system_prompt()
-    assert captured["shared_prompt_prefix"].startswith("## 结构输出硬要求")
+    assert captured["shared_prompt_prefix"].startswith("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。")
     assert "## 投标方知识库" in captured["shared_prompt_prefix"]
     assert "## 项目背景" in captured["shared_prompt_prefix"]
     assert "## 招标需求参考" in captured["shared_prompt_prefix"]

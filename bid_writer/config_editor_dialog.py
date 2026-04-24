@@ -480,9 +480,15 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_check_row(rules, 6, "允许英文术语", "writing.allow_english_terms")
         rules.columnconfigure(1, weight=1)
 
-        hard_constraints = ttk.LabelFrame(content, text="高优先级约束", padding=12)
+        hard_constraints = ttk.LabelFrame(content, text="兼容旧字段（暂不参与 system 门禁）", padding=12)
         hard_constraints.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
-        self._add_text_block(hard_constraints, "hard_constraints", "writing.hard_constraints_text", help_text="每行一条规则。", height=8)
+        self._add_text_block(
+            hard_constraints,
+            "hard_constraints",
+            "writing.hard_constraints_text",
+            help_text="兼容旧配置保留；system 门禁请改 ./roles/system_gate_rules.md。",
+            height=8,
+        )
 
         extra_rules = ttk.LabelFrame(content, text="额外规则", padding=12)
         extra_rules.pack(fill=tk.BOTH, expand=True, pady=(0, 12))

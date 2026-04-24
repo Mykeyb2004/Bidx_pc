@@ -12,8 +12,7 @@ project:
   output_dir: "./output"
 
 writing:
-  role: |
-    你是一位专业的标书撰写专家。
+  role_file: "./roles/example_role.md"
   target_words:
     default: 3000
     min: 100
@@ -27,8 +26,6 @@ writing:
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 0
   summary_title: ""
-  hard_constraints:
-    - "严禁使用Markdown标题符号（#）。"
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范"
     - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"

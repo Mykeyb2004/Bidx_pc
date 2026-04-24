@@ -209,7 +209,6 @@ class AIWriter:
                 f"{target_word_range.display_text} 字，优先完整覆盖本章重点，不为凑字数重复展开。"
             ),
             f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
-            "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。",
             f"- 表格控制：{self._build_table_rule_text()}",
             task_basis_line,
         ]
@@ -293,35 +292,16 @@ class AIWriter:
         except (KeyError, ValueError):
             return template.replace("{title}", heading.title)
 
-    def _build_hard_constraints(self) -> list[str]:
-        """构建高优先级输出强约束。"""
-        constraints: list[str] = []
-
-        bidder_name = self.config.prompt_bidder_name
-        if bidder_name:
-            constraints.append(
-                f"投标主体统一使用“{bidder_name}”表述；除非用户明确要求，不要替换为其他公司名称、简称或第一人称主体。"
-            )
-
-        if not self.config.prompt_allow_markdown_headings:
-            constraints.append("严禁使用Markdown标题符号（#）。")
-        if not self.config.prompt_allow_english_terms:
-            constraints.append("除专有名词或用户明确要求外，禁止输出不必要的英文、英文缩写或中英对照。")
-        constraints.append("默认使用正式层级序号组织正文；除非用户明确要求只写单段摘要，否则至少出现一个正式层级序号“一、”。")
-        constraints.append("只要正文包含多个板块、多个长段落、表格或并列清单，必须继续使用“（一）”“1.”“（1）”展开，不得输出无序号散文式正文。")
-
-        constraints.extend(self.config.prompt_hard_constraints)
-
-        # 保持顺序去重，避免 system prompt 重复罗列。
-        unique_constraints: list[str] = []
-        seen: set[str] = set()
-        for constraint in constraints:
-            normalized = constraint.strip()
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            unique_constraints.append(normalized)
-        return unique_constraints
+    def _render_system_gate_rules(self) -> str:
+        gate_rules = self.config.system_gate_rules_template
+        if "{bidder_name}" in gate_rules:
+            bidder_name = self.config.prompt_bidder_name
+            if not bidder_name:
+                raise ValueError(
+                    "roles/system_gate_rules.md 使用了 {bidder_name}，但配置缺少 project.bidder_name。"
+                )
+            gate_rules = gate_rules.replace("{bidder_name}", bidder_name)
+        return gate_rules.strip()
 
     def build_system_prompt(self) -> str:
         """构建 system prompt，将强约束提升到最高优先级。"""
@@ -330,13 +310,12 @@ class AIWriter:
         if role:
             sections.append(role)
 
-        hard_constraints = self._build_hard_constraints()
-        if hard_constraints:
-            sections.append(
-                "【最高优先级输出强约束】\n"
-                "以下规则优先级高于其他风格建议、默认模板和惯常表达；如有冲突，必须以本节规则为准。\n"
-                + "\n".join(f"- {rule}" for rule in hard_constraints)
-            )
+        gate_rules = self._render_system_gate_rules()
+        sections.append(
+            "【最高优先级输出强约束】\n"
+            "以下规则优先级高于其他风格建议、默认模板和惯常表达；如有冲突，必须以本节规则为准。\n"
+            f"{gate_rules}"
+        )
 
         return "\n\n".join(sections).strip()
 
@@ -461,13 +440,9 @@ class AIWriter:
     def _build_structure_contract_section(self) -> str:
         rules = self.config.prompt_extra_rules
         lines = [
-            "## 结构输出硬要求",
-            "- 本次正文默认采用显式层级结构，不接受整篇无序号散文式表达。",
-            "- 除非用户明确要求只写单段摘要，否则正文至少出现一个正式层级序号“一、”。",
-            "- 只要正文存在两个及以上功能板块、三个及以上自然段、表格、清单、流程、机制或并列措施，必须继续使用“（一）”“1.”“（1）”展开。",
-            "- 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文。",
-            "- 表格前的引导性标题、板块标题或小标题，同样必须纳入正式层级序号体系，不得裸写。",
-            "- 段内枚举可使用“第一……、第二……”或“一是……；二是……”，但不能替代章节层级序号。",
+            "请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。",
+            "- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。",
+            "- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。",
         ]
         if rules:
             lines.extend(f"- {rule}" for rule in rules)
@@ -709,10 +684,8 @@ class AIWriter:
                 "section_names": [],
                 "source_context": [
                     "Config.role",
-                    "prompt_bidder_name",
-                    "prompt_allow_markdown_headings",
-                    "prompt_allow_english_terms",
-                    "prompt_hard_constraints",
+                    "roles/system_gate_rules.md",
+                    "project.bidder_name",
                 ],
                 "chars_override": len(system_prompt),
             },

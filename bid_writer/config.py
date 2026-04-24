@@ -825,6 +825,20 @@ class Config:
         return str(value).strip() if value is not None else ''
 
     @property
+    def system_gate_rules_path(self) -> Path:
+        return self.config_path.parent.resolve() / "roles" / "system_gate_rules.md"
+
+    @property
+    def system_gate_rules_template(self) -> str:
+        path = self.system_gate_rules_path
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"system gate rules 文件不存在: {path}")
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            raise ValueError(f"system gate rules 文件为空: {path}")
+        return text
+
+    @property
     def prompt_hard_constraints(self) -> list[str]:
         """高优先级强约束"""
         return self._get_string_list(('writing', 'hard_constraints'), ('prompt', 'hard_constraints'), default=[])

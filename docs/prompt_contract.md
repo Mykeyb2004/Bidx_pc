@@ -46,6 +46,12 @@
 
 没有第三段隐藏的 requirements prompt，也没有单独的 scoring prompt。
 
+并且从当前实现开始：
+
+- `system prompt` 只由角色设定和固定门禁文件组成
+- `user prompt` 不再重复整段展开全局结构硬要求
+- trace / 合同里的 `structure_rules` block 仍保留，但其运行时含义已变为“短执行提醒 + task 侧额外规则”
+
 ## 3. System Prompt
 
 ### 3.1 组成来源
@@ -53,7 +59,7 @@
 `system prompt` 由 `AIWriter.build_system_prompt()` 生成，来源只有两块：
 
 1. `Config.role`
-2. `AIWriter._build_hard_constraints()` 产出的高优先级强约束
+2. 固定门禁文件 `roles/system_gate_rules.md`
 
 ### 3.2 `Config.role`
 
@@ -65,14 +71,14 @@
 
 ### 3.3 高优先级强约束
 
-`_build_hard_constraints()` 会按顺序拼出以下约束，并做去重：
+`roles/system_gate_rules.md` 直接按原文读取，不再通过 YAML 字段拼接 gate 文案。
 
-1. 如果设置了 `prompt_bidder_name`，增加“投标主体统一使用该名称”的约束
-2. 如果 `prompt_allow_markdown_headings=False`，增加“严禁使用 Markdown 标题符号（#）”约束
-3. 如果 `prompt_allow_english_terms=False`，增加“禁止不必要英文/英文缩写/中英对照”约束
-4. 固定增加一条“默认使用正式层级序号组织正文”的约束
-5. 固定增加一条“只要正文形成多板块/多段/表格/清单，就必须继续用正式层级序号展开”的约束
-6. 追加 `prompt_hard_constraints`
+运行时只做两类替换/校验：
+
+1. 如果 gate 文件中包含 `{bidder_name}`，会用 `project.bidder_name` 替换
+2. 如果 gate 文件缺失、为空，或者文本中需要 `bidder_name` 但项目里没填，则直接 fail fast
+
+因此，想修改 system gate 规则时，应直接改 `roles/system_gate_rules.md`，而不是改旧 YAML 兼容字段。
 
 ### 3.4 最终形态
 
@@ -96,6 +102,9 @@
 - `prompt_output_format`
 - `prompt_first_line_template`
 - `additional_requirements`
+- `prompt_allow_markdown_headings`
+- `prompt_allow_english_terms`
+- `prompt_hard_constraints`
 
 这些内容都在 `user prompt`。
 
@@ -324,28 +333,44 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 ## 5. User Prompt 拼接规则
 
-### 5.1 固定顺序
+### 5.1 拼接顺序
 
-`AIWriter.build_prompt_result()` 按以下固定顺序拼接 `user prompt`：
+`AIWriter.build_prompt_result()` 会按分支拼接 `user prompt`：
+
+#### pruned-context 分支
 
 1. `task_card`
 2. `structure_contract`
 3. 可选 `first_line_rule`
-4. 二选一上下文分支
-   - pruned-context 分支
-   - full-context 分支
-5. 可选 `additional_requirements`
+4. `scope_reference`
+5. 可选 `project_background`
+6. 可选 `knowledge_context`
+7. 可选 `scoring_focus`
+8. 可选 `requirement_brief` / `requirement_points`
+9. 可选 `additional_requirements`
+
+#### full-context 分支
+
+1. `structure_contract`
+2. 可选 `project_background`
+3. 可选 `knowledge_context`
+4. 可选 `bid_requirements`
+5. 可选 `scoring_criteria`
+6. `task_card`
+7. 可选 `first_line_rule`
+8. `scope_reference`
+9. 可选 `additional_requirements`
 
 `additional_requirements` 当前只承载操作员手工输入的附加要求。
 
-这个顺序是硬编码的，没有配置化。
+上述顺序是硬编码的，没有配置化。
 
 ### 5.2 低层 section 一览
 
 | Section id | 最终标题 | 何时出现 | 说明 |
 |------------|----------|----------|------|
 | `task_card` | `## 章节任务卡` | 总是出现 | 定义当前章节写作任务 |
-| `structure_contract` | `## 结构输出硬要求` | 总是出现 | 定义正文结构硬要求 |
+| `structure_contract` | 无独立标题；直接输出短提醒列表 | 总是出现 | 提醒“严格遵守 system 硬门禁”并补充 task 侧简短执行规则 |
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
 | `knowledge_context` | `## 投标方知识库` | 启用了知识库且成功读取到知识文档时 | 注入用户手写知识文档，经预算截断后作为一致性参考 |
@@ -358,7 +383,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 ### 5.3 `task_card` 具体写了什么
 
-`task_card` 当前固定包含以下字段：
+`task_card` 当前固定包含以下字段（不再重复承载“默认使用正式层级序号组织正文”的全局硬门禁提醒）：
 
 - 写作场景
 - 当前章节路径
@@ -366,7 +391,6 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - 可选的章节写作计划
 - 篇幅目标区间
 - 输出方式
-- 结构要求
 - 表格控制
 - 可选的流程图控制
 - 写作依据
@@ -385,15 +409,22 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 ### 5.4 `structure_contract` 具体写了什么
 
-`structure_contract` 是面向正文结构的 user prompt 硬要求，当前固定包括：
+`structure_contract` 不再是对全局门禁的重复展开，而是在 user prompt 中承担短执行提醒的 section。当前固定包括：
 
-- 不接受整篇无序号散文式表达
-- 至少出现一个正式层级序号“一、”
-- 出现多个板块/自然段/表格/清单/流程/机制/并列措施时，必须继续展开层级
-- 序号后如带标题，该行只写“序号 + 标题”，下一行另起正文
-- 表格前标题和引导性标题也必须纳入正式层级
-- 段内枚举不能替代章节层级序号
-- `prompt_extra_rules` 中的每一条规则也会继续作为列表项追加在本节末尾
+```text
+请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。
+
+- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。
+- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。
+```
+
+此外：
+
+- `prompt_extra_rules` 中的每一条规则会继续作为列表项追加在这两条提醒之后
+- 因此当前 `structure_contract` / trace 中的 `structure_rules` block，职责已经变成“短执行提醒 + task 侧额外规则”
+- 正式层级序号、禁 Markdown 标题等全局硬门禁，其权威规则源现在集中在 `system prompt`
+- `user prompt` 仍会保留少量任务侧提醒文本；例如 `structure_contract` 的两条短提醒，以及 `task_card` 中的篇幅目标、表格控制、写作依据等任务信息
+- 现在这些全局硬门禁文本来自 `Config.role` 与 `roles/system_gate_rules.md`，不是来自 `prompt.*` 兼容字段
 
 ### 5.5 `first_line_rule`
 
@@ -432,7 +463,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 在 full-context 分支中，会先构建一组稳定前缀段落：
 
-1. `## 结构输出硬要求`
+1. `structure_contract`（无 `## 结构输出硬要求` 标题，仅为短提醒列表）
 2. `## 项目背景`，仅在项目背景摘要存在时出现
 3. `## 投标方知识库`，仅在知识文档存在时出现
 4. `## 招标需求参考`
@@ -500,8 +531,10 @@ messages = [
 ## 章节任务卡
 ...
 
-## 结构输出硬要求
-...
+请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。
+
+- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。
+- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。
 
 ## 首行要求
 ...
@@ -538,8 +571,10 @@ messages = [
 - ...
 
 [user]
-## 结构输出硬要求
-...
+请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。
+
+- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。
+- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。
 
 ## 项目背景
 ...
@@ -615,11 +650,11 @@ messages = [
 | `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
 | `prompt_output_format` | `prompt.output_format` | task card 中的输出方式描述 | 是 |
 | `prompt_first_line_template` | `prompt.first_line_template` | 是否追加首行要求，以及首行文本 | 是 |
-| `prompt_allow_markdown_headings` | `prompt.allow_markdown_headings` | system prompt 中是否禁止 `#` 标题 | 是 |
-| `prompt_allow_english_terms` | `prompt.allow_english_terms` | system prompt 中是否禁止不必要英文 | 是 |
+| `prompt_allow_markdown_headings` | `prompt.allow_markdown_headings` | 兼容旧字段，当前不再生成 system prompt 门禁文案 | 否 |
+| `prompt_allow_english_terms` | `prompt.allow_english_terms` | 兼容旧字段，当前不再生成 system prompt 门禁文案 | 否 |
 | `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
 | `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
-| `prompt_hard_constraints` | `prompt.hard_constraints` | system prompt 附加强约束 | 是 |
+| `prompt_hard_constraints` | `prompt.hard_constraints` | 兼容旧字段，当前不再作为 system prompt 附加强约束来源 | 否 |
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `knowledge_files` | `project.inputs.knowledge_files` | 手写知识文档显式声明列表 | 条件性进入 |
@@ -659,7 +694,7 @@ messages = [
 
 ## 8. 优化 prompt 时的几个直接结论
 
-1. 如果要改“角色与绝对规则”，应改 `build_system_prompt()` 或 `_build_hard_constraints()`
+1. 如果要改“角色”，应改 `Config.role`；如果要改“绝对规则”，应改 `roles/system_gate_rules.md`
 2. 如果要改“章节任务卡、结构要求、需求/评分上下文如何对模型说”，应改 `build_prompt_result()`
 3. 如果要改“采购需求和评分标准怎么提炼成章节上下文”，应改 `context_pruner.py`
 4. 如果要降低 prompt 长度，最有效的开关是 `context_pruning_enabled`
@@ -685,31 +720,35 @@ flowchart TD
     G2 --> G3[选择 requirement_blocks]
     G3 --> G4[生成 requirement_seed]
     G4 --> G5{requirements_brief_enabled}
-    G5 -- 否 --> G6[不生成 requirement_brief]
-    G5 -- 是 --> G7[从已选需求块抽取 requirement_brief]
+    G5 -- 否 --> G6[使用 requirement_seed]
+    G5 -- 是 --> G7[生成 requirement_brief]
 
-    G6 --> H[拼接 user prompt]
-    G7 --> H
-    D --> H
+    D --> D1[structure_contract]
+    D1 --> D2[project_background 可选]
+    D2 --> D3[knowledge_context 可选]
+    D3 --> D4[bid_requirements 可选]
+    D4 --> D5[scoring_criteria 可选]
+    D5 --> D6[task_card]
+    D6 --> D7[first_line_rule 可选]
+    D7 --> D8[scope_reference]
+    D8 --> D9[additional_requirements 可选]
 
-    H --> H1[task_card]
-    H1 --> H2[structure_contract]
-    H2 --> H3[first_line_rule 可选]
-    H3 --> H4[scope_reference]
-    H4 --> H4a[project_background 可选]
-    H4a --> H4b[knowledge_context 可选]
-    H4b --> H5{pruned 还是 full}
-    H5 -- pruned --> H6[scoring_focus 可选]
-    H6 --> H7[requirement_brief 或 requirement_seed]
-    H5 -- full --> H8[bid_requirements 可选]
-    H8 --> H9[scoring_criteria 可选]
-    H7 --> H10[additional_requirements 可选]
-    H9 --> H10
+    G6 --> P1[task_card]
+    G7 --> P1
+    P1 --> P2[structure_contract]
+    P2 --> P3[first_line_rule 可选]
+    P3 --> P4[scope_reference]
+    P4 --> P5[project_background 可选]
+    P5 --> P6[knowledge_context 可选]
+    P6 --> P7[scoring_focus 可选]
+    P7 --> P8[requirement_points 或 requirement_brief]
+    P8 --> P9[additional_requirements 可选]
 
     B --> I[build_system_prompt]
     I --> J[role + 最高优先级输出强约束]
 
-    H10 --> K[组装 messages]
+    D9 --> K[组装 messages]
+    P9 --> K
     J --> K
     K --> L["messages = [system, user]"]
     L --> M[_build_request_options]

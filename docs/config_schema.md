@@ -90,7 +90,7 @@ project:
 
 ```yaml
 writing:
-  role_file: "./docs/roles/example_role.md"
+  role_file: "./roles/example_role.md"
   target_words:
     default: 1500
     min: 100
@@ -104,17 +104,17 @@ writing:
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 0
   summary_title: ""
-  hard_constraints: []
   extra_rules: []
 ```
 
 说明：
 
-- `writing.role` 或 `writing.role_file` 用于角色设定
-- `writing.role_file` 适合多个项目配置复用同一段长 prompt
+- `writing.role_file` 推荐放在仓库根目录的 `roles/` 下，便于按项目复用角色文件
+- `roles/system_gate_rules.md` 是当前固定且唯一的文本来源，用于 system gate 规则
 - `writing.target_words.default` 是运行时输入框的基准值，系统会自动推导目标区间并写入 prompt
 - `writing.target_words.upper_ratio` 用于控制区间上沿的自动放宽幅度，默认 `1.15`
 - `writing.extra_rules` 当前不会单独生成 `## 其他写作要求` 区块，而是直接追加到 `## 结构输出硬要求` 的末尾
+- `writing.hard_constraints`、`writing.allow_markdown_headings`、`writing.allow_english_terms` 不再生成 system gate prompt 文案；旧字段仅用于兼容或局部巡检
 
 ### 3.3 `processing`
 

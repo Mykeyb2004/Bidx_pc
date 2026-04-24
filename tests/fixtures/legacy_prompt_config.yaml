@@ -3,6 +3,9 @@ api:
   api_key: "test-key"
   model: "test-model"
 
+project:
+  bidder_name: "测试投标主体"
+
 role: |
   你是一位专业的标书撰写专家。
 
