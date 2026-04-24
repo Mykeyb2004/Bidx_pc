@@ -2,3 +2,9 @@
 
 
 uv run run.py
+
+
+扫描输出文件夹中所有序号和小标题断行的md文件
+uv run python scripts/scan_chapter_issues.py --config config_统计台账.yaml
+
+uv run --project /Users/zhangqijin/PycharmProjects/md2docx md2docx-scan-chapters --config config_统计台账.yaml
