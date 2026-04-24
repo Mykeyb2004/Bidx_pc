@@ -17,3 +17,4 @@ __pycache__/
 /llm_reference_code/
 /caches/
 .omx/
+.worktrees/
