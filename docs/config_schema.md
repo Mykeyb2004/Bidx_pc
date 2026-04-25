@@ -176,7 +176,40 @@ processing:
 - 每条链路自己的参数挂在各自子块下
 - `verify_enabled` 统一表达原先 `rerank_enabled` / `llm_verify_enabled` 那条候选校验链路
 
-### 3.4 `models`
+### 3.4 `fact_cards`
+
+```yaml
+fact_cards:
+  enabled: true
+  cards:
+    - id: "fact-card-1"
+      name: "企业资质"
+      content: "具备建筑工程施工总承包一级资质。"
+      category: "资质"
+      active: true
+      source:
+        type: "manual"  # 或 "chapter_extract"
+        chapter_path: ""
+        extraction_instruction: ""
+      created_at: "2026-04-24T10:00:00+08:00"
+      updated_at: "2026-04-24T10:00:00+08:00"
+  chapter_defaults:
+    "综合服务项目投标方案 > 项目实施方案 > 质量保障措施":
+      - card_id: "fact-card-1"
+        usage: "strong"  # 或 "reference"
+```
+
+说明：
+
+- `fact_cards.enabled` 控制是否在 GUI 中暴露事实卡片相关入口，以及是否允许单章节/批量生成接入事实卡片模式
+- `cards` 是项目级事实卡片库；phase 1 存在两类来源：
+  - `manual`：用户直接录入或在“事实卡片库”中编辑名称、分类和内容后保存；编辑时保留原卡片 ID，避免章节默认方案失效
+  - `chapter_extract`：从已生成章节正文手动提炼后，经草稿审阅确认保存
+- `chapter_defaults` 以**章节完整路径**为 key，保存该章节默认勾选的卡片方案
+- `usage` 只支持 `strong` / `reference`
+- 开启事实卡片模式后，本次章节扩写会优先使用显式选择或章节默认方案，不再默认注入 `knowledge_context`
+
+### 3.5 `models`
 
 ```yaml
 models:
@@ -206,7 +239,7 @@ models:
 - 敏感值仍建议放 `.env.local`
 - 非敏感模型参数留在 YAML
 
-### 3.5 `runtime`
+### 3.6 `runtime`
 
 ```yaml
 runtime:

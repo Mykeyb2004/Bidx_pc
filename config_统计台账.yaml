@@ -22,7 +22,7 @@ writing:
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 1
   summary_title: ''
-  extra_rules:
+  extra_rules: null
   role_file: ./roles/通用投标角色.md
 processing:
   path: full_context
@@ -62,6 +62,22 @@ processing:
     enabled: true
     auto_extract_on_batch: true
     max_facts_per_chapter: 15
+fact_cards:
+  enabled: true
+  cards:
+  - id: fact-card-1
+    name: 文化统计指标体系五大监测维度
+    content: 本章节明确文化领域统计指标体系采用多维矩阵结构，核心由机构运行、业务产出、市场消费、资金投入、人员配置五大维度构成：机构运行监测开放频次、接待人次、场地利用率、数字化服务覆盖率；业务产出监测文化艺术创作数量、非遗传承人培养规模、文物修复与展览策划场次、基层文化惠民活动覆盖范围；市场消费监测演出票房、文化娱乐消费支出、数字文化产品交易额、网络视听播放量、文旅融合消费占比；资金投入监测财政文化事业费拨付规模、专项资金使用效率、社会资本文化投资比例、基础设施新建改造投入；人员配置监测专业技术人员占比、高级技师与非遗传承人数量、基层文化辅导员编制及培训学时。
+    active: true
+    source:
+      type: chapter_extract
+      chapter_path: 2026年浙江省文化广电和旅游统计名录库维护基层报表审核及数据处理项目 > 2. 项目理解与工作基础（响应：工作基础、服务方案）
+        > 2.3 对近三年浙江省文化广电和旅游统计指标的理解与分析 > 2.3.1 文化领域统计指标理解
+      extraction_instruction: 请围绕当前选中章节的已生成正文，提炼一张最能代表本章节核心内容的事实卡片。优先选择具体、可验证、信息密度高、后续章节可复用或引用的事实；避免泛泛总结、修饰性评价、空泛承诺和重复表述。
+    category: 指标体系
+    created_at: '2026-04-25T04:54:47+00:00'
+    updated_at: '2026-04-25T04:54:47+00:00'
+  chapter_defaults: {}
 models:
   generation:
     model: Qwen3.6-35B-A3B-4bit

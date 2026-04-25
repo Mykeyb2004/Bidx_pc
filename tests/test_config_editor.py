@@ -147,6 +147,67 @@ context_pruning:
     assert any("processing.path" in message.text for message in messages if message.level == "error")
 
 
+def test_config_editor_preserves_top_level_fact_cards_block(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "fact-cards.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+fact_cards:
+  enabled: true
+  cards:
+    - id: fact-card-1
+      name: 企业资质
+      content: 示例
+      category: 资质
+      source:
+        type: chapter_extract
+        chapter_path: 技术方案 > 质量保障措施
+        extraction_instruction: 提取资质信息
+      active: true
+      created_at: "2026-04-24T10:00:00+00:00"
+      updated_at: "2026-04-24T10:00:00+00:00"
+  chapter_defaults:
+    技术方案 > 质量保障措施:
+      - card_id: fact-card-1
+        usage: strong
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert payload["fact_cards"] == {
+        "enabled": True,
+        "cards": [
+            {
+                "id": "fact-card-1",
+                "name": "企业资质",
+                "content": "示例",
+                "category": "资质",
+                "source": {
+                    "type": "chapter_extract",
+                    "chapter_path": "技术方案 > 质量保障措施",
+                    "extraction_instruction": "提取资质信息",
+                },
+                "active": True,
+                "created_at": "2026-04-24T10:00:00+00:00",
+                "updated_at": "2026-04-24T10:00:00+00:00",
+            }
+        ],
+        "chapter_defaults": {
+            "技术方案 > 质量保障措施": [{"card_id": "fact-card-1", "usage": "strong"}]
+        },
+    }
+
+
 def test_config_editor_validation_flags_hybrid_vector_without_embedding_connection(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "hybrid.yaml"

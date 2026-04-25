@@ -1393,7 +1393,8 @@ class MainWindow(tk.Tk):
         self.action_menu.add_command(label="生成所选", command=self.batch_generate)
         self.action_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
         self.action_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
-        self.action_menu.add_command(label="提炼当前章节事实", command=self.extract_selected_facts)
+        self.action_menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
+        self.action_menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
         self.action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
         self.action_menu.add_separator()
         self.action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
@@ -1447,7 +1448,8 @@ class MainWindow(tk.Tk):
         self.chapter_tools_menu = tk.Menu(self.btn_chapter_tools_menu, tearoff=0)
         self.chapter_tools_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
         self.chapter_tools_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
-        self.chapter_tools_menu.add_command(label="提炼当前章节事实", command=self.extract_selected_facts)
+        self.chapter_tools_menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
+        self.chapter_tools_menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
         self.btn_chapter_tools_menu["menu"] = self.chapter_tools_menu
         self.btn_chapter_tools_menu.pack(side=tk.LEFT, padx=6)
 
@@ -2021,7 +2023,7 @@ class MainWindow(tk.Tk):
             command=self.edit_context_menu_dependencies,
         )
         self.outline_context_menu.add_command(
-            label="提炼事实",
+            label="提炼事实卡片",
             command=self.extract_context_menu_facts,
         )
         self._context_menu_heading: Optional[HeadingNode] = None
@@ -2458,7 +2460,7 @@ class MainWindow(tk.Tk):
             state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
         )
         self.chapter_tools_menu.entryconfigure(
-            "提炼当前章节事实",
+            "提炼当前章节事实卡片",
             state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
         )
 
@@ -2708,11 +2710,18 @@ class MainWindow(tk.Tk):
             return
 
         # 获取生成参数
-        params = self._get_generation_params()
+        params = self._get_generation_params(selected_headings)
         if params is None:
             return  # 用户取消了
 
-        additional_requirements, target_words, max_mermaid_flowcharts_per_section = params
+        (
+            additional_requirements,
+            target_words,
+            max_mermaid_flowcharts_per_section,
+            fact_card_mode,
+            manual_fact_card_selections,
+            remember_fact_card_defaults,
+        ) = params
         target_word_range = self.bid_writer.config.build_target_word_range(target_words)
         is_single_heading = len(selected_headings) == 1
 
@@ -2737,6 +2746,9 @@ class MainWindow(tk.Tk):
             additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
+            fact_card_mode=fact_card_mode,
+            manual_fact_card_selections=(manual_fact_card_selections if is_single_heading else None),
+            remember_fact_card_defaults=(remember_fact_card_defaults if is_single_heading else False),
             auto_extract_facts=(
                 (not is_single_heading)
                 and self.bid_writer.config.chapter_facts_enabled
@@ -2750,6 +2762,9 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
+        fact_card_mode: bool = False,
+        manual_fact_card_selections: Optional[list["FactCardSelection"]] = None,
+        remember_fact_card_defaults: bool = False,
         auto_extract_facts: bool = False,
     ):
         """执行批量生成（主线程）"""
@@ -2784,6 +2799,9 @@ class MainWindow(tk.Tk):
                     additional_requirements,
                     target_words,
                     max_mermaid_flowcharts_per_section,
+                    fact_card_mode=fact_card_mode,
+                    manual_fact_card_selections=manual_fact_card_selections if total == 1 else None,
+                    remember_fact_card_defaults=remember_fact_card_defaults if total == 1 else False,
                     auto_extract_facts=auto_extract_facts,
                     show_error_dialog=(total == 1),
                 )
@@ -3082,7 +3100,7 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已保存章节依赖：{target_heading.title}（{count} 个）")
 
     def extract_selected_facts(self):
-        """为当前唯一选中的章节提炼 facts。"""
+        """为当前唯一选中的章节提炼事实卡片。"""
         heading = self._get_single_selected_leaf_heading()
         if heading is None:
             messagebox.showwarning("提示", "请先选中一个可扩写章节。", parent=self)
@@ -3090,7 +3108,7 @@ class MainWindow(tk.Tk):
         self._extract_facts_for_heading(heading)
 
     def extract_context_menu_facts(self):
-        """为右键选中的章节提炼 facts。"""
+        """为右键选中的章节提炼事实卡片。"""
         heading = self._get_context_menu_heading()
         if heading is None:
             messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
@@ -3099,40 +3117,98 @@ class MainWindow(tk.Tk):
         self._extract_facts_for_heading(heading)
 
     def _extract_facts_for_heading(self, heading: HeadingNode):
-        """同步提炼指定章节 facts。"""
-        if not self.bid_writer.config.chapter_facts_enabled:
-            messagebox.showinfo("提示", "当前配置已关闭章节事实提炼。", parent=self)
+        """从已生成正文提炼并审阅事实卡片。"""
+        if not self.bid_writer.config.fact_cards_enabled:
+            messagebox.showinfo("提示", "当前配置已关闭事实卡片功能。", parent=self)
             return
 
-        output_status = self.bid_writer.get_output_fact_status(heading)
-        if output_status == "missing_output":
-            messagebox.showwarning("提示", "该章节当前还没有已生成正文，无法提炼事实。", parent=self)
+        output_path = self.bid_writer.file_saver.find_existing_filepath(heading)
+        if output_path is None or not output_path.exists():
+            messagebox.showwarning("提示", "该章节当前还没有已生成正文，无法提炼事实卡片。", parent=self)
             return
 
-        previous_status = self.status_text.get()
-        try:
-            self.status_text.set(f"正在提炼章节事实：{heading.title}")
-            self.update_idletasks()
-            result = self.bid_writer.ensure_output_chapter_facts(heading)
-        finally:
-            self.status_text.set(previous_status)
+        from .fact_card_dialogs import FactCardExtractionWorkspaceDialog
 
-        if result is None:
-            messagebox.showwarning("提示", "当前未能提炼该章节事实，请稍后重试。", parent=self)
+        def _extract_callback(instruction: str):
+            return self.bid_writer.extract_fact_card_drafts_from_output(heading, instruction)
+
+        dialog = FactCardExtractionWorkspaceDialog(
+            self,
+            heading_title=heading.title,
+            initial_instruction=self._default_fact_card_extraction_instruction(heading),
+            extract_callback=_extract_callback,
+        )
+        self.wait_window(dialog)
+        extraction_result = dialog.result
+        if extraction_result is None:
+            self.status_text.set(f"已取消提炼事实卡片：{heading.title}")
             return
 
+        saved_cards = self.bid_writer.replace_extracted_fact_cards(
+            heading,
+            extraction_result.instruction,
+            extraction_result.drafts,
+        )
         detail = (
-            "\n".join(f"- [{fact.scope}] {fact.category}: {fact.value}" for fact in result.facts)
-            if result.facts
-            else "无可提取事实"
+            "\n".join(f"- {card.name}：{card.content}" for card in saved_cards)
+            if saved_cards
+            else "已清空该章节提炼出的事实卡片"
         )
         self._show_workspace_message(
-            f"章节事实：{heading.full_path}",
-            "已提炼并缓存章节 facts",
+            f"事实卡片：{heading.full_path}",
+            "已保存章节事实卡片",
             detail,
             generated_char_count=_count_text_characters(detail),
         )
-        self.status_text.set(f"已提炼章节事实：{heading.title}")
+        self.status_text.set(f"已保存事实卡片：{heading.title}")
+
+    def _default_fact_card_extraction_instruction(self, heading: HeadingNode) -> str:
+        del heading
+        return (
+            "请围绕当前选中章节的已生成正文，提炼一张最能代表本章节核心内容的事实卡片。"
+            "优先选择具体、可验证、信息密度高、后续章节可复用或引用的事实；"
+            "避免泛泛总结、修饰性评价、空泛承诺和重复表述。"
+        )
+
+    def open_fact_card_library_dialog(self):
+        """打开事实卡片库管理对话框。"""
+        from .fact_card_dialogs import FactCardLibraryDialog
+
+        dialog = FactCardLibraryDialog(
+            self,
+            cards=self.bid_writer.fact_card_store.list_cards(active_only=False),
+        )
+        self.wait_window(dialog)
+        drafts = dialog.result
+        if drafts is None:
+            return
+
+        saved_cards = self.bid_writer.save_manual_fact_cards(drafts)
+        detail = (
+            "\n".join(f"- {card.name}：{card.content}" for card in saved_cards)
+            if saved_cards
+            else "当前没有手工事实卡片"
+        )
+        self._show_workspace_message(
+            "事实卡片库",
+            "已保存手工事实卡片",
+            detail,
+            generated_char_count=_count_text_characters(detail),
+        )
+        self.status_text.set(f"已保存手工事实卡片：{len(saved_cards)} 张")
+
+    @staticmethod
+    def _format_fact_card_generation_error(exc: Exception) -> str:
+        conflicts = getattr(exc, "conflicts", None)
+        if not conflicts:
+            return str(exc)
+
+        lines = ["检测到事实卡片强冲突，请调整后再生成：", ""]
+        for conflict in conflicts:
+            lines.append(f"- {conflict.normalized_name}")
+            for card in conflict.cards:
+                lines.append(f"  • {card.name}：{card.content}")
+        return "\n".join(lines)
 
     def prewarm_dependency_summaries(self):
         """提前提炼所有被依赖且已有正文的章节摘要。"""
@@ -3409,12 +3485,25 @@ class MainWindow(tk.Tk):
             # 递归收缩子节点
             self._collapse_all_nodes(child_id)
 
-    def _get_generation_params(self, *, initial_requirements: str = "", dependency_hint: str = ""):
+    def _get_generation_params(
+        self,
+        headings: list[HeadingNode],
+        *,
+        initial_requirements: str = "",
+        dependency_hint: str = "",
+    ):
         """
         获取生成参数对话框
 
         Returns:
-            (additional_requirements, target_words, max_mermaid_flowcharts_per_section) 或 None（用户取消）
+            (
+                additional_requirements,
+                target_words,
+                max_mermaid_flowcharts_per_section,
+                fact_card_mode,
+                manual_fact_card_selections,
+                remember_fact_card_defaults,
+            ) 或 None（用户取消）
         """
         dialog = tk.Toplevel(self)
         dialog.title("生成参数设置")
@@ -3424,6 +3513,10 @@ class MainWindow(tk.Tk):
         dialog.grab_set()
 
         result = {"cancelled": True}
+        is_single_heading = len(headings) == 1
+        fact_card_panel = None
+        fact_card_mode_var = tk.BooleanVar(value=False)
+        remember_fact_card_defaults_var = tk.BooleanVar(value=False)
 
         # 附加要求
         ttk.Label(dialog, text="附加扩写要求：", style="SectionTitle.TLabel").pack(
@@ -3505,6 +3598,48 @@ class MainWindow(tk.Tk):
             style="SummaryLabel.TLabel",
         ).pack(side=tk.LEFT)
 
+        if self.bid_writer.config.fact_cards_enabled:
+            fact_card_frame = ttk.Frame(dialog)
+            fact_card_frame.pack(pady=(0, 12), padx=20, fill=tk.BOTH, expand=True)
+
+            if is_single_heading:
+                from .fact_card_dialogs import FactCardSelectionPanel
+
+                heading = headings[0]
+                available_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
+                initial_selections = self.bid_writer.list_chapter_default_fact_cards(heading)
+                default_mode = bool(available_cards)
+                if initial_selections:
+                    default_mode = True
+                fact_card_mode_var.set(default_mode)
+
+                ttk.Checkbutton(
+                    fact_card_frame,
+                    text="本次生成启用事实卡片模式",
+                    variable=fact_card_mode_var,
+                ).pack(anchor=tk.W, pady=(0, 8))
+
+                fact_card_panel = FactCardSelectionPanel(
+                    fact_card_frame,
+                    cards=available_cards,
+                    initial_selections=initial_selections,
+                )
+                fact_card_panel.pack(fill=tk.BOTH, expand=True)
+
+                ttk.Checkbutton(
+                    fact_card_frame,
+                    text="记住为本章节默认卡片方案",
+                    variable=remember_fact_card_defaults_var,
+                ).pack(anchor=tk.W, pady=(8, 0))
+            else:
+                fact_card_mode_var.set(True)
+                ttk.Label(
+                    fact_card_frame,
+                    text="批量生成不会共享临时事实卡片选择；本次仅读取各章节已保存的默认卡片方案。",
+                    justify=tk.LEFT,
+                    wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
+                ).pack(anchor=tk.W)
+
         # 按钮
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=(16, 20))
@@ -3521,10 +3656,19 @@ class MainWindow(tk.Tk):
                 if max_mermaid_flowcharts_per_section < 0:
                     messagebox.showwarning("警告", "Mermaid图示上限不能小于 0")
                     return
+                fact_card_mode = bool(fact_card_mode_var.get()) if self.bid_writer.config.fact_cards_enabled else False
+                manual_fact_card_selections = (
+                    fact_card_panel.get_selections()
+                    if fact_card_panel is not None
+                    else None
+                )
                 result["cancelled"] = False
                 result["requirements"] = additional_req
                 result["target_words"] = target_words
                 result["max_mermaid_flowcharts_per_section"] = max_mermaid_flowcharts_per_section
+                result["fact_card_mode"] = fact_card_mode
+                result["manual_fact_card_selections"] = manual_fact_card_selections
+                result["remember_fact_card_defaults"] = bool(remember_fact_card_defaults_var.get())
                 remember_generation_dialog_settings(
                     target_words,
                     max_mermaid_flowcharts_per_section,
@@ -3575,6 +3719,9 @@ class MainWindow(tk.Tk):
             result["requirements"],
             result["target_words"],
             result["max_mermaid_flowcharts_per_section"],
+            result["fact_card_mode"],
+            result["manual_fact_card_selections"],
+            result["remember_fact_card_defaults"],
         )
 
     class GenerationSession:
@@ -3665,6 +3812,8 @@ class MainWindow(tk.Tk):
             requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
+            fact_card_mode=False,
+            selected_fact_cards=None,
         ):
             """启动后台生成线程"""
             self.is_generating = True
@@ -3688,6 +3837,8 @@ class MainWindow(tk.Tk):
                         stream=ai_writer.config.generation_stream,
                         max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section,
                         status_callback=_publish_status,
+                        fact_card_mode=fact_card_mode,
+                        selected_fact_cards=selected_fact_cards,
                     )
                     if prepared.stream:
                         _publish_status("等待模型首批输出", "正在请求大模型并等待首批内容...")
@@ -3773,6 +3924,9 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
+        fact_card_mode: bool = False,
+        manual_fact_card_selections: Optional[list["FactCardSelection"]] = None,
+        remember_fact_card_defaults: bool = False,
         auto_extract_facts: bool = False,
         show_error_dialog: bool = True,
     ) -> str:
@@ -3782,6 +3936,22 @@ class MainWindow(tk.Tk):
         Returns:
             "success" / "failed"
         """
+        try:
+            selected_fact_cards = self.bid_writer.resolve_generation_fact_cards(
+                heading,
+                manual_fact_card_selections,
+                fact_card_mode=fact_card_mode,
+            )
+        except Exception as exc:
+            conflict_message = self._format_fact_card_generation_error(exc)
+            messagebox.showerror("事实卡片冲突", conflict_message, parent=self)
+            self.status_text.set(f"已阻断生成：{heading.title}")
+            return "failed"
+
+        if fact_card_mode and remember_fact_card_defaults:
+            selections_to_save = manual_fact_card_selections or []
+            self.bid_writer.save_chapter_default_fact_cards(heading.full_path, selections_to_save)
+
         gen_window = self.GenerationSession(self, heading)
 
         gen_window.start_generation(
@@ -3790,6 +3960,8 @@ class MainWindow(tk.Tk):
             additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
+            fact_card_mode=fact_card_mode,
+            selected_fact_cards=selected_fact_cards,
         )
 
         try:

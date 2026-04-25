@@ -8,6 +8,7 @@ import bid_writer.ai_writer as ai_writer_module
 from bid_writer.ai_writer import AIWriter
 from bid_writer.config import Config
 from bid_writer.context_pruner import ChapterContext
+from bid_writer.fact_card_store import FactCardStore
 from bid_writer.outline_parser import parse_outline
 
 
@@ -19,6 +20,7 @@ EXPECTED_BLOCK_IDS = [
     "chapter_scope",
     "project_background",
     "knowledge_context",
+    "fact_card_context",
     "requirement_context",
     "scoring_context",
 ]
@@ -85,10 +87,30 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     )
 
     assert [block["id"] for block in result.prompt_contract_blocks] == EXPECTED_BLOCK_IDS
-    assert result.prompt_contract_blocks[0]["prompt_kind"] == "system"
-    assert result.prompt_contract_blocks[1]["section_names"] == ["task_card", "additional_requirements"]
-    assert result.prompt_contract_blocks[5]["section_names"] == ["knowledge_context"]
-    assert "source_context" in result.prompt_contract_blocks[0]
+    block_map = {block["id"]: block for block in result.prompt_contract_blocks}
+    assert block_map["system_constraints"]["prompt_kind"] == "system"
+    assert block_map["chapter_task"]["section_names"] == ["task_card", "additional_requirements"]
+    assert block_map["knowledge_context"]["section_names"] == ["knowledge_context"]
+    assert block_map["fact_card_context"]["section_names"] == []
+    assert "source_context" in block_map["system_constraints"]
+
+
+def test_fact_card_prompt_contract_exposes_fact_card_block(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "fact_card_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    store = FactCardStore(config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        target_words=1200,
+        fact_card_mode=True,
+        selected_fact_cards=store.resolve_chapter_prompt_cards(heading.full_path),
+    )
+
+    fact_card_block = next(block for block in result.prompt_contract_blocks if block["id"] == "fact_card_context")
+    assert fact_card_block["section_names"] == ["fact_card_context"]
+    assert "build_fact_card_prompt_section" in fact_card_block["source_context"]
 
 
 def test_extra_rules_are_folded_into_structure_contract(monkeypatch, tmp_path):
@@ -368,8 +390,10 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
     assert "prompt_sections" in payload
     assert payload["prompt_contract"]["block_order"] == EXPECTED_BLOCK_IDS
     assert [block["id"] for block in payload["prompt_contract"]["blocks"]] == EXPECTED_BLOCK_IDS
-    assert payload["prompt_contract"]["blocks"][5]["section_names"] == ["knowledge_context"]
-    assert payload["prompt_contract"]["blocks"][0]["source_context"]
+    block_map = {block["id"]: block for block in payload["prompt_contract"]["blocks"]}
+    assert block_map["knowledge_context"]["section_names"] == ["knowledge_context"]
+    assert block_map["fact_card_context"]["section_names"] == []
+    assert block_map["system_constraints"]["source_context"]
     assert heading_payload["target_words"] == 1200
     assert heading_payload["target_word_range"] == {"baseline": 1200, "lower": 1200, "upper": 1400}
 

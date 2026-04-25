@@ -75,6 +75,11 @@ processing:
     return_ids_only: true
     verify_max_candidates: 8
 
+fact_cards:
+  enabled: true
+  cards: []
+  chapter_defaults: {}
+
 models:
   generation:
     model: "gpt-4o-mini"

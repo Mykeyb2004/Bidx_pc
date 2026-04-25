@@ -46,6 +46,8 @@ class GenerationTraceSession:
         context_mode: str,
         pruned_context: Optional[ChapterContext],
         full_context_stats: dict[str, Any],
+        fact_card_mode: bool,
+        fact_card_selection: list[dict[str, Any]],
         request_options: dict[str, Any],
     ):
         self.config = config
@@ -61,6 +63,8 @@ class GenerationTraceSession:
         self.context_mode = context_mode
         self.pruned_context = pruned_context
         self.full_context_stats = full_context_stats
+        self.fact_card_mode = fact_card_mode
+        self.fact_card_selection = fact_card_selection
         self.request_options = request_options
         self.trace_id = self._build_trace_id()
         self.created_at = _utc_now_string()
@@ -150,6 +154,8 @@ class GenerationTraceSession:
     def _build_context_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "context_mode": self.context_mode,
+            "fact_card_mode": self.fact_card_mode,
+            "fact_card_selection": self.fact_card_selection,
             "context_pruning_enabled": self.config.context_pruning_enabled,
             "prompt_contract": {
                 "block_order": [block.get("id", "") for block in self.prompt_contract_blocks],
@@ -200,6 +206,7 @@ class GenerationTraceSession:
             "heading_full_path": self.heading.full_path,
             "heading_level": self.heading.level,
             "context_mode": self.context_mode,
+            "fact_card_mode": self.fact_card_mode,
             "context_pruning_enabled": self.config.context_pruning_enabled,
             "generation_trace_mode": self.config.generation_trace_mode,
             "request": self._sanitize_request_options(),
@@ -266,6 +273,7 @@ class GenerationTraceSession:
             f"- status: {self.status}",
             f"- processing_path: {self.config.processing_path}",
             f"- context_mode: {self.context_mode}",
+            f"- fact_card_mode: {self.fact_card_mode}",
             f"- target_words: {self.target_words}",
             f"- target_word_range: {self.target_word_range.display_text}",
             f"- system_prompt_chars: {len(self.system_prompt)}",
@@ -394,6 +402,8 @@ class GenerationTraceLogger:
         context_mode: str,
         pruned_context: Optional[ChapterContext],
         full_context_stats: dict[str, Any],
+        fact_card_mode: bool,
+        fact_card_selection: list[dict[str, Any]],
         request_options: dict[str, Any],
     ) -> Optional[GenerationTraceSession]:
         if not self.config.generation_trace_enabled:
@@ -413,5 +423,7 @@ class GenerationTraceLogger:
             context_mode=context_mode,
             pruned_context=pruned_context,
             full_context_stats=full_context_stats,
+            fact_card_mode=fact_card_mode,
+            fact_card_selection=fact_card_selection,
             request_options=request_options,
         )

@@ -8,7 +8,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from .ai_writer import AIWriter
 from .chapter_fact_extractor import ChapterFactExtractor, ChapterFactResult
@@ -17,6 +17,9 @@ from .chapter_dependency_store import ChapterDependencyStore
 from .chapter_summary_generator import ChapterSummaryGenerator, ChapterSummaryResult
 from .chapter_summary_store import ChapterSummaryStore
 from .config import Config
+from .fact_card_extractor import FactCardExtractor
+from .fact_card_store import FactCardStore
+from .fact_cards import FactCard, FactCardDraft, FactCardSelection
 from .file_saver import FileSaver
 from .outline_parser import HeadingNode, parse_outline
 
@@ -59,6 +62,11 @@ class BidWriter:
         )
         self.chapter_dependency_store = ChapterDependencyStore(self.config)
         self.chapter_fact_store = ChapterFactStore(self.config)
+        self.fact_card_store = FactCardStore(self.config)
+        self.fact_card_extractor = FactCardExtractor(
+            self.config,
+            self.file_saver,
+        )
         self.chapter_fact_extractor = ChapterFactExtractor(
             self.config,
             self.file_saver,
@@ -203,6 +211,67 @@ class BidWriter:
         """生成或复用正文 facts。"""
         return self.chapter_fact_extractor.ensure_output_facts(heading)
 
+    def list_fact_cards(self) -> list[FactCard]:
+        """列出当前启用的事实卡片。"""
+        return self.fact_card_store.list_cards()
+
+    def save_chapter_default_fact_cards(
+        self,
+        chapter_path: str,
+        selections: list[FactCardSelection],
+    ) -> list[FactCardSelection]:
+        """保存章节默认选中的事实卡片。"""
+        return self.fact_card_store.save_chapter_defaults(chapter_path, selections)
+
+    def list_chapter_default_fact_cards(
+        self,
+        heading: HeadingNode | str,
+    ) -> list[FactCardSelection]:
+        """读取章节默认事实卡片方案。"""
+        return self.fact_card_store.list_chapter_defaults(self._resolve_heading_path(heading))
+
+    def save_manual_fact_cards(
+        self,
+        drafts: Iterable[FactCardDraft | dict],
+    ) -> list[FactCard]:
+        """保存手工录入/编辑后的事实卡片。"""
+        return self.fact_card_store.save_manual_cards(drafts)
+
+    def replace_extracted_fact_cards(
+        self,
+        heading: HeadingNode | str,
+        instruction: str,
+        drafts: Iterable[FactCardDraft | dict],
+    ) -> list[FactCard]:
+        """用最新草稿替换指定章节的提炼事实卡片。"""
+        return self.fact_card_store.replace_extracted_cards(
+            self._resolve_heading_path(heading),
+            instruction,
+            drafts,
+        )
+
+    def resolve_generation_fact_cards(
+        self,
+        heading: HeadingNode | str,
+        manual_selections: Iterable[FactCardSelection | dict] | None = None,
+        *,
+        fact_card_mode: bool = False,
+    ):
+        """解析当前生成应使用的事实卡片。"""
+        if not fact_card_mode:
+            return []
+        if manual_selections is not None:
+            return self.fact_card_store.resolve_selected_cards(manual_selections)
+        return self.fact_card_store.resolve_chapter_prompt_cards(self._resolve_heading_path(heading))
+
+    def extract_fact_card_drafts_from_output(
+        self,
+        heading: HeadingNode,
+        instruction: str = "",
+    ) -> list[FactCardDraft]:
+        """从已保存章节正文中提取事实卡片草稿。"""
+        return self.fact_card_extractor.extract_from_output(heading, instruction)
+
     def has_cached_chapter_summary(self, heading: HeadingNode) -> bool:
         """检查是否存在已缓存的章节摘要。"""
         return self.chapter_summary_store.get(heading) is not None
@@ -317,6 +386,12 @@ class BidWriter:
             missing_sections=missing_sections,
             total_sections=len(leaf_headings)
         )
+
+    @staticmethod
+    def _resolve_heading_path(heading: HeadingNode | str) -> str:
+        if isinstance(heading, HeadingNode):
+            return heading.full_path
+        return str(heading or "").strip()
 
 
 def main(config_path: Optional[str] = None):

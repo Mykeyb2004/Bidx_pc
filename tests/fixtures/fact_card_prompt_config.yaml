@@ -1,0 +1,122 @@
+models:
+  generation:
+    base_url: "https://example.com/v1"
+    api_key: "test-key"
+    model: "test-model"
+    temperature: 0.3
+    max_tokens: 2400
+  pruning:
+    model: "test-model"
+    temperature: 0.2
+    max_tokens: 800
+    timeout_seconds: 30
+    max_retries: 1
+
+project:
+  bidder_name: "测试投标主体"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+    knowledge_files:
+      - "./knowledge_company.md"
+  output_dir: "./output"
+
+writing:
+  role_file: "./roles/example_role.md"
+  allow_markdown_headings: true
+  allow_english_terms: true
+  hard_constraints:
+    - "旧字段不应再进入 system prompt"
+  extra_rules:
+    - "内容要专业、严谨，符合标书撰写规范。"
+    - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"
+  target_words:
+    default: 1200
+    upper_ratio: 1.15
+  output_format: "纯正文"
+  first_line_template: ""
+  max_tables_per_section: 2
+  max_mermaid_flowcharts_per_section: 0
+  summary_title: "章节小结"
+
+processing:
+  path: "full_context"
+  knowledge:
+    enabled: true
+    max_chars: 400
+  context_view:
+    include_ancestors: true
+    include_siblings: true
+    max_siblings: 8
+  legacy_rule:
+    scoring_max_rows: 4
+    requirement_brief_enabled: false
+  hybrid_extract:
+    unavailable_policy: "fallback_legacy"
+    scoring_parse_mode: "auto"
+    scoring_max_rows: 4
+    requirements_max_quotes: 4
+    requirements_max_quote_chars: 220
+    requirement_brief_enabled: false
+    retrieval:
+      lexical_enabled: true
+      vector_enabled: false
+      verify_enabled: false
+      top_k_lexical: 20
+      top_k_vector: 20
+      top_k_fused: 30
+      top_k_final: 6
+      min_fused_score: 0.0
+    quote_only: true
+    return_ids_only: true
+    verify_max_candidates: 8
+
+runtime:
+  stream:
+    enabled: false
+  trace:
+    enabled: true
+    directory: "./trace-output"
+    mode: "full"
+    write_prompt: true
+    write_output: true
+    write_context: true
+    write_summary: true
+    redact_sensitive: true
+
+fact_cards:
+  enabled: true
+  cards:
+    - id: card-qualification
+      name: 企业资质
+      content: 具备建筑工程施工总承包一级资质。
+      active: true
+      source:
+        type: manual
+    - id: card-service
+      name: 服务承诺
+      content: 提供7×24小时响应机制。
+      active: true
+      source:
+        type: manual
+    - id: card-manager-a
+      name: 项目经理
+      content: 张三
+      active: true
+      source:
+        type: manual
+    - id: card-manager-b
+      name: 项目经理
+      content: 李四
+      active: true
+      source:
+        type: chapter_extract
+        chapter_path: 综合服务项目投标方案 > 项目实施方案 > 质量保障措施
+        extraction_instruction: 提取项目经理
+  chapter_defaults:
+    综合服务项目投标方案 > 项目实施方案 > 质量保障措施:
+      - card_id: card-qualification
+        usage: strong
+      - card_id: card-service
+        usage: reference

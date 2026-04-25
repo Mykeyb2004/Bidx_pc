@@ -13,6 +13,12 @@ from openai import OpenAI
 
 from .config import Config, TargetWordRange
 from .context_pruner import ChapterContext, ChapterContextPruner
+from .fact_cards import (
+    FactCardConflictError,
+    SelectedFactCard,
+    build_fact_card_prompt_section,
+    detect_strong_fact_card_conflicts,
+)
 from .chapter_writing_plan import ChapterWritingPlanGenerator
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
 from .knowledge_assembler import KnowledgeAssembler
@@ -31,6 +37,8 @@ class PromptBuildResult:
     pruned_context: Optional[ChapterContext] = None
     context_mode: str = "full"
     full_context_stats: dict[str, Any] = field(default_factory=dict)
+    fact_card_mode: bool = False
+    fact_card_selection: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -63,6 +71,7 @@ class AIWriter:
         ("chapter_scope", "Chapter Scope", "user"),
         ("project_background", "Project Background", "user"),
         ("knowledge_context", "Knowledge Context", "user"),
+        ("fact_card_context", "Fact Card Context", "user"),
         ("requirement_context", "Requirement Context", "user"),
         ("scoring_context", "Scoring Context", "user"),
     )
@@ -589,6 +598,7 @@ class AIWriter:
         background: str,
         knowledge_context: str,
         full_context_stats: dict[str, Any],
+        fact_card_context: str = "",
     ) -> list[tuple[str, str]]:
         sections: list[tuple[str, str]] = [
             ("structure_contract", self._build_structure_contract_section())
@@ -601,6 +611,8 @@ class AIWriter:
 
         if knowledge_context:
             sections.append(("knowledge_context", knowledge_context))
+        if fact_card_context:
+            sections.append(("fact_card_context", fact_card_context))
 
         bid_requirements = self.config.bid_requirements.strip()
         full_context_stats["bid_requirements_chars"] = len(bid_requirements)
@@ -763,6 +775,17 @@ class AIWriter:
                 ],
             },
             {
+                "id": "fact_card_context",
+                "label": "Fact Card Context",
+                "prompt_kind": "user",
+                "section_names": ["fact_card_context"],
+                "source_context": [
+                    "selected_fact_cards" if "fact_card_context" in section_map else "",
+                    "build_fact_card_prompt_section" if "fact_card_context" in section_map else "",
+                    "FactCardStore.resolve_selected_cards" if "fact_card_context" in section_map else "",
+                ],
+            },
+            {
                 "id": "requirement_context",
                 "label": "Requirement Context",
                 "prompt_kind": "user",
@@ -804,6 +827,10 @@ class AIWriter:
             )
         return blocks
 
+    @staticmethod
+    def _serialize_fact_card_selection(selected_fact_cards: list[SelectedFactCard]) -> list[dict[str, Any]]:
+        return [card.to_trace_payload() for card in selected_fact_cards]
+
     def build_prompt_result(
         self,
         heading: HeadingNode,
@@ -812,6 +839,8 @@ class AIWriter:
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
         min_words: Optional[int] = None,
         status_callback: Optional[Callable[[str, str], None]] = None,
+        fact_card_mode: bool = False,
+        selected_fact_cards: Optional[list[SelectedFactCard]] = None,
     ) -> PromptBuildResult:
         """
         构建扩写提示词
@@ -832,6 +861,17 @@ class AIWriter:
         pruned_context = None
         context_mode = "full"
         system_prompt = self.build_system_prompt()
+        if fact_card_mode:
+            resolved_fact_cards = list(selected_fact_cards or [])
+            fact_card_selection = self._serialize_fact_card_selection(resolved_fact_cards)
+            conflicts = detect_strong_fact_card_conflicts(resolved_fact_cards)
+            if conflicts:
+                raise FactCardConflictError(conflicts)
+            fact_card_context = build_fact_card_prompt_section(resolved_fact_cards)
+        else:
+            resolved_fact_cards = []
+            fact_card_selection = []
+            fact_card_context = ""
         full_context_stats: dict[str, Any] = {
             "bid_requirements_chars": 0,
             "scoring_criteria_chars": 0,
@@ -850,7 +890,7 @@ class AIWriter:
         knowledge_context = self.knowledge_assembler.build_prompt_section(
             heading=heading,
             focus_terms=self._chapter_focus_terms(heading, pruned_context),
-        )
+        ) if not fact_card_mode else ""
         background = ""
         try:
             if self.project_background_generator is not None:
@@ -869,6 +909,7 @@ class AIWriter:
                 background,
                 knowledge_context,
                 full_context_stats,
+                fact_card_context=fact_card_context,
             )
             full_context_has_bid_requirements = any(
                 name == "bid_requirements" for name, _ in full_context_sections
@@ -963,7 +1004,14 @@ class AIWriter:
                     "project_background",
                     self._build_project_background_section(background),
                 )
-            if knowledge_context:
+            if fact_card_context:
+                self._append_prompt_section(
+                    prompt_parts,
+                    prompt_sections,
+                    "fact_card_context",
+                    fact_card_context,
+                )
+            elif knowledge_context:
                 self._append_prompt_section(
                     prompt_parts,
                     prompt_sections,
@@ -1050,6 +1098,8 @@ class AIWriter:
             pruned_context=pruned_context,
             context_mode=context_mode,
             full_context_stats=full_context_stats,
+            fact_card_mode=fact_card_mode,
+            fact_card_selection=fact_card_selection,
         )
 
     def build_prompt(
@@ -1134,6 +1184,8 @@ class AIWriter:
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
         min_words: Optional[int] = None,
         status_callback: Optional[Callable[[str, str], None]] = None,
+        fact_card_mode: bool = False,
+        selected_fact_cards: Optional[list[SelectedFactCard]] = None,
     ) -> PreparedGeneration:
         """准备模型请求和 trace 会话，但不执行正文后处理。"""
         if min_words is not None:
@@ -1145,6 +1197,8 @@ class AIWriter:
             target_words,
             max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
             status_callback=status_callback,
+            fact_card_mode=fact_card_mode,
+            selected_fact_cards=selected_fact_cards,
         )
         system_prompt = self.build_system_prompt()
 
@@ -1166,6 +1220,8 @@ class AIWriter:
             context_mode=prompt_result.context_mode,
             pruned_context=prompt_result.pruned_context,
             full_context_stats=prompt_result.full_context_stats,
+            fact_card_mode=prompt_result.fact_card_mode,
+            fact_card_selection=prompt_result.fact_card_selection,
             request_options=request_options,
         )
 

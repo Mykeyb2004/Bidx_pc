@@ -607,6 +607,11 @@ class Config:
         )
 
     @property
+    def fact_cards_enabled(self) -> bool:
+        """是否启用事实卡片功能。"""
+        return self._get_bool(('fact_cards', 'enabled'), default=False)
+
+    @property
     def knowledge_files(self) -> list[str]:
         """用户声明的知识文档路径列表。"""
         project_value = self._get_value('project', 'inputs', 'knowledge_files', default=self._MISSING)
