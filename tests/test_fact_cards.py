@@ -470,6 +470,84 @@ fact_cards:
     ]
 
 
+def test_save_library_cards_updates_existing_cards_and_preserves_sources(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: manual-a
+      name: 企业资质
+      content: 一级资质
+      category: 资质
+      active: true
+      source:
+        type: manual
+      created_at: "2026-04-24T10:00:00+00:00"
+      updated_at: "2026-04-24T10:00:00+00:00"
+    - id: extract-a
+      name: 服务承诺
+      content: 7×24小时响应
+      category: 承诺
+      active: true
+      source:
+        type: chapter_extract
+        chapter_path: 技术方案 > 质量保障措施
+        extraction_instruction: 提炼承诺
+      created_at: "2026-04-24T10:00:00+00:00"
+      updated_at: "2026-04-24T10:00:00+00:00"
+  chapter_defaults:
+    技术方案 > 质量保障措施:
+      - card_id: manual-a
+        usage: strong
+      - card_id: extract-a
+        usage: reference
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    saved = store.save_library_cards(
+        [
+            FactCardDraft(
+                card_id="manual-a",
+                name="企业资质证书",
+                content="具备建筑工程施工总承包一级资质",
+                category="资质证书",
+            ),
+            FactCardDraft(
+                card_id="extract-a",
+                name="服务响应承诺",
+                content="提供 7×24 小时响应支持",
+                category="服务承诺",
+            ),
+            FactCardDraft(name="项目经理", content="项目经理由张三担任", category="人员团队"),
+        ]
+    )
+
+    assert [(card.id, card.name, card.content, card.source.type) for card in saved] == [
+        ("manual-a", "企业资质证书", "具备建筑工程施工总承包一级资质", "manual"),
+        ("extract-a", "服务响应承诺", "提供 7×24 小时响应支持", "chapter_extract"),
+        ("fact-card-3", "项目经理", "项目经理由张三担任", "manual"),
+    ]
+
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert [
+        (item["id"], item["name"], item["content"], item["category"], item["source"]["type"])
+        for item in payload["fact_cards"]["cards"]
+    ] == [
+        ("manual-a", "企业资质证书", "具备建筑工程施工总承包一级资质", "资质证书", "manual"),
+        ("extract-a", "服务响应承诺", "提供 7×24 小时响应支持", "服务承诺", "chapter_extract"),
+        ("fact-card-3", "项目经理", "项目经理由张三担任", "人员团队", "manual"),
+    ]
+    assert payload["fact_cards"]["cards"][1]["source"]["chapter_path"] == "技术方案 > 质量保障措施"
+    assert payload["fact_cards"]["cards"][1]["source"]["extraction_instruction"] == "提炼承诺"
+    assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
+        {"card_id": "manual-a", "usage": "strong"},
+        {"card_id": "extract-a", "usage": "reference"},
+    ]
+
+
 def test_resolve_generation_fact_cards_prefers_explicit_selection_over_defaults(tmp_path: Path):
     config_path = _build_config(
         tmp_path,

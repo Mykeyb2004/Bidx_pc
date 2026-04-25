@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from .fact_cards import FactCard, FactCardDraft, FactCardSelection
 from .gui import (
@@ -288,16 +288,20 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         *,
         heading_title: str,
         initial_instruction: str,
-        extract_callback: Callable[[str], list[FactCardDraft]],
+        extract_callback: Callable[[str], Any],
+        initial_drafts: Optional[list[FactCardDraft]] = None,
+        initial_status: str = "",
     ):
         super().__init__(parent)
         setup_gui_theme(self)
         apply_window_surface(self)
         self.extract_callback = extract_callback
         self.result: Optional[FactCardExtractionDialogResult] = None
-        self._has_extracted = False
+        initial_drafts = list(initial_drafts or [])
+        has_initial_drafts = bool(initial_drafts)
+        self._has_extracted = has_initial_drafts
         self._is_extracting = False
-        self._last_extracted_instruction = ""
+        self._last_extracted_instruction = initial_instruction if has_initial_drafts else ""
 
         self.title("提炼章节事实卡片")
         self.geometry("980x760")
@@ -328,20 +332,25 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         action_row.pack(fill=tk.X, pady=(8, 0))
         self.extract_button = ttk.Button(
             action_row,
-            text="提炼草稿",
+            text="重新提炼" if has_initial_drafts else "提炼草稿",
             command=self._on_extract,
             width=12,
             **_bootstyle_kwargs("primary"),
         )
         self.extract_button.pack(side=tk.LEFT)
 
-        self.status_var = tk.StringVar(value="请先输入提炼要求，再点击“提炼草稿”。")
+        initial_status_text = (
+            initial_status
+            if has_initial_drafts and initial_status
+            else "请先输入提炼要求，再点击“提炼草稿”。"
+        )
+        self.status_var = tk.StringVar(value=initial_status_text)
         ttk.Label(action_row, textvariable=self.status_var).pack(side=tk.LEFT, padx=(10, 0))
 
         editor_frame = ttk.LabelFrame(container, text="提炼草稿", padding=(10, 8))
         editor_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
-        self.editor = FactCardDraftEditor(editor_frame, drafts=[])
+        self.editor = FactCardDraftEditor(editor_frame, drafts=initial_drafts)
         self.editor.pack(fill=tk.BOTH, expand=True)
 
         button_row = ttk.Frame(container)
@@ -382,22 +391,39 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
 
     def _run_extract_worker(self, instruction: str) -> None:
         try:
-            drafts = self.extract_callback(instruction) or []
+            extract_result = self.extract_callback(instruction)
+            drafts, empty_detail_message = self._coerce_extract_result(extract_result)
             error_message = None
         except Exception as exc:
             drafts = []
+            empty_detail_message = ""
             error_message = str(exc) or exc.__class__.__name__
 
         try:
-            self.after(0, lambda: self._finish_extract(instruction, drafts, error_message))
+            self.after(0, lambda: self._finish_extract(instruction, drafts, error_message, empty_detail_message))
         except tk.TclError:
             return
+
+    @staticmethod
+    def _coerce_extract_result(result: Any) -> tuple[list[FactCardDraft], str]:
+        if result is None:
+            return [], ""
+        if isinstance(result, list):
+            return result, ""
+        drafts = getattr(result, "drafts", None)
+        if isinstance(drafts, list):
+            user_message = getattr(result, "user_message", None)
+            if callable(user_message):
+                return drafts, str(user_message() or "").strip()
+            return drafts, str(getattr(result, "message", "") or "").strip()
+        return [], ""
 
     def _finish_extract(
         self,
         instruction: str,
         drafts: list[FactCardDraft],
         error_message: Optional[str],
+        empty_detail_message: str = "",
     ) -> None:
         self._set_extracting_state(False)
         if error_message:
@@ -406,8 +432,9 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
             return
 
         if not drafts:
-            self.status_var.set("本次未生成可保存草稿，可调整要求后重试。")
-            messagebox.showwarning("提示", "当前未能提炼出可保存的事实卡片草稿。", parent=self)
+            message = empty_detail_message or "当前未能提炼出可保存的事实卡片草稿。"
+            self.status_var.set("本次未生成可保存草稿，可查看提示详情。")
+            messagebox.showwarning("提示", message, parent=self)
             return
 
         core_drafts = drafts[:1]
@@ -542,7 +569,7 @@ class FactCardLibraryDialog(tk.Toplevel):
         ttk.Label(container, text="事实卡片库管理", style="SectionTitle.TLabel").pack(anchor=tk.W)
         ttk.Label(
             container,
-            text="上半区展示当前卡片；下半区可直接编辑手工卡片名称、分类和内容。保存时会按下方结构化列表覆盖现有手工卡片。",
+            text="上半区展示当前卡片；下半区可直接编辑全部卡片名称、分类和内容。保存时会按下方结构化列表覆盖现有事实卡片库，并保留已有卡片来源。",
             justify=tk.LEFT,
             wraplength=900,
         ).pack(anchor=tk.W, pady=(6, 12))
@@ -579,13 +606,13 @@ class FactCardLibraryDialog(tk.Toplevel):
                 values=(card.name, source_text, card.category or "-", card.content),
             )
 
-        edit_frame = ttk.LabelFrame(container, text="手工卡片编辑", padding=(8, 8))
+        edit_frame = ttk.LabelFrame(container, text="卡片库编辑", padding=(8, 8))
         edit_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
-        manual_drafts = self._build_manual_drafts(cards)
+        library_drafts = self._build_library_drafts(cards)
         self.editor = FactCardDraftEditor(
             edit_frame,
-            drafts=manual_drafts,
+            drafts=library_drafts,
             list_min_height=FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT,
         )
         self.editor.pack(fill=tk.BOTH, expand=True)
@@ -601,11 +628,23 @@ class FactCardLibraryDialog(tk.Toplevel):
         ).pack(side=tk.LEFT, padx=6)
         ttk.Button(
             button_row,
-            text="保存手工卡片",
+            text="保存卡片库",
             command=self._on_save,
             width=12,
             **_bootstyle_kwargs("primary"),
         ).pack(side=tk.LEFT)
+
+    @staticmethod
+    def _build_library_drafts(cards: list[FactCard]) -> list[FactCardDraft]:
+        return [
+            FactCardDraft(
+                card_id=card.id,
+                name=card.name,
+                content=card.content,
+                category=card.category,
+            )
+            for card in cards
+        ]
 
     @staticmethod
     def _build_manual_drafts(cards: list[FactCard]) -> list[FactCardDraft]:

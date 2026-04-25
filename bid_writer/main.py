@@ -17,7 +17,7 @@ from .chapter_dependency_store import ChapterDependencyStore
 from .chapter_summary_generator import ChapterSummaryGenerator, ChapterSummaryResult
 from .chapter_summary_store import ChapterSummaryStore
 from .config import Config
-from .fact_card_extractor import FactCardExtractor
+from .fact_card_extractor import FactCardExtractionResult, FactCardExtractor
 from .fact_card_store import FactCardStore
 from .fact_cards import FactCard, FactCardDraft, FactCardSelection
 from .file_saver import FileSaver
@@ -215,6 +215,10 @@ class BidWriter:
         """列出当前启用的事实卡片。"""
         return self.fact_card_store.list_cards()
 
+    def list_extracted_fact_cards(self, heading: HeadingNode | str) -> list[FactCard]:
+        """列出指定章节已保存的正文提炼事实卡片。"""
+        return self.fact_card_store.list_chapter_extracted_cards(self._resolve_heading_path(heading))
+
     def save_chapter_default_fact_cards(
         self,
         chapter_path: str,
@@ -236,6 +240,13 @@ class BidWriter:
     ) -> list[FactCard]:
         """保存手工录入/编辑后的事实卡片。"""
         return self.fact_card_store.save_manual_cards(drafts)
+
+    def save_fact_card_library(
+        self,
+        drafts: Iterable[FactCardDraft | dict],
+    ) -> list[FactCard]:
+        """保存事实卡片库编辑结果，保留已有卡片来源和 ID。"""
+        return self.fact_card_store.save_library_cards(drafts)
 
     def replace_extracted_fact_cards(
         self,
@@ -271,6 +282,14 @@ class BidWriter:
     ) -> list[FactCardDraft]:
         """从已保存章节正文中提取事实卡片草稿。"""
         return self.fact_card_extractor.extract_from_output(heading, instruction)
+
+    def extract_fact_card_drafts_from_output_with_diagnostics(
+        self,
+        heading: HeadingNode,
+        instruction: str = "",
+    ) -> FactCardExtractionResult:
+        """从已保存章节正文中提取事实卡片草稿，并返回失败诊断。"""
+        return self.fact_card_extractor.extract_from_output_with_diagnostics(heading, instruction)
 
     def has_cached_chapter_summary(self, heading: HeadingNode) -> bool:
         """检查是否存在已缓存的章节摘要。"""

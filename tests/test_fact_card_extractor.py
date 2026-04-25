@@ -37,6 +37,12 @@ class _FakeCompletions:
         return _FakeResponse(self.content)
 
 
+class _FailingCompletions:
+    def create(self, **kwargs):
+        del kwargs
+        raise RuntimeError("mock timeout")
+
+
 class _FakeChat:
     def __init__(self, completions: _FakeCompletions):
         self.completions = completions
@@ -166,6 +172,34 @@ def test_fact_card_extractor_returns_empty_on_missing_response_content(tmp_path:
     extractor._get_client_and_model = lambda: (_FakeClient(_EmptyCompletions()), "mock-model")
 
     assert extractor.extract_from_output(heading, "提取事实") == []
+
+
+def test_fact_card_extractor_reports_api_exception_details(tmp_path: Path):
+    config_path = _build_config(tmp_path)
+    config = Config(str(config_path))
+    heading = _get_heading(config, "质量保障措施")
+    output_path = tmp_path / "output" / "quality.md"
+    output_path.write_text("已生成正文", encoding="utf-8")
+    extractor = FactCardExtractor(
+        config=config,
+        file_saver=_FakeFileSaver(output_path, "项目经理由张三担任。"),
+    )
+    extractor._get_client_and_model = lambda: (_FakeClient(_FailingCompletions()), "mock-model")
+
+    result = extractor.extract_from_output_with_diagnostics(heading, "提取事实")
+
+    assert result.drafts == []
+    assert result.message == "调用模型提炼事实卡片失败。"
+    assert "RuntimeError: mock timeout" in result.detail
+
+
+def test_fact_card_extractor_reports_invalid_json_response_excerpt():
+    result = FactCardExtractor.parse_draft_response_with_diagnostics("我无法提取事实卡片")
+
+    assert result.drafts == []
+    assert result.message == "模型返回不是合法 JSON，无法解析事实卡片。"
+    assert "解析错误" in result.detail
+    assert result.raw_response_excerpt == "我无法提取事实卡片"
 
 
 def test_bid_writer_extracts_fact_card_drafts_from_output(tmp_path: Path):

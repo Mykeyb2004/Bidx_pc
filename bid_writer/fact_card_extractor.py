@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
@@ -11,6 +12,22 @@ from .file_saver import FileSaver
 from .outline_parser import HeadingNode
 
 
+@dataclass(frozen=True)
+class FactCardExtractionResult:
+    drafts: list[FactCardDraft]
+    message: str = ""
+    detail: str = ""
+    raw_response_excerpt: str = ""
+
+    def user_message(self) -> str:
+        lines = [self.message or "当前未能提炼出可保存的事实卡片草稿。"]
+        if self.detail:
+            lines.extend(["", "详细信息：", self.detail])
+        if self.raw_response_excerpt:
+            lines.extend(["", "模型原始返回（截断）：", self.raw_response_excerpt])
+        return "\n".join(lines)
+
+
 class FactCardExtractor:
     """从已保存章节正文中提炼事实卡片草稿。"""
 
@@ -19,13 +36,32 @@ class FactCardExtractor:
         self.file_saver = file_saver
 
     def extract_from_output(self, heading: HeadingNode, instruction: str = "") -> list[FactCardDraft]:
+        return self.extract_from_output_with_diagnostics(heading, instruction).drafts
+
+    def extract_from_output_with_diagnostics(
+        self,
+        heading: HeadingNode,
+        instruction: str = "",
+    ) -> FactCardExtractionResult:
         filepath = self.file_saver.find_existing_filepath(heading)
         if filepath is None or not filepath.exists():
-            return []
+            return FactCardExtractionResult(
+                drafts=[],
+                message="未找到该章节的已生成正文文件。",
+                detail=f"章节：{heading.full_path or heading.title}\n请先生成该章节正文后再提炼事实卡片。",
+            )
 
         content = self.file_saver.load_section_body(filepath, heading.title).strip()
         if not content:
-            return []
+            return FactCardExtractionResult(
+                drafts=[],
+                message="已找到正文文件，但未读取到该章节正文。",
+                detail=(
+                    f"文件：{filepath}\n"
+                    f"章节标题：{heading.title}\n"
+                    "可能原因：输出文件中章节标题不匹配，或该章节正文为空。"
+                ),
+            )
 
         client, model = self._get_client_and_model()
         try:
@@ -44,13 +80,21 @@ class FactCardExtractor:
                     },
                 ],
             )
-        except Exception:
-            return []
+        except Exception as exc:
+            return FactCardExtractionResult(
+                drafts=[],
+                message="调用模型提炼事实卡片失败。",
+                detail=f"{exc.__class__.__name__}: {exc}",
+            )
 
         content_text = self._extract_response_content(response)
         if not content_text:
-            return []
-        return self.parse_draft_response(content_text)
+            return FactCardExtractionResult(
+                drafts=[],
+                message="模型响应为空，无法提炼事实卡片。",
+                detail="接口已返回响应，但未包含 choices[0].message.content 内容。",
+            )
+        return self.parse_draft_response_with_diagnostics(content_text)
 
     @staticmethod
     def build_prompt(*, heading: HeadingNode, chapter_content: str, instruction: str = "") -> str:
@@ -73,28 +117,82 @@ class FactCardExtractor:
 
     @classmethod
     def parse_draft_response(cls, content: str) -> list[FactCardDraft]:
-        payload = cls._load_json_payload(content)
+        return cls.parse_draft_response_with_diagnostics(content).drafts
+
+    @classmethod
+    def parse_draft_response_with_diagnostics(cls, content: str) -> FactCardExtractionResult:
+        payload, json_error, normalized = cls._load_json_payload_with_diagnostics(content)
+        if json_error:
+            return FactCardExtractionResult(
+                drafts=[],
+                message="模型返回不是合法 JSON，无法解析事实卡片。",
+                detail=json_error,
+                raw_response_excerpt=cls._excerpt(normalized),
+            )
         if isinstance(payload, dict):
             for key in ("items", "cards", "data"):
                 if isinstance(payload.get(key), list):
                     payload = payload[key]
                     break
+            else:
+                return FactCardExtractionResult(
+                    drafts=[],
+                    message="模型返回了 JSON 对象，但没有可识别的卡片列表。",
+                    detail="期望字段：items、cards 或 data，且字段值应为数组。",
+                    raw_response_excerpt=cls._excerpt(normalized),
+                )
         if not isinstance(payload, list):
-            return []
+            return FactCardExtractionResult(
+                drafts=[],
+                message="模型返回的 JSON 不是数组，无法提炼事实卡片。",
+                detail=f"实际 JSON 类型：{type(payload).__name__}。",
+                raw_response_excerpt=cls._excerpt(normalized),
+            )
+
+        if not payload:
+            return FactCardExtractionResult(
+                drafts=[],
+                message="模型返回空数组，表示未识别到明确核心事实。",
+                detail="可尝试在提炼要求中指定要提取的资质、人员、工期、服务承诺、业绩等具体事实。",
+                raw_response_excerpt=cls._excerpt(normalized),
+            )
 
         drafts: list[FactCardDraft] = []
+        invalid_reasons: list[str] = []
         for item in payload:
+            if not isinstance(item, dict):
+                invalid_reasons.append("存在非对象数组项。")
+                continue
             draft = FactCardDraft.from_dict(item if isinstance(item, dict) else None)
             if draft is not None:
                 drafts.append(draft)
                 break
-        return drafts
+            missing_fields = []
+            if not str(item.get("name", "") or "").strip():
+                missing_fields.append("name")
+            if not str(item.get("content", item.get("value", "")) or "").strip():
+                missing_fields.append("content")
+            if missing_fields:
+                invalid_reasons.append(f"存在缺少 {'、'.join(missing_fields)} 字段的数组项。")
+        if drafts:
+            return FactCardExtractionResult(drafts=drafts)
+        return FactCardExtractionResult(
+            drafts=[],
+            message="模型返回了数组，但没有包含可保存的事实卡片。",
+            detail="；".join(dict.fromkeys(invalid_reasons)) or "每张卡片都必须同时包含非空 name 和 content。",
+            raw_response_excerpt=cls._excerpt(normalized),
+        )
 
     @staticmethod
     def _load_json_payload(content: str) -> Any:
+        payload, _json_error, _normalized = FactCardExtractor._load_json_payload_with_diagnostics(content)
+        return payload
+
+    @staticmethod
+    def _load_json_payload_with_diagnostics(content: str) -> tuple[Any, str, str]:
         normalized = str(content or "").strip()
         if not normalized:
-            return []
+            return [], "", normalized
         if normalized.startswith("```"):
             lines = normalized.splitlines()
             if lines and lines[0].startswith("```"):
@@ -107,9 +205,20 @@ class FactCardExtractor:
         if normalized.lower().startswith("json\n"):
             normalized = normalized.split("\n", 1)[1].strip()
         try:
-            return json.loads(normalized)
-        except json.JSONDecodeError:
-            return []
+            return json.loads(normalized), "", normalized
+        except json.JSONDecodeError as exc:
+            return (
+                [],
+                f"解析错误：{exc.msg}（第 {exc.lineno} 行，第 {exc.colno} 列）。",
+                normalized,
+            )
+
+    @staticmethod
+    def _excerpt(text: str, limit: int = 800) -> str:
+        normalized = str(text or "").strip()
+        if len(normalized) <= limit:
+            return normalized
+        return normalized[:limit].rstrip() + "..."
 
     @staticmethod
     def _extract_response_content(response: Any) -> str:

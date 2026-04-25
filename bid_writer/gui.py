@@ -9,6 +9,7 @@ import re
 import time
 import tkinter as tk
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 from typing import Any, Callable, List, Optional
 from pathlib import Path
@@ -72,6 +73,9 @@ _WORKSPACE_CHAR_COUNT_UNCHANGED = object()
 _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
+ACTION_MENU_FACT_CARD_INDEX = 3
+CHAPTER_TOOLS_FACT_CARD_INDEX = 2
+CONTEXT_MENU_FACT_CARD_INDEX = 2
 
 
 @dataclass
@@ -2035,6 +2039,97 @@ class MainWindow(tk.Tk):
             return "生成规划摘要"
         return "刷新提炼总结"
 
+    def _list_extracted_fact_cards_for_heading(self, heading: HeadingNode) -> list[Any]:
+        """读取当前章节已保存的正文提炼事实卡片。"""
+        list_method = getattr(self.bid_writer, "list_extracted_fact_cards", None)
+        if callable(list_method):
+            return list(list_method(heading) or [])
+
+        store = getattr(self.bid_writer, "fact_card_store", None)
+        store_method = getattr(store, "list_chapter_extracted_cards", None)
+        if callable(store_method):
+            return list(store_method(getattr(heading, "full_path", "")) or [])
+        return []
+
+    def _fact_card_menu_label_for_heading(self, heading: HeadingNode) -> str:
+        """根据章节是否已有提炼结果生成右键菜单文案。"""
+        if MainWindow._list_extracted_fact_cards_for_heading(self, heading):
+            return "查看/更新事实卡片"
+        return "提炼事实卡片"
+
+    def _selected_fact_card_action_label(self, selected_headings: list[HeadingNode]) -> str:
+        """根据当前选择生成顶部菜单中的事实卡片入口文案。"""
+        if len(selected_headings) == 1 and MainWindow._list_extracted_fact_cards_for_heading(self, selected_headings[0]):
+            return "查看/更新当前章节事实卡片"
+        return "提炼当前章节事实卡片"
+
+    @staticmethod
+    def _fact_card_drafts_from_cards(cards: list[Any]) -> list[Any]:
+        """将已保存事实卡片转换为提炼工作台可编辑草稿。"""
+        from .fact_cards import FactCardDraft
+
+        return [
+            FactCardDraft(
+                card_id=str(getattr(card, "id", "") or ""),
+                name=str(getattr(card, "name", "") or ""),
+                content=str(getattr(card, "content", "") or ""),
+                category=str(getattr(card, "category", "") or ""),
+            )
+            for card in cards
+            if str(getattr(card, "name", "") or "").strip() and str(getattr(card, "content", "") or "").strip()
+        ]
+
+    def _fact_card_initial_instruction(self, heading: HeadingNode, cards: list[Any]) -> str:
+        """优先复用上次提炼要求，没有则使用默认要求。"""
+        for card in cards:
+            source = getattr(card, "source", None)
+            instruction = str(getattr(source, "extraction_instruction", "") or "").strip()
+            if instruction:
+                return instruction
+        return self._default_fact_card_extraction_instruction(heading)
+
+    @classmethod
+    def _fact_card_initial_status(cls, cards: list[Any], output_path: Path) -> str:
+        """生成已有事实卡片的初始状态提示。"""
+        if not cards:
+            return ""
+
+        count = len(cards)
+        output_time = cls._file_modified_datetime(output_path)
+        latest_extract_time = max(
+            (
+                parsed
+                for parsed in (cls._parse_datetime(getattr(card, "updated_at", "")) for card in cards)
+                if parsed is not None
+            ),
+            default=None,
+        )
+        if output_time is not None and latest_extract_time is not None and output_time > latest_extract_time:
+            return f"已存在上次提炼结果（{count} 张），但章节正文更新时间较新，建议重新提炼后再保存。"
+        return f"已存在上次提炼结果（{count} 张），当前正文未检测到更新，可直接复用或编辑后保存。"
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> Optional[datetime]:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
+    def _file_modified_datetime(path: Path) -> Optional[datetime]:
+        try:
+            return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+        except OSError:
+            return None
+
     def bind_shortcuts(self):
         """绑定快捷键"""
         # 展开/收缩快捷键
@@ -2460,9 +2555,15 @@ class MainWindow(tk.Tk):
             state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
         )
         self.chapter_tools_menu.entryconfigure(
-            "提炼当前章节事实卡片",
+            CHAPTER_TOOLS_FACT_CARD_INDEX,
+            label=self._selected_fact_card_action_label(selected_headings),
             state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
         )
+        if hasattr(self, "action_menu"):
+            self.action_menu.entryconfigure(
+                ACTION_MENU_FACT_CARD_INDEX,
+                label=self._selected_fact_card_action_label(selected_headings),
+            )
 
         self.search_entry.config(state=(tk.DISABLED if self.is_generating else tk.NORMAL))
         self.status_filter_combo.config(state=("disabled" if self.is_generating else "readonly"))
@@ -2536,6 +2637,10 @@ class MainWindow(tk.Tk):
         self.outline_context_menu.entryconfigure(
             0,
             label=self._summary_menu_label_for_heading(heading),
+        )
+        self.outline_context_menu.entryconfigure(
+            CONTEXT_MENU_FACT_CARD_INDEX,
+            label=self._fact_card_menu_label_for_heading(heading),
         )
         self.outline_context_menu.tk_popup(event.x_root, event.y_root)
         self.outline_context_menu.grab_release()
@@ -3129,14 +3234,23 @@ class MainWindow(tk.Tk):
 
         from .fact_card_dialogs import FactCardExtractionWorkspaceDialog
 
+        existing_cards = MainWindow._list_extracted_fact_cards_for_heading(self, heading)
+        initial_drafts = MainWindow._fact_card_drafts_from_cards(existing_cards)
+        initial_instruction = MainWindow._fact_card_initial_instruction(self, heading, existing_cards)
+        initial_status = MainWindow._fact_card_initial_status(existing_cards, output_path)
+
         def _extract_callback(instruction: str):
+            if hasattr(self.bid_writer, "extract_fact_card_drafts_from_output_with_diagnostics"):
+                return self.bid_writer.extract_fact_card_drafts_from_output_with_diagnostics(heading, instruction)
             return self.bid_writer.extract_fact_card_drafts_from_output(heading, instruction)
 
         dialog = FactCardExtractionWorkspaceDialog(
             self,
             heading_title=heading.title,
-            initial_instruction=self._default_fact_card_extraction_instruction(heading),
+            initial_instruction=initial_instruction,
             extract_callback=_extract_callback,
+            initial_drafts=initial_drafts,
+            initial_status=initial_status,
         )
         self.wait_window(dialog)
         extraction_result = dialog.result
@@ -3183,19 +3297,19 @@ class MainWindow(tk.Tk):
         if drafts is None:
             return
 
-        saved_cards = self.bid_writer.save_manual_fact_cards(drafts)
+        saved_cards = self.bid_writer.save_fact_card_library(drafts)
         detail = (
             "\n".join(f"- {card.name}：{card.content}" for card in saved_cards)
             if saved_cards
-            else "当前没有手工事实卡片"
+            else "当前没有事实卡片"
         )
         self._show_workspace_message(
             "事实卡片库",
-            "已保存手工事实卡片",
+            "已保存事实卡片库",
             detail,
             generated_char_count=_count_text_characters(detail),
         )
-        self.status_text.set(f"已保存手工事实卡片：{len(saved_cards)} 张")
+        self.status_text.set(f"已保存事实卡片库：{len(saved_cards)} 张")
 
     @staticmethod
     def _format_fact_card_generation_error(exc: Exception) -> str:

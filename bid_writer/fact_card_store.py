@@ -29,6 +29,15 @@ class FactCardStore:
         cards = self._load_cards()
         return [card for card in cards if card.active] if active_only else cards
 
+    def list_chapter_extracted_cards(self, chapter_path: str, active_only: bool = True) -> list[FactCard]:
+        """列出指定章节已保存的正文提炼事实卡片。"""
+        cards = self.list_cards(active_only=active_only)
+        return [
+            card
+            for card in cards
+            if card.source.type == "chapter_extract" and self._same_path(card.source.chapter_path, chapter_path)
+        ]
+
     def list_chapter_defaults(self, chapter_path: str) -> list[FactCardSelection]:
         payload = self._load_config_payload()
         block = self._normalize_fact_cards_block(payload)
@@ -161,6 +170,65 @@ class FactCardStore:
         payload["fact_cards"] = block
         self._save_config_payload(payload)
         return replacements
+
+    def save_library_cards(
+        self,
+        drafts: Iterable[FactCardDraft | dict[str, Any]],
+    ) -> list[FactCard]:
+        payload = self._load_config_payload()
+        block = self._normalize_fact_cards_block(payload)
+        existing_cards = self._cards_from_block(block)
+        existing_cards_by_id = {card.id: card for card in existing_cards}
+        now = self._now_iso()
+
+        saved_cards: list[FactCard] = []
+        reused_ids: set[str] = set()
+        next_generated_id = 1
+
+        for position, item in enumerate(drafts, start=1):
+            draft = self._coerce_draft(item)
+            if draft is None:
+                continue
+
+            matched = existing_cards_by_id.get(draft.card_id) if draft.card_id not in reused_ids else None
+            if matched is not None:
+                saved_cards.append(
+                    FactCard(
+                        id=matched.id,
+                        name=draft.name,
+                        content=draft.content,
+                        category=draft.category,
+                        active=matched.active,
+                        source=matched.source,
+                        created_at=matched.created_at,
+                        updated_at=now,
+                    )
+                )
+                reused_ids.add(matched.id)
+                continue
+
+            next_generated_id = max(next_generated_id, position)
+            while self._id_exists(f"fact-card-{next_generated_id}", existing_cards, saved_cards):
+                next_generated_id += 1
+            saved_card = FactCard(
+                id=f"fact-card-{next_generated_id}",
+                name=draft.name,
+                content=draft.content,
+                category=draft.category,
+                active=True,
+                source=FactCardSource(type="manual"),
+                created_at=now,
+                updated_at=now,
+            )
+            saved_cards.append(saved_card)
+            reused_ids.add(saved_card.id)
+            next_generated_id += 1
+
+        block["cards"] = [card.to_dict() for card in saved_cards]
+        self._clean_all_chapter_defaults(block)
+        payload["fact_cards"] = block
+        self._save_config_payload(payload)
+        return saved_cards
 
     def replace_extracted_cards(
         self,
