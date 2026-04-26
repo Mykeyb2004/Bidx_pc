@@ -284,6 +284,12 @@ def test_fact_card_library_dialog_builds_edit_action_from_selected_card():
     assert closed == ["destroy"]
 
 
+def test_fact_card_library_dialog_action_buttons_use_expected_labels():
+    assert [
+        spec.text for spec in fact_card_dialogs.FactCardLibraryDialog._action_button_specs()
+    ] == ["新建卡片", "编辑当前卡片", "关闭"]
+
+
 def test_fact_card_extraction_workspace_dialog_uses_default_instruction_as_placeholder():
     dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
         fact_card_dialogs.FactCardExtractionWorkspaceDialog

@@ -52,6 +52,16 @@ class FactCardLibraryDialogResult:
     card: FactCard | None = None
 
 
+@dataclass(frozen=True)
+class FactCardLibraryActionButtonSpec:
+    text: str
+    command_name: str
+    width: int
+    bootstyle: str
+    pack_side: str = tk.LEFT
+    pack_padx: tuple[int, int] = (0, 6)
+
+
 class ScrollableBody(ttk.Frame):
     def __init__(self, master, *, stretch_height: bool = False):
         super().__init__(master)
@@ -817,10 +827,21 @@ class FactCardLibraryDialog(tk.Toplevel):
         ttk.Label(container, text="事实卡片库管理", style="SectionTitle.TLabel").pack(anchor=tk.W)
         ttk.Label(
             container,
-            text="查看当前全部事实卡片；双击记录或选择后点击“编辑卡片”可修改卡片内容，来源信息会保留不变。",
+            text="查看当前全部事实卡片；双击记录或选择后点击“编辑当前卡片”可修改卡片内容，来源信息会保留不变。",
             justify=tk.LEFT,
             wraplength=900,
-        ).pack(anchor=tk.W, pady=(6, 12))
+        ).pack(anchor=tk.W, pady=(6, 8))
+
+        button_row = ttk.Frame(container)
+        button_row.pack(fill=tk.X, pady=(0, 12))
+        for spec in self._action_button_specs():
+            ttk.Button(
+                button_row,
+                text=spec.text,
+                command=getattr(self, spec.command_name),
+                width=spec.width,
+                **_bootstyle_kwargs(spec.bootstyle),
+            ).pack(side=spec.pack_side, padx=spec.pack_padx)
 
         tree_frame = ttk.LabelFrame(container, text="当前卡片", padding=(8, 8))
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -868,30 +889,6 @@ class FactCardLibraryDialog(tk.Toplevel):
                 ),
             )
 
-        button_row = ttk.Frame(container)
-        button_row.pack(anchor=tk.E, pady=(12, 0))
-        ttk.Button(
-            button_row,
-            text="新建卡片",
-            command=self._on_new,
-            width=12,
-            **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.LEFT, padx=6)
-        ttk.Button(
-            button_row,
-            text="编辑卡片",
-            command=self._on_edit,
-            width=12,
-            **_bootstyle_kwargs("primary"),
-        ).pack(side=tk.LEFT)
-        ttk.Button(
-            button_row,
-            text="关闭",
-            command=self._on_cancel,
-            width=10,
-            **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.LEFT, padx=(6, 0))
-
     @staticmethod
     def _build_library_drafts(cards: list[FactCard]) -> list[FactCardDraft]:
         return [
@@ -919,6 +916,31 @@ class FactCardLibraryDialog(tk.Toplevel):
             )
             for card in cards
             if card.source.type == "manual"
+        ]
+
+    @staticmethod
+    def _action_button_specs() -> list[FactCardLibraryActionButtonSpec]:
+        return [
+            FactCardLibraryActionButtonSpec(
+                text="新建卡片",
+                command_name="_on_new",
+                width=12,
+                bootstyle="secondary",
+            ),
+            FactCardLibraryActionButtonSpec(
+                text="编辑当前卡片",
+                command_name="_on_edit",
+                width=14,
+                bootstyle="primary",
+            ),
+            FactCardLibraryActionButtonSpec(
+                text="关闭",
+                command_name="_on_cancel",
+                width=10,
+                bootstyle="secondary",
+                pack_side=tk.RIGHT,
+                pack_padx=(6, 0),
+            ),
         ]
 
     def _selected_card(self) -> FactCard | None:
