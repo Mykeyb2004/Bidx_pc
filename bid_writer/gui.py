@@ -3201,32 +3201,70 @@ class MainWindow(tk.Tk):
         """打开事实卡片库管理对话框。"""
         from .fact_card_dialogs import FactCardLibraryDialog
 
-        dialog = FactCardLibraryDialog(
-            self,
-            cards=self.bid_writer.fact_card_store.list_cards(active_only=False),
-        )
-        self.wait_window(dialog)
-        drafts = dialog.result
-        if drafts is None:
+        while True:
+            dialog = FactCardLibraryDialog(
+                self,
+                cards=self.bid_writer.fact_card_store.list_cards(active_only=False),
+            )
+            self.wait_window(dialog)
+            result = dialog.result
+            if result is None:
+                return
+            if result.action == "new":
+                MainWindow.open_manual_fact_card_dialog(self)
+                continue
+            if result.action == "edit" and result.card is not None:
+                MainWindow._edit_fact_card_from_library(self, result.card)
+                continue
             return
 
-        saved_cards = self.bid_writer.save_fact_card_library(drafts)
-        detail = (
-            "\n".join(f"- {card.name}：{card.content}" for card in saved_cards)
-            if saved_cards
-            else "当前没有事实卡片"
+    def _edit_fact_card_from_library(self, card):
+        """打开单卡编辑弹窗，并把修改合并回完整事实卡片库。"""
+        from .fact_card_dialogs import ManualFactCardDialog
+        from .fact_cards import FactCardDraft
+
+        initial_draft = MainWindow._fact_card_library_drafts_from_cards([card])[0]
+        source_text = MainWindow._format_fact_card_source_text(card)
+        dialog = ManualFactCardDialog(
+            self,
+            initial_draft=initial_draft,
+            window_title="编辑事实卡片",
+            heading_text="编辑事实卡片",
+            description=(
+                "可修改名称、分类、作用域、约束和内容；"
+                f"来源信息会保留不变。来源：{source_text}"
+            ),
         )
+        self.wait_window(dialog)
+        draft = dialog.result
+        if draft is None:
+            self.status_text.set(f"已取消编辑事实卡片：{card.name}")
+            return
+        if not draft.card_id:
+            draft = FactCardDraft(
+                card_id=card.id,
+                name=draft.name,
+                content=draft.content,
+                category=draft.category,
+                scope=draft.scope,
+                enforcement=draft.enforcement,
+            )
+
+        saved_cards = MainWindow._save_single_fact_card_draft(self, draft)
+        saved_card = next((saved for saved in saved_cards if saved.id == draft.card_id), None)
+        detail_card = saved_card or card
+        detail = f"- {detail_card.name}：{detail_card.content}"
         self._show_workspace_message(
             "事实卡片库",
-            "已保存事实卡片库",
+            "已更新事实卡片",
             detail,
             generated_char_count=_count_text_characters(detail),
         )
-        self.status_text.set(f"已保存事实卡片库：{len(saved_cards)} 张")
+        self.status_text.set(f"已更新事实卡片：{detail_card.name}")
 
     def open_manual_fact_card_dialog(self):
         """打开手工新增事实卡片对话框。"""
-        from .fact_card_dialogs import FactCardLibraryDialog, ManualFactCardDialog
+        from .fact_card_dialogs import ManualFactCardDialog
 
         dialog = ManualFactCardDialog(self)
         self.wait_window(dialog)
@@ -3235,9 +3273,7 @@ class MainWindow(tk.Tk):
             self.status_text.set("已取消新增事实卡片")
             return
 
-        existing_cards = self.bid_writer.fact_card_store.list_cards(active_only=False)
-        drafts = [*FactCardLibraryDialog._build_library_drafts(existing_cards), draft]
-        self.bid_writer.save_fact_card_library(drafts)
+        MainWindow._save_single_fact_card_draft(self, draft)
         detail = f"- {draft.name}：{draft.content}"
         self._show_workspace_message(
             "事实卡片库",
@@ -3246,6 +3282,45 @@ class MainWindow(tk.Tk):
             generated_char_count=_count_text_characters(detail),
         )
         self.status_text.set(f"已新增事实卡片：{draft.name}")
+
+    def _save_single_fact_card_draft(self, draft):
+        """用单张草稿更新完整事实卡片库，避免整库覆盖接口误删其他卡片。"""
+        existing_cards = self.bid_writer.fact_card_store.list_cards(active_only=False)
+        existing_drafts = MainWindow._fact_card_library_drafts_from_cards(existing_cards)
+        drafts = [*existing_drafts, draft]
+        if draft.card_id:
+            replaced = False
+            merged_drafts = []
+            for existing_draft in existing_drafts:
+                if existing_draft.card_id == draft.card_id:
+                    merged_drafts.append(draft)
+                    replaced = True
+                else:
+                    merged_drafts.append(existing_draft)
+            drafts = merged_drafts if replaced else [*merged_drafts, draft]
+        return self.bid_writer.save_fact_card_library(drafts)
+
+    @staticmethod
+    def _fact_card_library_drafts_from_cards(cards):
+        from .fact_cards import FactCardDraft
+
+        return [
+            FactCardDraft(
+                card_id=card.id,
+                name=card.name,
+                content=card.content,
+                category=card.category,
+                scope=card.scope,
+                enforcement=card.enforcement,
+            )
+            for card in cards
+        ]
+
+    @staticmethod
+    def _format_fact_card_source_text(card) -> str:
+        if card.source.type == "chapter_extract" and card.source.chapter_path:
+            return f"提炼 · {card.source.chapter_path}"
+        return "手工"
 
     @staticmethod
     def _build_generation_fact_card_dialog_state(

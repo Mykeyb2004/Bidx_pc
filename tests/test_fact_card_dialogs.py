@@ -249,6 +249,41 @@ def test_manual_fact_card_dialog_stretches_content_editor():
     }
 
 
+def test_manual_fact_card_dialog_accepts_initial_draft_for_editing():
+    initial = FactCardDraft(
+        card_id="extract-a",
+        name="服务承诺",
+        content="7x24小时响应",
+        category="承诺",
+        scope="local",
+        enforcement="reference",
+    )
+
+    assert fact_card_dialogs.ManualFactCardDialog._initial_drafts(initial) == [initial]
+
+
+def test_fact_card_library_dialog_builds_edit_action_from_selected_card():
+    card = FactCard(
+        id="card-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    closed: list[str] = []
+    dialog = fact_card_dialogs.FactCardLibraryDialog.__new__(fact_card_dialogs.FactCardLibraryDialog)
+    dialog.cards = [card]
+    dialog.tree = SimpleNamespace(selection=lambda: ("card-a",))
+    dialog.destroy = lambda: closed.append("destroy")
+
+    dialog._on_edit()
+
+    assert dialog.result == fact_card_dialogs.FactCardLibraryDialogResult(action="edit", card=card)
+    assert closed == ["destroy"]
+
+
 def test_fact_card_extraction_workspace_dialog_uses_default_instruction_as_placeholder():
     dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
         fact_card_dialogs.FactCardExtractionWorkspaceDialog
@@ -449,36 +484,56 @@ def test_fact_card_library_dialog_builds_editable_drafts_for_all_cards_with_ids(
     ]
 
 
-def test_fact_card_library_dialog_layout_reserves_more_height_for_manual_editor():
-    assert fact_card_dialogs.FACT_CARD_LIBRARY_CURRENT_TREE_ROWS <= 8
-    assert fact_card_dialogs.FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT >= 360
+def test_fact_card_library_dialog_layout_uses_list_only_window_size():
+    assert fact_card_dialogs.FACT_CARD_LIBRARY_CURRENT_TREE_ROWS >= 12
+    assert fact_card_dialogs.FACT_CARD_LIBRARY_HEIGHT <= 640
+    assert fact_card_dialogs.FACT_CARD_LIBRARY_MIN_SIZE[1] <= 520
 
 
-def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
+def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monkeypatch):
     saved_drafts: list[FactCardDraft] = []
     workspace_messages: list[tuple[str, str, str, int]] = []
+    manual_dialog_initials: list[FactCardDraft] = []
 
-    class _FakeDialog:
+    class _FakeLibraryDialog:
+        calls = 0
+
         def __init__(self, _parent, *, cards):
             self.cards = cards
-            self.result = [
-                FactCardDraft(
-                    card_id="extract-a",
-                    name="服务响应承诺",
-                    content="提供 7×24 小时响应支持",
-                    category="服务承诺",
-                    scope="local",
-                    enforcement="reference",
-                )
-            ]
+            type(self).calls += 1
+            self.result = (
+                fact_card_dialogs.FactCardLibraryDialogResult(action="edit", card=extracted_card)
+                if type(self).calls == 1
+                else None
+            )
 
-    monkeypatch.setattr(
-        fact_card_dialogs,
-        "FactCardLibraryDialog",
-        _FakeDialog,
+    edited_draft = FactCardDraft(
+        card_id="extract-a",
+        name="服务响应承诺",
+        content="提供 7×24 小时响应支持",
+        category="服务承诺",
+        scope="global",
+        enforcement="strong",
     )
 
-    fake_card = FactCard(
+    class _FakeManualDialog:
+        def __init__(self, _parent, *, initial_draft=None, **_kwargs):
+            manual_dialog_initials.append(initial_draft)
+            self.result = edited_draft
+
+    monkeypatch.setattr(fact_card_dialogs, "FactCardLibraryDialog", _FakeLibraryDialog)
+    monkeypatch.setattr(fact_card_dialogs, "ManualFactCardDialog", _FakeManualDialog)
+
+    manual_card = FactCard(
+        id="manual-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    extracted_card = FactCard(
         id="extract-a",
         name="服务承诺",
         content="7×24小时响应",
@@ -490,11 +545,14 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
 
     class _FakeBidWriter:
         def __init__(self):
-            self.fact_card_store = SimpleNamespace(list_cards=lambda active_only=False: [fake_card])
+            self.cards = [manual_card, extracted_card]
+            self.fact_card_store = SimpleNamespace(list_cards=lambda active_only=False: self.cards)
 
         def save_fact_card_library(self, drafts):
-            saved_drafts.extend(drafts)
-            return [
+            draft_list = list(drafts)
+            saved_drafts.extend(draft_list)
+            source_by_id = {card.id: card.source for card in self.cards}
+            self.cards = [
                 FactCard(
                     id=draft.card_id,
                     name=draft.name,
@@ -502,10 +560,11 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
                     category=draft.category,
                     scope=draft.scope,
                     enforcement=draft.enforcement,
-                    source=fake_card.source,
+                    source=source_by_id[draft.card_id],
                 )
-                for draft in drafts
+                for draft in draft_list
             ]
+            return self.cards
 
     fake_window = SimpleNamespace(
         bid_writer=_FakeBidWriter(),
@@ -520,23 +579,150 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
 
     assert saved_drafts == [
         FactCardDraft(
+            card_id="manual-a",
+            name="企业资质",
+            content="一级资质",
+            category="资质",
+            scope="global",
+            enforcement="strong",
+        ),
+        FactCardDraft(
             card_id="extract-a",
             name="服务响应承诺",
             content="提供 7×24 小时响应支持",
             category="服务承诺",
+            scope="global",
+            enforcement="strong",
+        ),
+    ]
+    assert manual_dialog_initials == [
+        FactCardDraft(
+            card_id="extract-a",
+            name="服务承诺",
+            content="7×24小时响应",
+            category="承诺",
             scope="local",
             enforcement="reference",
-        )
+        ),
     ]
     assert workspace_messages == [
         (
             "事实卡片库",
-            "已保存事实卡片库",
+            "已更新事实卡片",
             "- 服务响应承诺：提供 7×24 小时响应支持",
             len("- 服务响应承诺：提供 7×24 小时响应支持"),
         )
     ]
-    assert fake_window.status_text.get() == "已保存事实卡片库：1 张"
+    assert fake_window.bid_writer.cards[1].source.type == "chapter_extract"
+    assert fake_window.status_text.get() == "已更新事实卡片：服务响应承诺"
+
+
+def test_mainwindow_fact_card_library_new_appends_to_library(monkeypatch):
+    saved_drafts: list[FactCardDraft] = []
+    workspace_messages: list[tuple[str, str, str, int]] = []
+    manual_card = FactCard(
+        id="manual-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    extracted_card = FactCard(
+        id="extract-a",
+        name="服务承诺",
+        content="7×24小时响应",
+        category="承诺",
+        scope="local",
+        enforcement="reference",
+        source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
+    )
+    new_draft = FactCardDraft(
+        name="项目经理",
+        content="项目经理具备高级职称",
+        category="人员",
+        scope="local",
+        enforcement="reference",
+    )
+
+    class _FakeLibraryDialog:
+        calls = 0
+
+        def __init__(self, _parent, *, cards):
+            self.cards = cards
+            type(self).calls += 1
+            self.result = fact_card_dialogs.FactCardLibraryDialogResult(action="new") if type(self).calls == 1 else None
+
+    class _FakeManualDialog:
+        def __init__(self, _parent, **_kwargs):
+            self.result = new_draft
+
+    monkeypatch.setattr(fact_card_dialogs, "FactCardLibraryDialog", _FakeLibraryDialog)
+    monkeypatch.setattr(fact_card_dialogs, "ManualFactCardDialog", _FakeManualDialog)
+
+    class _FakeBidWriter:
+        def __init__(self):
+            self.cards = [manual_card, extracted_card]
+            self.fact_card_store = SimpleNamespace(list_cards=lambda active_only=False: self.cards)
+
+        def save_fact_card_library(self, drafts):
+            draft_list = list(drafts)
+            saved_drafts.extend(draft_list)
+            self.cards = [
+                FactCard(
+                    id=draft.card_id or f"fact-card-{index}",
+                    name=draft.name,
+                    content=draft.content,
+                    category=draft.category,
+                    scope=draft.scope,
+                    enforcement=draft.enforcement,
+                    source=FactCardSource(type="manual" if not draft.card_id else "manual"),
+                )
+                for index, draft in enumerate(draft_list, start=1)
+            ]
+            return self.cards
+
+    fake_window = SimpleNamespace(
+        bid_writer=_FakeBidWriter(),
+        status_text=_FakeStatus(),
+        wait_window=lambda _dialog: None,
+        _show_workspace_message=lambda title, subtitle, detail, generated_char_count=0: workspace_messages.append(
+            (title, subtitle, detail, generated_char_count)
+        ),
+    )
+    fake_window.open_manual_fact_card_dialog = lambda: MainWindow.open_manual_fact_card_dialog(fake_window)
+
+    MainWindow.open_fact_card_library_dialog(fake_window)
+
+    assert saved_drafts == [
+        FactCardDraft(
+            card_id="manual-a",
+            name="企业资质",
+            content="一级资质",
+            category="资质",
+            scope="global",
+            enforcement="strong",
+        ),
+        FactCardDraft(
+            card_id="extract-a",
+            name="服务承诺",
+            content="7×24小时响应",
+            category="承诺",
+            scope="local",
+            enforcement="reference",
+        ),
+        new_draft,
+    ]
+    assert workspace_messages == [
+        (
+            "事实卡片库",
+            "已新增事实卡片",
+            "- 项目经理：项目经理具备高级职称",
+            len("- 项目经理：项目经理具备高级职称"),
+        )
+    ]
+    assert fake_window.status_text.get() == "已新增事实卡片：项目经理"
 
 
 def test_mainwindow_manual_fact_card_dialog_appends_to_library(monkeypatch):

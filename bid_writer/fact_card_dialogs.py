@@ -25,10 +25,9 @@ from .gui import (
 
 
 FACT_CARD_LIBRARY_WIDTH = 980
-FACT_CARD_LIBRARY_HEIGHT = 820
-FACT_CARD_LIBRARY_MIN_SIZE = (860, 720)
-FACT_CARD_LIBRARY_CURRENT_TREE_ROWS = 7
-FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT = 400
+FACT_CARD_LIBRARY_HEIGHT = 620
+FACT_CARD_LIBRARY_MIN_SIZE = (820, 500)
+FACT_CARD_LIBRARY_CURRENT_TREE_ROWS = 16
 FACT_CARD_EXTRACTION_WORKSPACE_WIDTH = 1080
 FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT = 760
 FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE = (1080, 620)
@@ -45,6 +44,12 @@ FACT_CARD_INSTRUCTION_PLACEHOLDER_COLOR = "#6b7280"
 class FactCardExtractionDialogResult:
     instruction: str
     drafts: list[FactCardDraft]
+
+
+@dataclass(frozen=True)
+class FactCardLibraryDialogResult:
+    action: str
+    card: FactCard | None = None
 
 
 class ScrollableBody(ttk.Frame):
@@ -679,13 +684,21 @@ class FactCardDraftReviewDialog(tk.Toplevel):
 
 
 class ManualFactCardDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        initial_draft: FactCardDraft | None = None,
+        window_title: str = "新增事实卡片",
+        heading_text: str = "新增事实卡片",
+        description: str = "手工录入一张项目事实卡片；保存后会加入事实卡片库，后续可在生成参数中引用。",
+    ):
         super().__init__(parent)
         setup_gui_theme(self)
         apply_window_surface(self)
         self.result: Optional[FactCardDraft] = None
 
-        self.title("新增事实卡片")
+        self.title(window_title)
         window_size = _compute_screen_limited_dialog_size(
             desired_width=FACT_CARD_MANUAL_WIDTH,
             desired_height=FACT_CARD_MANUAL_HEIGHT,
@@ -702,25 +715,17 @@ class ManualFactCardDialog(tk.Toplevel):
         container = ttk.Frame(self, padding=16)
         container.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(container, text="新增事实卡片", style="SectionTitle.TLabel").pack(anchor=tk.W)
+        ttk.Label(container, text=heading_text, style="SectionTitle.TLabel").pack(anchor=tk.W)
         ttk.Label(
             container,
-            text="手工录入一张项目事实卡片；保存后会加入事实卡片库，后续可在生成参数中引用。",
+            text=description,
             justify=tk.LEFT,
             wraplength=840,
         ).pack(anchor=tk.W, pady=(6, 10))
 
         self.editor = FactCardDraftEditor(
             container,
-            drafts=[
-                FactCardDraft(
-                    name="",
-                    content="",
-                    category="",
-                    scope="local",
-                    enforcement="reference",
-                )
-            ],
+            drafts=self._initial_drafts(initial_draft),
             **self._editor_options(),
         )
         self.editor.pack(fill=tk.BOTH, expand=True)
@@ -752,6 +757,20 @@ class ManualFactCardDialog(tk.Toplevel):
             "stretch_content": True,
         }
 
+    @staticmethod
+    def _initial_drafts(initial_draft: FactCardDraft | None = None) -> list[FactCardDraft]:
+        if initial_draft is not None:
+            return [initial_draft]
+        return [
+            FactCardDraft(
+                name="",
+                content="",
+                category="",
+                scope="local",
+                enforcement="reference",
+            )
+        ]
+
     def _on_cancel(self) -> None:
         self.result = None
         self.destroy()
@@ -774,8 +793,9 @@ class FactCardLibraryDialog(tk.Toplevel):
         super().__init__(parent)
         setup_gui_theme(self)
         apply_window_surface(self)
-        self.result: Optional[list[FactCardDraft]] = None
+        self.result: Optional[FactCardLibraryDialogResult] = None
         self.cards = cards
+        self._cards_by_id = {card.id: card for card in cards}
 
         self.title("事实卡片库")
         window_size = _compute_screen_limited_dialog_size(
@@ -797,21 +817,22 @@ class FactCardLibraryDialog(tk.Toplevel):
         ttk.Label(container, text="事实卡片库管理", style="SectionTitle.TLabel").pack(anchor=tk.W)
         ttk.Label(
             container,
-            text="上半区展示当前卡片；下半区可直接编辑全部卡片名称、分类和内容。保存时会按下方结构化列表覆盖现有事实卡片库，并保留已有卡片来源。",
+            text="查看当前全部事实卡片；双击记录或选择后点击“编辑卡片”可修改卡片内容，来源信息会保留不变。",
             justify=tk.LEFT,
             wraplength=900,
         ).pack(anchor=tk.W, pady=(6, 12))
 
         tree_frame = ttk.LabelFrame(container, text="当前卡片", padding=(8, 8))
-        tree_frame.pack(fill=tk.X)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
 
         columns = ("name", "source", "scope", "enforcement", "category", "content")
-        tree = ttk.Treeview(
+        self.tree = ttk.Treeview(
             tree_frame,
             columns=columns,
             show="headings",
             height=FACT_CARD_LIBRARY_CURRENT_TREE_ROWS,
         )
+        tree = self.tree
         tree.heading("name", text="名称")
         tree.heading("source", text="来源")
         tree.heading("scope", text="作用域")
@@ -829,12 +850,14 @@ class FactCardLibraryDialog(tk.Toplevel):
         scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         tree.configure(yscrollcommand=scrollbar.set)
+        tree.bind("<Double-1>", lambda _event: self._on_edit())
 
         for card in cards:
             source_text = "手工" if card.source.type == "manual" else f"提炼 · {card.source.chapter_path or '-'}"
             tree.insert(
                 "",
                 tk.END,
+                iid=card.id,
                 values=(
                     card.name,
                     source_text,
@@ -845,33 +868,29 @@ class FactCardLibraryDialog(tk.Toplevel):
                 ),
             )
 
-        edit_frame = ttk.LabelFrame(container, text="卡片库编辑", padding=(8, 8))
-        edit_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
-
-        library_drafts = self._build_library_drafts(cards)
-        self.editor = FactCardDraftEditor(
-            edit_frame,
-            drafts=library_drafts,
-            list_min_height=FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT,
-        )
-        self.editor.pack(fill=tk.BOTH, expand=True)
-
         button_row = ttk.Frame(container)
         button_row.pack(anchor=tk.E, pady=(12, 0))
         ttk.Button(
             button_row,
-            text="取消",
-            command=self._on_cancel,
-            width=10,
+            text="新建卡片",
+            command=self._on_new,
+            width=12,
             **_bootstyle_kwargs("secondary"),
         ).pack(side=tk.LEFT, padx=6)
         ttk.Button(
             button_row,
-            text="保存卡片库",
-            command=self._on_save,
+            text="编辑卡片",
+            command=self._on_edit,
             width=12,
             **_bootstyle_kwargs("primary"),
         ).pack(side=tk.LEFT)
+        ttk.Button(
+            button_row,
+            text="关闭",
+            command=self._on_cancel,
+            width=10,
+            **_bootstyle_kwargs("secondary"),
+        ).pack(side=tk.LEFT, padx=(6, 0))
 
     @staticmethod
     def _build_library_drafts(cards: list[FactCard]) -> list[FactCardDraft]:
@@ -902,14 +921,25 @@ class FactCardLibraryDialog(tk.Toplevel):
             if card.source.type == "manual"
         ]
 
-    def _on_cancel(self) -> None:
-        self.result = None
+    def _selected_card(self) -> FactCard | None:
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        cards_by_id = getattr(self, "_cards_by_id", {card.id: card for card in getattr(self, "cards", [])})
+        return cards_by_id.get(str(selection[0]))
+
+    def _on_new(self) -> None:
+        self.result = FactCardLibraryDialogResult(action="new")
         self.destroy()
 
-    def _on_save(self) -> None:
-        try:
-            self.result = self.editor.get_drafts()
-        except ValueError as exc:
-            messagebox.showwarning("提示", str(exc), parent=self)
+    def _on_edit(self) -> None:
+        card = self._selected_card()
+        if card is None:
+            messagebox.showwarning("提示", "请先选择一张事实卡片。", parent=self)
             return
+        self.result = FactCardLibraryDialogResult(action="edit", card=card)
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
         self.destroy()
