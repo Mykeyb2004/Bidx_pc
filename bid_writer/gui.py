@@ -3247,9 +3247,10 @@ class MainWindow(tk.Tk):
         from .fact_card_dialogs import FactCardExtractionWorkspaceDialog
 
         existing_cards = MainWindow._list_extracted_fact_cards_for_heading(self, heading)
-        initial_drafts = MainWindow._fact_card_drafts_from_cards(existing_cards)
-        initial_instruction = MainWindow._fact_card_initial_instruction(self, heading, existing_cards)
-        initial_status = MainWindow._fact_card_initial_status(existing_cards, output_path)
+        current_cards = existing_cards[:1]
+        initial_drafts = MainWindow._fact_card_drafts_from_cards(current_cards)
+        initial_instruction = MainWindow._fact_card_initial_instruction(self, heading, current_cards)
+        initial_status = MainWindow._fact_card_initial_status(current_cards, output_path)
 
         def _extract_callback(instruction: str):
             if hasattr(self.bid_writer, "extract_fact_card_drafts_from_output_with_diagnostics"):

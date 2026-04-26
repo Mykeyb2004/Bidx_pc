@@ -25,6 +25,15 @@ class _FakeWidget:
         self.configured.append(kwargs)
 
 
+class _FakeContainer(_FakeWidget):
+    def __init__(self):
+        super().__init__()
+        self.destroyed = False
+
+    def destroy(self):
+        self.destroyed = True
+
+
 def test_fact_card_extraction_workspace_dialog_save_returns_instruction_and_drafts():
     dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
         fact_card_dialogs.FactCardExtractionWorkspaceDialog
@@ -182,6 +191,32 @@ def test_fact_card_extraction_workspace_dialog_finish_extract_keeps_single_core_
     assert dialog.extract_button.configured[-1] == {"text": "重新提炼"}
 
 
+def test_fact_card_extraction_workspace_dialog_keeps_only_current_initial_draft():
+    current_draft = FactCardDraft(
+        name="当前卡片",
+        content="当前章节核心事实",
+        category="综合",
+        scope="local",
+        enforcement="reference",
+    )
+    stale_draft = FactCardDraft(
+        name="历史卡片",
+        content="不应出现在提炼草稿框中",
+        category="历史",
+        scope="local",
+        enforcement="reference",
+    )
+
+    assert fact_card_dialogs.FactCardExtractionWorkspaceDialog._current_drafts(
+        [current_draft, stale_draft]
+    ) == [current_draft]
+
+
+def test_fact_card_extraction_dialog_reserves_width_for_delete_button():
+    assert fact_card_dialogs.FACT_CARD_EXTRACTION_WORKSPACE_WIDTH >= 1080
+    assert fact_card_dialogs.FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE[0] >= 940
+
+
 def test_fact_card_extraction_workspace_dialog_shows_empty_result_details(monkeypatch):
     warnings: list[str] = []
     monkeypatch.setattr(
@@ -233,6 +268,51 @@ def test_fact_card_draft_editor_returns_scope_and_enforcement():
             enforcement="strong",
         )
     ]
+
+
+def test_fact_card_draft_editor_remove_row_requires_confirmation(monkeypatch):
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "askyesno",
+        lambda _title, message, parent=None: prompts.append(message) or False,
+    )
+
+    first_container = _FakeContainer()
+    second_container = _FakeContainer()
+    first_row = {"container": first_container}
+    second_row = {"container": second_container}
+    editor = fact_card_dialogs.FactCardDraftEditor.__new__(fact_card_dialogs.FactCardDraftEditor)
+    editor._rows = [first_row, second_row]
+    editor.winfo_toplevel = lambda: "parent"
+
+    editor.remove_row(first_row)
+
+    assert prompts == ["确定删除这张事实卡片草稿吗？"]
+    assert editor._rows == [first_row, second_row]
+    assert first_container.destroyed is False
+
+
+def test_fact_card_draft_editor_remove_row_deletes_after_confirmation(monkeypatch):
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "askyesno",
+        lambda _title, _message, parent=None: True,
+    )
+
+    first_container = _FakeContainer()
+    second_container = _FakeContainer()
+    first_row = {"container": first_container}
+    second_row = {"container": second_container}
+    editor = fact_card_dialogs.FactCardDraftEditor.__new__(fact_card_dialogs.FactCardDraftEditor)
+    editor._rows = [first_row, second_row]
+    editor.winfo_toplevel = lambda: "parent"
+
+    editor.remove_row(first_row)
+
+    assert editor._rows == [second_row]
+    assert first_container.destroyed is True
+    assert second_container.configured[-1] == {"text": "卡片 1"}
 
 
 def test_fact_card_library_dialog_builds_editable_manual_drafts_with_card_ids():
@@ -570,6 +650,20 @@ def test_mainwindow_extract_facts_for_heading_loads_existing_cards(monkeypatch, 
         ),
         updated_at="2099-01-01T00:00:00+00:00",
     )
+    stale_card = FactCard(
+        id="extract-b",
+        name="历史承诺",
+        content="旧版承诺不应出现在当前提炼草稿框中",
+        category="服务承诺",
+        scope="local",
+        enforcement="reference",
+        source=FactCardSource(
+            type="chapter_extract",
+            chapter_path="项目 > 技术方案 > 质量保障措施",
+            extraction_instruction="历史提炼要求",
+        ),
+        updated_at="2099-01-01T00:00:00+00:00",
+    )
 
     class _FakeBidWriter:
         def __init__(self):
@@ -578,7 +672,7 @@ def test_mainwindow_extract_facts_for_heading_loads_existing_cards(monkeypatch, 
 
         def list_extracted_fact_cards(self, heading_arg):
             assert heading_arg is heading
-            return [existing_card]
+            return [existing_card, stale_card]
 
         def extract_fact_card_drafts_from_output(self, _heading_arg, _instruction: str = ""):
             raise AssertionError("不应在打开已有结果时立即重新提炼")

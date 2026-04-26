@@ -26,6 +26,9 @@ FACT_CARD_LIBRARY_GEOMETRY = "980x820"
 FACT_CARD_LIBRARY_MIN_SIZE = (860, 720)
 FACT_CARD_LIBRARY_CURRENT_TREE_ROWS = 7
 FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT = 400
+FACT_CARD_EXTRACTION_WORKSPACE_WIDTH = 1080
+FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT = 760
+FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE = (940, 620)
 
 
 @dataclass(frozen=True)
@@ -202,6 +205,7 @@ class FactCardDraftEditor(ttk.Frame):
 
         top_row = ttk.Frame(container)
         top_row.pack(fill=tk.X)
+        top_row.columnconfigure(8, weight=1)
 
         name_var = tk.StringVar(value=draft.name)
         category_var = tk.StringVar(value=draft.category)
@@ -212,33 +216,33 @@ class FactCardDraftEditor(ttk.Frame):
         row_data["scope_var"] = scope_var
         row_data["enforcement_var"] = enforcement_var
 
-        ttk.Label(top_row, text="名称").pack(side=tk.LEFT)
-        ttk.Entry(top_row, textvariable=name_var, width=22).pack(side=tk.LEFT, padx=(6, 12))
-        ttk.Label(top_row, text="分类").pack(side=tk.LEFT)
-        ttk.Entry(top_row, textvariable=category_var, width=18).pack(side=tk.LEFT, padx=(6, 12))
-        ttk.Label(top_row, text="作用域").pack(side=tk.LEFT)
+        ttk.Label(top_row, text="名称").grid(row=0, column=0, sticky=tk.W)
+        ttk.Entry(top_row, textvariable=name_var, width=22).grid(row=0, column=1, sticky=tk.W, padx=(6, 12))
+        ttk.Label(top_row, text="分类").grid(row=0, column=2, sticky=tk.W)
+        ttk.Entry(top_row, textvariable=category_var, width=18).grid(row=0, column=3, sticky=tk.W, padx=(6, 12))
+        ttk.Label(top_row, text="作用域").grid(row=0, column=4, sticky=tk.W)
         ttk.Combobox(
             top_row,
             textvariable=scope_var,
             values=("global", "local"),
             state="readonly",
             width=9,
-        ).pack(side=tk.LEFT, padx=(6, 12))
-        ttk.Label(top_row, text="约束").pack(side=tk.LEFT)
+        ).grid(row=0, column=5, sticky=tk.W, padx=(6, 12))
+        ttk.Label(top_row, text="约束").grid(row=0, column=6, sticky=tk.W)
         ttk.Combobox(
             top_row,
             textvariable=enforcement_var,
             values=("strong", "reference"),
             state="readonly",
             width=11,
-        ).pack(side=tk.LEFT, padx=(6, 12))
+        ).grid(row=0, column=7, sticky=tk.W, padx=(6, 12))
         ttk.Button(
             top_row,
             text="删除",
             command=lambda data=row_data: self.remove_row(data),
             width=8,
             **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.RIGHT)
+        ).grid(row=0, column=9, sticky=tk.E)
 
         ttk.Label(container, text="内容").pack(anchor=tk.W, pady=(8, 4))
         content_text = tk.Text(container, height=4, width=72)
@@ -250,6 +254,8 @@ class FactCardDraftEditor(ttk.Frame):
         self._rows.append(row_data)
 
     def remove_row(self, row_data: dict[str, object]) -> None:
+        if not messagebox.askyesno("确认删除", "确定删除这张事实卡片草稿吗？", parent=self.winfo_toplevel()):
+            return
         container = row_data.get("container")
         if container is not None:
             container.destroy()
@@ -306,15 +312,15 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         apply_window_surface(self)
         self.extract_callback = extract_callback
         self.result: Optional[FactCardExtractionDialogResult] = None
-        initial_drafts = list(initial_drafts or [])
+        initial_drafts = self._current_drafts(list(initial_drafts or []))
         has_initial_drafts = bool(initial_drafts)
         self._has_extracted = has_initial_drafts
         self._is_extracting = False
         self._last_extracted_instruction = initial_instruction if has_initial_drafts else ""
 
         self.title("提炼章节事实卡片")
-        self.geometry("980x760")
-        self.minsize(820, 620)
+        self.geometry(f"{FACT_CARD_EXTRACTION_WORKSPACE_WIDTH}x{FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT}")
+        self.minsize(*FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE)
         self.transient(parent)
         self.grab_set()
 
@@ -326,7 +332,7 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
             container,
             text="先填写提炼要求，再生成草稿；如结果不满意，可直接修改要求并重新提炼。",
             justify=tk.LEFT,
-            wraplength=900,
+            wraplength=1000,
         ).pack(anchor=tk.W, pady=(6, 10))
 
         instruction_frame = ttk.LabelFrame(container, text="提炼要求", padding=(10, 8))
@@ -427,6 +433,10 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
             return drafts, str(getattr(result, "message", "") or "").strip()
         return [], ""
 
+    @staticmethod
+    def _current_drafts(drafts: list[FactCardDraft]) -> list[FactCardDraft]:
+        return drafts[:1]
+
     def _finish_extract(
         self,
         instruction: str,
@@ -446,7 +456,7 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
             messagebox.showwarning("提示", message, parent=self)
             return
 
-        core_drafts = drafts[:1]
+        core_drafts = self._current_drafts(drafts)
         self.editor.replace_drafts(core_drafts)
         self._has_extracted = True
         self._last_extracted_instruction = instruction
