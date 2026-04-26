@@ -1,6 +1,10 @@
 from bid_writer.gui import (
+    MainWindow,
     _build_gui_scale_profile,
     _build_generation_error_feedback,
+    _compute_main_outline_pane_width,
+    _compute_main_window_target_size,
+    _compute_outline_tree_column_widths,
     _count_text_characters,
     _compute_dialog_target_size,
     _compute_gui_font_delta,
@@ -13,6 +17,52 @@ from bid_writer.gui import (
     _shift_hex_color,
 )
 from bid_writer.outline_parser import HeadingNode
+
+
+class _FakeLayoutWidget:
+    def __init__(self, *, width: int = 1, reqwidth: int = 1):
+        self._width = width
+        self._reqwidth = reqwidth
+        self.grid_kwargs = None
+
+    def winfo_width(self):
+        return self._width
+
+    def winfo_reqwidth(self):
+        return self._reqwidth
+
+    def grid_forget(self):
+        pass
+
+    def grid(self, **kwargs):
+        self.grid_kwargs = kwargs
+
+
+class _FakeGridContainer:
+    def __init__(self):
+        self.configured_columns = []
+
+    def grid_columnconfigure(self, column, **kwargs):
+        self.configured_columns.append((column, kwargs))
+
+
+class _FakeMainWindowForControlLayout:
+    def __init__(self):
+        self._control_layout_mode = "stacked"
+        self.control_group = _FakeLayoutWidget(width=1)
+        self.action_frame = _FakeLayoutWidget(reqwidth=260)
+        self.search_filter_group = _FakeLayoutWidget(reqwidth=440)
+        self.selection_action_group = _FakeLayoutWidget(reqwidth=120)
+
+    def winfo_width(self):
+        return 640
+
+
+class _FakeMainWindowForActionLayout:
+    def __init__(self):
+        self.top_outline_controls = _FakeLayoutWidget()
+        self.action_frame = _FakeLayoutWidget()
+        self.action_bar = _FakeGridContainer()
 
 
 def test_compute_gui_font_delta_keeps_standard_display_unchanged():
@@ -37,6 +87,37 @@ def test_build_gui_scale_profile_scales_fonts_and_spacing_together():
     assert profile.button_padding == (14, 8)
     assert profile.field_padding == (7, 6)
     assert profile.text_padding == (11, 9)
+
+
+def test_main_window_target_size_matches_screenshot_width_on_large_display():
+    width, height = _compute_main_window_target_size(screen_width=2048, screen_height=1226)
+
+    assert width == 2000
+    assert height == 1176
+
+
+def test_main_outline_pane_width_uses_left_right_ratio_for_wide_window():
+    assert _compute_main_outline_pane_width(total_width=1960) == 608
+
+
+def test_outline_tree_columns_split_title_status_progress_by_ratio():
+    assert _compute_outline_tree_column_widths(total_width=600) == (396, 102, 102)
+
+
+def test_top_control_layout_accounts_for_action_buttons_before_window_is_realized():
+    fake_window = _FakeMainWindowForControlLayout()
+
+    layout_mode = MainWindow._get_control_layout_mode(fake_window)
+
+    assert layout_mode == "stacked"
+
+
+def test_action_buttons_align_to_bottom_of_top_controls():
+    fake_window = _FakeMainWindowForActionLayout()
+
+    MainWindow._layout_action_bar(fake_window, "single")
+
+    assert fake_window.action_frame.grid_kwargs["sticky"] == "se"
 
 
 def test_compute_gui_font_delta_allows_manual_adjustment():

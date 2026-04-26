@@ -49,9 +49,19 @@ CONFIG_DIALOG_MIN_WIDTH = 680
 CONFIG_DIALOG_MIN_HEIGHT = 260
 CONFIG_DIALOG_MAX_WIDTH = 920
 CONFIG_DIALOG_INFO_WRAP_PADDING = 60
+MAIN_WINDOW_DEFAULT_WIDTH = 2000
+MAIN_WINDOW_DEFAULT_HEIGHT = 1176
+MAIN_WINDOW_SCREEN_MARGIN_WIDTH = 48
+MAIN_WINDOW_SCREEN_MARGIN_HEIGHT = 50
+MAIN_WINDOW_MIN_WIDTH = 800
+MAIN_WINDOW_MIN_HEIGHT = 600
 MAIN_OUTLINE_DEFAULT_WIDTH = 520
+MAIN_OUTLINE_DEFAULT_RATIO = 0.31
 MAIN_OUTLINE_MIN_WIDTH = 360
 MAIN_WORKSPACE_MIN_WIDTH = 460
+MAIN_OUTLINE_TREE_COLUMN_RATIOS = (0.66, 0.17, 0.17)
+MAIN_OUTLINE_TREE_STATUS_MIN_WIDTH = 72
+MAIN_OUTLINE_TREE_PROGRESS_MIN_WIDTH = 72
 POPUP_OUTLINE_DEFAULT_WIDTH = 320
 POPUP_OUTLINE_MIN_WIDTH = 240
 POPUP_CONTENT_MIN_WIDTH = 480
@@ -664,6 +674,65 @@ def _compute_dialog_target_size(
         height = min(height, max_height)
 
     return width, height
+
+
+def _compute_main_window_target_size(
+    *,
+    screen_width: Optional[int] = None,
+    screen_height: Optional[int] = None,
+) -> tuple[int, int]:
+    """计算主窗口初始尺寸，优先匹配当前截图宽度并避免超出屏幕。"""
+
+    if screen_width and screen_width > 0:
+        max_width = max(MAIN_WINDOW_MIN_WIDTH, screen_width - MAIN_WINDOW_SCREEN_MARGIN_WIDTH)
+        width = min(MAIN_WINDOW_DEFAULT_WIDTH, max_width)
+    else:
+        width = MAIN_WINDOW_DEFAULT_WIDTH
+
+    if screen_height and screen_height > 0:
+        max_height = max(MAIN_WINDOW_MIN_HEIGHT, screen_height - MAIN_WINDOW_SCREEN_MARGIN_HEIGHT)
+        height = min(MAIN_WINDOW_DEFAULT_HEIGHT, max_height)
+    else:
+        height = MAIN_WINDOW_DEFAULT_HEIGHT
+
+    return width, height
+
+
+def _compute_main_outline_pane_width(
+    *,
+    total_width: int,
+    min_left_width: int = MAIN_OUTLINE_MIN_WIDTH,
+    min_right_width: int = MAIN_WORKSPACE_MIN_WIDTH,
+    default_ratio: float = MAIN_OUTLINE_DEFAULT_RATIO,
+) -> int:
+    """按主窗口左右栏比例计算左侧目录栏默认宽度。"""
+
+    if total_width <= min_left_width + min_right_width:
+        return min_left_width
+
+    ratio_width = round(total_width * default_ratio)
+    max_left_width = total_width - min_right_width
+    return max(min_left_width, min(ratio_width, max_left_width))
+
+
+def _compute_outline_tree_column_widths(*, total_width: int) -> tuple[int, int, int]:
+    """按“标题 / 状态 / 进度”的比例计算大纲树列宽。"""
+
+    available_width = max(1, total_width)
+    _, status_ratio, progress_ratio = MAIN_OUTLINE_TREE_COLUMN_RATIOS
+
+    use_minimums = (
+        available_width
+        >= MAIN_OUTLINE_TREE_STATUS_MIN_WIDTH + MAIN_OUTLINE_TREE_PROGRESS_MIN_WIDTH + 1
+    )
+    status_width = round(available_width * status_ratio)
+    progress_width = round(available_width * progress_ratio)
+    if use_minimums:
+        status_width = max(MAIN_OUTLINE_TREE_STATUS_MIN_WIDTH, status_width)
+        progress_width = max(MAIN_OUTLINE_TREE_PROGRESS_MIN_WIDTH, progress_width)
+
+    title_width = max(1, available_width - status_width - progress_width)
+    return title_width, status_width, progress_width
 
 
 def _clamp_persisted_int(value: Optional[int], *, fallback: int, min_value: int, max_value: int) -> int:
@@ -1337,10 +1406,14 @@ class MainWindow(tk.Tk):
 
         # 窗口配置
         self.title("自动标书撰写系统 - GUI版")
-        self.geometry("1000x800")
+        target_width, target_height = _compute_main_window_target_size(
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        self.geometry(f"{target_width}x{target_height}")
 
         # 最小尺寸
-        self.minsize(800, 600)
+        self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
 
         # 窗口居中
         self.center_window()
@@ -1424,6 +1497,9 @@ class MainWindow(tk.Tk):
         self.action_bar = ttk.Frame(toolbar)
         self.action_bar.pack(fill=tk.X)
 
+        self.top_outline_controls = ttk.Frame(self.action_bar)
+        self._create_outline_controls(self.top_outline_controls)
+
         self.action_frame = ttk.Frame(self.action_bar)
 
         self.btn_merge = ttk.Button(
@@ -1444,6 +1520,61 @@ class MainWindow(tk.Tk):
             **_bootstyle_kwargs("primary")
         )
         self.btn_generate.pack(side=tk.LEFT, padx=(6, 0))
+
+    def _create_outline_controls(self, parent: tk.Misc) -> None:
+        """创建顶部大纲搜索、筛选和选择控件。"""
+        title_group = ttk.Frame(parent)
+        title_group.pack(fill=tk.X)
+        ttk.Label(
+            title_group,
+            text="大纲结构",
+            style="SectionTitle.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            title_group,
+            text="仅四级标题支持多选生成",
+            style="Muted.TLabel",
+        ).pack(side=tk.LEFT, padx=(10, 0))
+
+        self.control_group = ttk.Frame(parent)
+        self.control_group.pack(fill=tk.X, pady=(8, 0))
+        self.search_filter_group = ttk.Frame(self.control_group)
+        self.selection_action_group = ttk.Frame(self.control_group)
+
+        ttk.Label(self.search_filter_group, text="搜索").grid(row=0, column=0, padx=(0, 6))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *_: self.apply_tree_filters())
+        self.search_entry = ttk.Entry(
+            self.search_filter_group,
+            textvariable=self.search_var,
+            width=18
+        )
+        self.search_entry.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+
+        ttk.Label(self.search_filter_group, text="筛选").grid(row=0, column=2, padx=(0, 6))
+        self.status_filter_var = tk.StringVar(value="全部")
+        self.status_filter_combo = ttk.Combobox(
+            self.search_filter_group,
+            textvariable=self.status_filter_var,
+            values=("全部", "未生成", "已生成", "已完成", "部分完成"),
+            state="readonly",
+            width=10
+        )
+        self.status_filter_combo.grid(row=0, column=3, padx=(0, 10))
+        self.status_filter_combo.bind("<<ComboboxSelected>>", lambda event: self.apply_tree_filters())
+        self.search_filter_group.columnconfigure(1, weight=1)
+
+        self.btn_selection_menu = ttk.Menubutton(
+            self.selection_action_group,
+            text="选择",
+            padding=(10, 6),
+            **_bootstyle_kwargs("secondary")
+        )
+        self.selection_tools_menu = tk.Menu(self.btn_selection_menu, tearoff=0)
+        self.selection_tools_menu.add_command(label="全选四级标题", command=self.select_all_leaf_titles)
+        self.selection_tools_menu.add_command(label="清空选择", command=self.clear_selection)
+        self.btn_selection_menu["menu"] = self.selection_tools_menu
+        self.btn_selection_menu.pack(side=tk.LEFT)
 
     def _populate_project_menu(self, menu: tk.Menu) -> None:
         menu.add_command(label="切换配置...", command=self.select_and_switch_config)
@@ -1502,65 +1633,10 @@ class MainWindow(tk.Tk):
         self._set_paned_window_default_sash(
             self.main_paned_window,
             default_width=MAIN_OUTLINE_DEFAULT_WIDTH,
+            default_ratio=MAIN_OUTLINE_DEFAULT_RATIO,
             min_left_width=MAIN_OUTLINE_MIN_WIDTH,
             min_right_width=MAIN_WORKSPACE_MIN_WIDTH,
         )
-
-        header_frame = ttk.Frame(outline_panel)
-        header_frame.pack(fill=tk.X, pady=(0, 8))
-
-        title_group = ttk.Frame(header_frame)
-        title_group.pack(fill=tk.X)
-        ttk.Label(
-            title_group,
-            text="大纲结构",
-            style="SectionTitle.TLabel",
-        ).pack(side=tk.LEFT)
-        ttk.Label(
-            title_group,
-            text="仅四级标题支持多选生成",
-            style="Muted.TLabel",
-        ).pack(side=tk.LEFT, padx=(10, 0))
-
-        self.control_group = ttk.Frame(header_frame)
-        self.control_group.pack(fill=tk.X, pady=(8, 0))
-        self.search_filter_group = ttk.Frame(self.control_group)
-        self.selection_action_group = ttk.Frame(self.control_group)
-
-        ttk.Label(self.search_filter_group, text="搜索").grid(row=0, column=0, padx=(0, 6))
-        self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", lambda *_: self.apply_tree_filters())
-        self.search_entry = ttk.Entry(
-            self.search_filter_group,
-            textvariable=self.search_var,
-            width=18
-        )
-        self.search_entry.grid(row=0, column=1, sticky="ew", padx=(0, 10))
-
-        ttk.Label(self.search_filter_group, text="筛选").grid(row=0, column=2, padx=(0, 6))
-        self.status_filter_var = tk.StringVar(value="全部")
-        self.status_filter_combo = ttk.Combobox(
-            self.search_filter_group,
-            textvariable=self.status_filter_var,
-            values=("全部", "未生成", "已生成", "已完成", "部分完成"),
-            state="readonly",
-            width=10
-        )
-        self.status_filter_combo.grid(row=0, column=3, padx=(0, 10))
-        self.status_filter_combo.bind("<<ComboboxSelected>>", lambda event: self.apply_tree_filters())
-        self.search_filter_group.columnconfigure(1, weight=1)
-
-        self.btn_selection_menu = ttk.Menubutton(
-            self.selection_action_group,
-            text="选择",
-            padding=(10, 6),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.selection_tools_menu = tk.Menu(self.btn_selection_menu, tearoff=0)
-        self.selection_tools_menu.add_command(label="全选四级标题", command=self.select_all_leaf_titles)
-        self.selection_tools_menu.add_command(label="清空选择", command=self.clear_selection)
-        self.btn_selection_menu["menu"] = self.selection_tools_menu
-        self.btn_selection_menu.pack(side=tk.LEFT)
 
         # 大纲树（支持多选）
         tree_frame = ttk.Frame(outline_panel)
@@ -1576,9 +1652,7 @@ class MainWindow(tk.Tk):
         self.outline_tree.heading("#0", text="标题")
         self.outline_tree.heading("status", text="状态")
         self.outline_tree.heading("progress", text="进度")
-        self.outline_tree.column("#0", width=680)
-        self.outline_tree.column("status", width=110, anchor=tk.CENTER)
-        self.outline_tree.column("progress", width=110, anchor=tk.CENTER)
+        self._resize_outline_tree_columns(MAIN_OUTLINE_DEFAULT_WIDTH)
         self._configure_heading_tree_tags(self.outline_tree)
 
         # 滚动条
@@ -1593,6 +1667,7 @@ class MainWindow(tk.Tk):
         self.outline_tree.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.outline_tree.bind("<<TreeviewOpen>>", self.on_tree_open_close)
         self.outline_tree.bind("<<TreeviewClose>>", self.on_tree_open_close)
+        self.outline_tree.bind("<Configure>", self.on_outline_tree_resize, add="+")
         self.outline_tree.bind("<Button-2>", self.on_tree_context_menu)
         self.outline_tree.bind("<Button-3>", self.on_tree_context_menu)
         self.outline_tree.bind("<Control-Button-1>", self.on_tree_context_menu)
@@ -1834,6 +1909,12 @@ class MainWindow(tk.Tk):
             return
         self.schedule_responsive_layout()
 
+    def on_outline_tree_resize(self, event):
+        """左侧树宽度变化时按比例重算列宽。"""
+        if event.widget is not self.outline_tree:
+            return
+        self._resize_outline_tree_columns(event.width)
+
     def schedule_responsive_layout(self, force: bool = False):
         """合并连续布局刷新请求，避免频繁重排"""
         if not hasattr(self, "action_bar"):
@@ -1878,17 +1959,27 @@ class MainWindow(tk.Tk):
     def _layout_action_bar(self, layout_mode: str):
         """工具按钮区域宽度不足时拆分为两行"""
         del layout_mode
+        self.top_outline_controls.grid_forget()
         self.action_frame.grid_forget()
         self.action_bar.grid_columnconfigure(0, weight=0)
         self.action_bar.grid_columnconfigure(1, weight=0)
         self.action_bar.grid_columnconfigure(0, weight=1)
-        self.action_frame.grid(row=0, column=0, sticky="e")
+        self.top_outline_controls.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        self.action_frame.grid(row=0, column=1, sticky="se")
 
     def _get_control_layout_mode(self) -> str:
         """计算筛选控制区域应使用的布局模式"""
-        available_width = max(self.control_group.winfo_width(), self.winfo_width() - 32)
+        available_width = self.control_group.winfo_width()
         if available_width <= 1:
-            return self._control_layout_mode or "stacked"
+            toolbar_width = (
+                self.action_bar.winfo_width()
+                if hasattr(self, "action_bar")
+                else self.winfo_width() - 32
+            )
+            available_width = max(toolbar_width, self.winfo_width() - 32)
+            if hasattr(self, "action_frame"):
+                available_width -= self.action_frame.winfo_reqwidth() + 24
+            available_width = max(available_width, 1)
 
         required_width = (
             self.search_filter_group.winfo_reqwidth()
@@ -2342,6 +2433,15 @@ class MainWindow(tk.Tk):
             progress_info = f"{generated}/{total}" if total > 0 else "-"
         return status, progress_info, self._status_to_row_tag(status)
 
+    def _resize_outline_tree_columns(self, total_width: int) -> None:
+        """按当前目录栏宽度重算大纲树三列。"""
+        title_width, status_width, progress_width = _compute_outline_tree_column_widths(
+            total_width=total_width
+        )
+        self.outline_tree.column("#0", width=title_width, anchor=tk.W, stretch=True)
+        self.outline_tree.column("status", width=status_width, anchor=tk.CENTER, stretch=False)
+        self.outline_tree.column("progress", width=progress_width, anchor=tk.CENTER, stretch=False)
+
     def _configure_heading_tree_tags(self, tree: ttk.Treeview) -> None:
         """统一配置大纲树状态颜色与当前焦点高亮。"""
         profile = _get_gui_scale_profile(tree)
@@ -2369,6 +2469,7 @@ class MainWindow(tk.Tk):
         paned_window: tk.PanedWindow,
         *,
         default_width: int = POPUP_OUTLINE_DEFAULT_WIDTH,
+        default_ratio: Optional[float] = None,
         min_left_width: int = POPUP_OUTLINE_MIN_WIDTH,
         min_right_width: int = POPUP_CONTENT_MIN_WIDTH,
     ) -> None:
@@ -2383,10 +2484,18 @@ class MainWindow(tk.Tk):
                 paned_window.after(50, place_sash)
                 return
 
-            target_width = max(
-                min_left_width,
-                min(default_width, total_width - min_right_width),
-            )
+            if default_ratio is None:
+                target_width = max(
+                    min_left_width,
+                    min(default_width, total_width - min_right_width),
+                )
+            else:
+                target_width = _compute_main_outline_pane_width(
+                    total_width=total_width,
+                    min_left_width=min_left_width,
+                    min_right_width=min_right_width,
+                    default_ratio=default_ratio,
+                )
             try:
                 paned_window.sash_place(0, target_width, 1)
             except tk.TclError:
