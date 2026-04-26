@@ -663,6 +663,79 @@ def test_mainwindow_chapter_menu_exposes_manual_fact_card_entry():
     ]
 
 
+def test_mainwindow_top_menus_expose_project_chapter_and_view_groups():
+    class _FakeMenu:
+        def __init__(self):
+            self.labels: list[str] = []
+
+        def add_command(self, *, label, command):
+            del command
+            self.labels.append(label)
+
+        def add_separator(self):
+            self.labels.append("---")
+
+    fake_window = SimpleNamespace(
+        select_and_switch_config=lambda: None,
+        open_config_editor=lambda: None,
+        reload_outline=lambda: None,
+        refresh_status=lambda: None,
+        open_output_dir=lambda: None,
+        quit=lambda: None,
+        batch_generate=lambda: None,
+        edit_selected_dependencies=lambda: None,
+        prewarm_dependency_summaries=lambda: None,
+        extract_selected_facts=lambda: None,
+        open_manual_fact_card_dialog=lambda: None,
+        open_fact_card_library_dialog=lambda: None,
+        merge_generated_sections=lambda: None,
+        expand_all=lambda: None,
+        expand_to_level_1=lambda: None,
+        expand_to_level_2=lambda: None,
+        expand_to_level_3=lambda: None,
+        collapse_all=lambda: None,
+    )
+
+    project_menu = _FakeMenu()
+    chapter_menu = _FakeMenu()
+    view_menu = _FakeMenu()
+
+    MainWindow._populate_project_menu(fake_window, project_menu)
+    MainWindow._populate_chapter_menu(fake_window, chapter_menu)
+    MainWindow._populate_view_menu(fake_window, view_menu)
+
+    assert project_menu.labels == [
+        "切换配置...",
+        "编辑当前配置...",
+        "---",
+        "重载大纲",
+        "扫描输出状态",
+        "---",
+        "打开输出目录",
+        "---",
+        "退出",
+    ]
+    assert chapter_menu.labels == [
+        "生成所选",
+        "设置章节依赖...",
+        "预提炼依赖摘要...",
+        "提炼当前章节事实卡片",
+        "新增事实卡片...",
+        "管理事实卡片",
+        "---",
+        "整合标书",
+    ]
+    assert view_menu.labels == [
+        "全部展开",
+        "---",
+        "展开至一级 (Ctrl+1)",
+        "展开至二级 (Ctrl+2)",
+        "展开至三级 (Ctrl+3)",
+        "---",
+        "收缩全部 (Ctrl+0)",
+    ]
+
+
 def test_generation_fact_card_dialog_state_exposes_only_local_cards():
     global_card = FactCard(
         id="global-a",

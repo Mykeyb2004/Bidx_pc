@@ -73,7 +73,7 @@ _WORKSPACE_CHAR_COUNT_UNCHANGED = object()
 _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
-ACTION_MENU_FACT_CARD_INDEX = 3
+CHAPTER_MENU_FACT_CARD_INDEX = 3
 CHAPTER_TOOLS_FACT_CARD_INDEX = 2
 CONTEXT_MENU_FACT_CARD_INDEX = 2
 
@@ -1391,28 +1391,17 @@ class MainWindow(tk.Tk):
         """创建菜单栏"""
         menubar = tk.Menu(self)
 
-        # 文件菜单
-        file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="选择配置文件...", command=self.select_and_switch_config)
-        file_menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
-        file_menu.add_separator()
-        file_menu.add_command(label="重载大纲", command=self.reload_outline)
-        file_menu.add_command(label="扫描输出状态", command=self.refresh_status)
-        file_menu.add_separator()
-        file_menu.add_command(label="退出", command=self.quit)
-        menubar.add_cascade(label="文件", menu=file_menu)
+        self.project_menu = tk.Menu(menubar, tearoff=0)
+        self._populate_project_menu(self.project_menu)
+        menubar.add_cascade(label="项目", menu=self.project_menu)
 
-        # 操作菜单
-        self.action_menu = tk.Menu(menubar, tearoff=0)
-        self.action_menu.add_command(label="生成所选", command=self.batch_generate)
-        self.action_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
-        self.action_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
-        self.action_menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
-        self.action_menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
-        self.action_menu.add_command(label="生成整合标书", command=self.merge_generated_sections)
-        self.action_menu.add_separator()
-        self.action_menu.add_command(label="打开输出目录", command=self.open_output_dir)
-        menubar.add_cascade(label="操作", menu=self.action_menu)
+        self.chapter_menu = tk.Menu(menubar, tearoff=0)
+        self._populate_chapter_menu(self.chapter_menu)
+        menubar.add_cascade(label="章节", menu=self.chapter_menu)
+
+        self.view_menu = tk.Menu(menubar, tearoff=0)
+        self._populate_view_menu(self.view_menu)
+        menubar.add_cascade(label="视图", menu=self.view_menu)
 
         # 帮助菜单
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -1435,43 +1424,6 @@ class MainWindow(tk.Tk):
         self.action_bar = ttk.Frame(toolbar)
         self.action_bar.pack(fill=tk.X)
 
-        self.utility_frame = ttk.Frame(self.action_bar)
-        self.btn_project_menu = ttk.Menubutton(
-            self.utility_frame,
-            text="项目",
-            padding=(12, 8),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.project_tools_menu = tk.Menu(self.btn_project_menu, tearoff=0)
-        self.project_tools_menu.add_command(label="切换配置...", command=self.select_and_switch_config)
-        self.project_tools_menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
-        self.project_tools_menu.add_separator()
-        self.project_tools_menu.add_command(label="重载大纲", command=self.reload_outline)
-        self.project_tools_menu.add_command(label="扫描输出状态", command=self.refresh_status)
-        self.project_tools_menu.add_separator()
-        self.project_tools_menu.add_command(label="打开输出目录", command=self.open_output_dir)
-        self.btn_project_menu["menu"] = self.project_tools_menu
-        self.btn_project_menu.pack(side=tk.LEFT, padx=(0, 6))
-
-        self.btn_chapter_tools_menu = ttk.Menubutton(
-            self.utility_frame,
-            text="章节",
-            padding=(12, 8),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.chapter_tools_menu = tk.Menu(self.btn_chapter_tools_menu, tearoff=0)
-        self._populate_chapter_tools_menu(self.chapter_tools_menu)
-        self.btn_chapter_tools_menu["menu"] = self.chapter_tools_menu
-        self.btn_chapter_tools_menu.pack(side=tk.LEFT, padx=6)
-
-        self.btn_view_menu = ttk.Menubutton(
-            self.utility_frame,
-            text="视图",
-            padding=(12, 8),
-            **_bootstyle_kwargs("secondary")
-        )
-        self.btn_view_menu.pack(side=tk.LEFT, padx=6)
-
         self.action_frame = ttk.Frame(self.action_bar)
 
         self.btn_merge = ttk.Button(
@@ -1493,12 +1445,38 @@ class MainWindow(tk.Tk):
         )
         self.btn_generate.pack(side=tk.LEFT, padx=(6, 0))
 
+    def _populate_project_menu(self, menu: tk.Menu) -> None:
+        menu.add_command(label="切换配置...", command=self.select_and_switch_config)
+        menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
+        menu.add_separator()
+        menu.add_command(label="重载大纲", command=self.reload_outline)
+        menu.add_command(label="扫描输出状态", command=self.refresh_status)
+        menu.add_separator()
+        menu.add_command(label="打开输出目录", command=self.open_output_dir)
+        menu.add_separator()
+        menu.add_command(label="退出", command=self.quit)
+
+    def _populate_chapter_menu(self, menu: tk.Menu) -> None:
+        menu.add_command(label="生成所选", command=self.batch_generate)
+        MainWindow._populate_chapter_tools_menu(self, menu)
+        menu.add_separator()
+        menu.add_command(label="整合标书", command=self.merge_generated_sections)
+
     def _populate_chapter_tools_menu(self, menu: tk.Menu) -> None:
         menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
         menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
         menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
         menu.add_command(label="新增事实卡片...", command=self.open_manual_fact_card_dialog)
         menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
+
+    def _populate_view_menu(self, menu: tk.Menu) -> None:
+        menu.add_command(label="全部展开", command=self.expand_all)
+        menu.add_separator()
+        menu.add_command(label="展开至一级 (Ctrl+1)", command=self.expand_to_level_1)
+        menu.add_command(label="展开至二级 (Ctrl+2)", command=self.expand_to_level_2)
+        menu.add_command(label="展开至三级 (Ctrl+3)", command=self.expand_to_level_3)
+        menu.add_separator()
+        menu.add_command(label="收缩全部 (Ctrl+0)", command=self.collapse_all)
 
     def create_main_panes(self):
         """创建主面板"""
@@ -1895,29 +1873,16 @@ class MainWindow(tk.Tk):
 
     def _get_action_layout_mode(self) -> str:
         """计算工具按钮区域应使用的布局模式"""
-        available_width = max(self.action_bar.winfo_width(), self.winfo_width() - 32)
-        if available_width <= 1:
-            return self._action_layout_mode or "stacked"
-
-        required_width = self.utility_frame.winfo_reqwidth() + self.action_frame.winfo_reqwidth() + 24
-        return "single" if required_width <= available_width else "stacked"
+        return "single"
 
     def _layout_action_bar(self, layout_mode: str):
         """工具按钮区域宽度不足时拆分为两行"""
-        self.utility_frame.grid_forget()
+        del layout_mode
         self.action_frame.grid_forget()
         self.action_bar.grid_columnconfigure(0, weight=0)
         self.action_bar.grid_columnconfigure(1, weight=0)
-
-        if layout_mode == "single":
-            self.action_bar.grid_columnconfigure(0, weight=1)
-            self.utility_frame.grid(row=0, column=0, sticky="w")
-            self.action_frame.grid(row=0, column=1, sticky="e")
-            return
-
         self.action_bar.grid_columnconfigure(0, weight=1)
-        self.utility_frame.grid(row=0, column=0, sticky="w")
-        self.action_frame.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.action_frame.grid(row=0, column=0, sticky="e")
 
     def _get_control_layout_mode(self) -> str:
         """计算筛选控制区域应使用的布局模式"""
@@ -2003,31 +1968,12 @@ class MainWindow(tk.Tk):
 
     def create_expand_menu(self):
         """创建展开/收缩下拉菜单"""
+        if hasattr(self, "view_menu"):
+            self.expand_menu = self.view_menu
+            return
+
         self.expand_menu = tk.Menu(self, tearoff=0)
-        self.expand_menu.add_command(
-            label="全部展开",
-            command=self.expand_all
-        )
-        self.expand_menu.add_separator()
-        self.expand_menu.add_command(
-            label="展开至一级 (Ctrl+1)",
-            command=self.expand_to_level_1
-        )
-        self.expand_menu.add_command(
-            label="展开至二级 (Ctrl+2)",
-            command=self.expand_to_level_2
-        )
-        self.expand_menu.add_command(
-            label="展开至三级 (Ctrl+3)",
-            command=self.expand_to_level_3
-        )
-        self.expand_menu.add_separator()
-        self.expand_menu.add_command(
-            label="收缩全部 (Ctrl+0)",
-            command=self.collapse_all
-        )
-        if hasattr(self, "btn_view_menu"):
-            self.btn_view_menu["menu"] = self.expand_menu
+        self._populate_view_menu(self.expand_menu)
 
     def create_outline_context_menu(self):
         """创建章节树右键菜单。"""
@@ -2549,10 +2495,39 @@ class MainWindow(tk.Tk):
         self.btn_merge.config(
             state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL)
         )
-        self.btn_project_menu.config(state=tool_button_state)
-        self.btn_view_menu.config(state=tool_button_state)
-        self.btn_chapter_tools_menu.config(state=chapter_tools_state)
         self.btn_selection_menu.config(state=selection_menu_state)
+
+        if hasattr(self, "project_menu"):
+            for entry_index in (0, 1, 3, 4, 6):
+                self.project_menu.entryconfigure(entry_index, state=tool_button_state)
+        if hasattr(self, "view_menu"):
+            for entry_index in (0, 2, 3, 4, 6):
+                self.view_menu.entryconfigure(entry_index, state=tool_button_state)
+        if hasattr(self, "chapter_menu"):
+            self.chapter_menu.entryconfigure(
+                0,
+                label=f"生成所选 {selected_count}",
+                state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL),
+            )
+            self.chapter_menu.entryconfigure(
+                1,
+                state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
+            )
+            self.chapter_menu.entryconfigure(
+                2,
+                state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
+            )
+            self.chapter_menu.entryconfigure(
+                CHAPTER_MENU_FACT_CARD_INDEX,
+                label=self._selected_fact_card_action_label(selected_headings),
+                state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
+            )
+            self.chapter_menu.entryconfigure(4, state=chapter_tools_state)
+            self.chapter_menu.entryconfigure(5, state=chapter_tools_state)
+            self.chapter_menu.entryconfigure(
+                7,
+                state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL),
+            )
 
         self.selection_tools_menu.entryconfigure(
             "全选四级标题",
@@ -2562,24 +2537,6 @@ class MainWindow(tk.Tk):
             "清空选择",
             state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL),
         )
-        self.chapter_tools_menu.entryconfigure(
-            "设置章节依赖...",
-            state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
-        )
-        self.chapter_tools_menu.entryconfigure(
-            "预提炼依赖摘要...",
-            state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
-        )
-        self.chapter_tools_menu.entryconfigure(
-            CHAPTER_TOOLS_FACT_CARD_INDEX,
-            label=self._selected_fact_card_action_label(selected_headings),
-            state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
-        )
-        if hasattr(self, "action_menu"):
-            self.action_menu.entryconfigure(
-                ACTION_MENU_FACT_CARD_INDEX,
-                label=self._selected_fact_card_action_label(selected_headings),
-            )
 
         self.search_entry.config(state=(tk.DISABLED if self.is_generating else tk.NORMAL))
         self.status_filter_combo.config(state=("disabled" if self.is_generating else "readonly"))
