@@ -92,13 +92,13 @@ fact_cards:
   chapter_defaults: {}
 models:
   generation:
-    model: Qwen3.6-35B-A3B-4bit
+    model: gpt-5.4
     temperature: 0.7
     max_tokens: 10000
     timeout_seconds: 120
     max_retries: 3
   pruning:
-    model: Qwen3.6-35B-A3B-4bit
+    model: gpt-5.4
     temperature: 0.2
     max_tokens: 1200
     timeout_seconds: 60
