@@ -28,7 +28,8 @@ FACT_CARD_LIBRARY_CURRENT_TREE_ROWS = 7
 FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT = 400
 FACT_CARD_EXTRACTION_WORKSPACE_WIDTH = 1080
 FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT = 760
-FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE = (940, 620)
+FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE = (1080, 620)
+FACT_CARD_INSTRUCTION_PLACEHOLDER_COLOR = "#6b7280"
 
 
 @dataclass(frozen=True)
@@ -38,8 +39,9 @@ class FactCardExtractionDialogResult:
 
 
 class ScrollableBody(ttk.Frame):
-    def __init__(self, master):
+    def __init__(self, master, *, stretch_height: bool = False):
         super().__init__(master)
+        self.stretch_height = stretch_height
         self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
         style_canvas_widget(self.canvas)
         self.scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.canvas.yview)
@@ -54,10 +56,18 @@ class ScrollableBody(ttk.Frame):
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
     def _on_body_configure(self, _event):
+        if self.stretch_height:
+            self._resize_body_window(self.canvas.winfo_width(), self.canvas.winfo_height())
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def _on_canvas_configure(self, event):
-        self.canvas.itemconfigure(self.window_id, width=event.width)
+        self._resize_body_window(event.width, event.height)
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _resize_body_window(self, width: int, height: int) -> None:
+        self.canvas.itemconfigure(self.window_id, width=width)
+        if self.stretch_height:
+            self.canvas.itemconfigure(self.window_id, height=max(height, self.body.winfo_reqheight()))
 
 
 class FactCardSelectionPanel(ttk.LabelFrame):
@@ -158,24 +168,34 @@ class FactCardDraftEditor(ttk.Frame):
         drafts: list[FactCardDraft] | None = None,
         *,
         list_min_height: int | None = None,
+        allow_add: bool = True,
+        show_card_frame: bool = True,
+        max_rows: int | None = None,
+        show_delete_button: bool = True,
+        stretch_content: bool = False,
     ):
         super().__init__(master)
         self._rows: list[dict[str, object]] = []
+        self._show_card_frame = show_card_frame
+        self._max_rows = max_rows
+        self._show_delete_button = show_delete_button
+        self._stretch_content = stretch_content
 
-        self.scrollable = ScrollableBody(self)
+        self.scrollable = ScrollableBody(self, stretch_height=stretch_content)
         if list_min_height is not None:
             self.scrollable.canvas.configure(height=list_min_height)
         self.scrollable.pack(fill=tk.BOTH, expand=True)
 
-        action_bar = ttk.Frame(self)
-        action_bar.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(
-            action_bar,
-            text="新增卡片",
-            command=self.add_empty_row,
-            width=10,
-            **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.LEFT)
+        if allow_add:
+            action_bar = ttk.Frame(self)
+            action_bar.pack(fill=tk.X, pady=(8, 0))
+            ttk.Button(
+                action_bar,
+                text="新增卡片",
+                command=self.add_empty_row,
+                width=10,
+                **_bootstyle_kwargs("secondary"),
+            ).pack(side=tk.LEFT)
 
         for draft in drafts or []:
             self.add_row(draft)
@@ -197,9 +217,15 @@ class FactCardDraftEditor(ttk.Frame):
         self.add_row(FactCardDraft(name="", content="", category="", scope="local", enforcement="reference"))
 
     def add_row(self, draft: FactCardDraft) -> None:
+        if self._max_rows is not None and len(self._rows) >= self._max_rows:
+            return
+
         row_data: dict[str, object] = {}
-        container = ttk.LabelFrame(self.scrollable.body, text=f"卡片 {len(self._rows) + 1}", padding=(10, 8))
-        container.pack(fill=tk.X, pady=(0, 10))
+        if self._show_card_frame:
+            container = ttk.LabelFrame(self.scrollable.body, text=f"卡片 {len(self._rows) + 1}", padding=(10, 8))
+        else:
+            container = ttk.Frame(self.scrollable.body, padding=(0, 0))
+        container.pack(**self._container_pack_options(self._stretch_content))
         row_data["container"] = container
         row_data["card_id"] = draft.card_id
 
@@ -236,22 +262,38 @@ class FactCardDraftEditor(ttk.Frame):
             state="readonly",
             width=11,
         ).grid(row=0, column=7, sticky=tk.W, padx=(6, 12))
-        ttk.Button(
-            top_row,
-            text="删除",
-            command=lambda data=row_data: self.remove_row(data),
-            width=8,
-            **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=9, sticky=tk.E)
+        if self._show_delete_button:
+            ttk.Button(
+                top_row,
+                text="删除",
+                command=lambda data=row_data: self.remove_row(data),
+                width=8,
+                **_bootstyle_kwargs("secondary"),
+            ).grid(row=0, column=9, sticky=tk.E)
 
         ttk.Label(container, text="内容").pack(anchor=tk.W, pady=(8, 4))
         content_text = tk.Text(container, height=4, width=72)
         style_text_widget(content_text)
-        content_text.pack(fill=tk.X)
+        content_text.pack(**self._content_pack_options(self._stretch_content))
         content_text.insert("1.0", draft.content)
         row_data["content_text"] = content_text
 
         self._rows.append(row_data)
+
+    @staticmethod
+    def _container_pack_options(stretch_content: bool) -> dict[str, object]:
+        return {
+            "fill": tk.BOTH if stretch_content else tk.X,
+            "expand": bool(stretch_content),
+            "pady": (0, 10),
+        }
+
+    @staticmethod
+    def _content_pack_options(stretch_content: bool) -> dict[str, object]:
+        return {
+            "fill": tk.BOTH if stretch_content else tk.X,
+            "expand": bool(stretch_content),
+        }
 
     def remove_row(self, row_data: dict[str, object]) -> None:
         if not messagebox.askyesno("确认删除", "确定删除这张事实卡片草稿吗？", parent=self.winfo_toplevel()):
@@ -260,10 +302,11 @@ class FactCardDraftEditor(ttk.Frame):
         if container is not None:
             container.destroy()
         self._rows = [row for row in self._rows if row is not row_data]
-        for index, row in enumerate(self._rows, start=1):
-            container = row.get("container")
-            if container is not None:
-                container.configure(text=f"卡片 {index}")
+        if getattr(self, "_show_card_frame", True):
+            for index, row in enumerate(self._rows, start=1):
+                container = row.get("container")
+                if container is not None:
+                    container.configure(text=f"卡片 {index}")
         if not self._rows:
             self.add_empty_row()
 
@@ -314,9 +357,12 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         self.result: Optional[FactCardExtractionDialogResult] = None
         initial_drafts = self._current_drafts(list(initial_drafts or []))
         has_initial_drafts = bool(initial_drafts)
+        self._default_instruction = initial_instruction.strip()
         self._has_extracted = has_initial_drafts
         self._is_extracting = False
         self._last_extracted_instruction = initial_instruction if has_initial_drafts else ""
+        self._instruction_placeholder_active = False
+        self._instruction_normal_foreground = ""
 
         self.title("提炼章节事实卡片")
         self.geometry(f"{FACT_CARD_EXTRACTION_WORKSPACE_WIDTH}x{FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT}")
@@ -341,7 +387,13 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         self.instruction_text = tk.Text(instruction_frame, height=5, width=90)
         style_text_widget(self.instruction_text)
         self.instruction_text.pack(fill=tk.X)
-        self.instruction_text.insert("1.0", initial_instruction)
+        self._instruction_normal_foreground = str(self.instruction_text.cget("foreground") or "")
+        self.instruction_text.bind("<FocusIn>", self._on_instruction_focus_in)
+        self.instruction_text.bind("<FocusOut>", self._on_instruction_focus_out)
+        if has_initial_drafts and initial_instruction.strip():
+            self.instruction_text.insert("1.0", initial_instruction)
+        else:
+            self._show_instruction_placeholder()
 
         action_row = ttk.Frame(instruction_frame)
         action_row.pack(fill=tk.X, pady=(8, 0))
@@ -357,7 +409,7 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         initial_status_text = (
             initial_status
             if has_initial_drafts and initial_status
-            else "请先输入提炼要求，再点击“提炼草稿”。"
+            else "可直接使用默认提炼要求，也可输入自定义要求后点击“提炼草稿”。"
         )
         self.status_var = tk.StringVar(value=initial_status_text)
         ttk.Label(action_row, textvariable=self.status_var).pack(side=tk.LEFT, padx=(10, 0))
@@ -365,7 +417,7 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         editor_frame = ttk.LabelFrame(container, text="提炼草稿", padding=(10, 8))
         editor_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
-        self.editor = FactCardDraftEditor(editor_frame, drafts=initial_drafts)
+        self.editor = FactCardDraftEditor(editor_frame, drafts=initial_drafts, **self._editor_options())
         self.editor.pack(fill=tk.BOTH, expand=True)
 
         button_row = ttk.Frame(container)
@@ -387,7 +439,30 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         self.save_button.pack(side=tk.LEFT)
 
     def _get_instruction(self) -> str:
-        return self.instruction_text.get("1.0", tk.END).strip()
+        if getattr(self, "_instruction_placeholder_active", False):
+            return self._default_instruction
+        return self.instruction_text.get("1.0", tk.END).strip() or self._default_instruction
+
+    def _show_instruction_placeholder(self) -> None:
+        self.instruction_text.delete("1.0", tk.END)
+        if self._default_instruction:
+            self.instruction_text.insert("1.0", self._default_instruction)
+            self.instruction_text.configure(foreground=FACT_CARD_INSTRUCTION_PLACEHOLDER_COLOR)
+            self._instruction_placeholder_active = True
+
+    def _hide_instruction_placeholder(self) -> None:
+        if not getattr(self, "_instruction_placeholder_active", False):
+            return
+        self.instruction_text.delete("1.0", tk.END)
+        self.instruction_text.configure(foreground=self._instruction_normal_foreground)
+        self._instruction_placeholder_active = False
+
+    def _on_instruction_focus_in(self, _event) -> None:
+        self._hide_instruction_placeholder()
+
+    def _on_instruction_focus_out(self, _event) -> None:
+        if not self.instruction_text.get("1.0", tk.END).strip():
+            self._show_instruction_placeholder()
 
     def _on_extract(self) -> None:
         if self._is_extracting:
@@ -436,6 +511,16 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
     @staticmethod
     def _current_drafts(drafts: list[FactCardDraft]) -> list[FactCardDraft]:
         return drafts[:1]
+
+    @staticmethod
+    def _editor_options() -> dict[str, object]:
+        return {
+            "allow_add": False,
+            "show_card_frame": False,
+            "max_rows": 1,
+            "show_delete_button": True,
+            "stretch_content": True,
+        }
 
     def _finish_extract(
         self,
@@ -565,6 +650,89 @@ class FactCardDraftReviewDialog(tk.Toplevel):
         except ValueError as exc:
             messagebox.showwarning("提示", str(exc), parent=self)
             return
+        self.destroy()
+
+
+class ManualFactCardDialog(tk.Toplevel):
+    def __init__(self, parent: tk.Misc):
+        super().__init__(parent)
+        setup_gui_theme(self)
+        apply_window_surface(self)
+        self.result: Optional[FactCardDraft] = None
+
+        self.title("新增事实卡片")
+        self.geometry("920x520")
+        self.minsize(820, 460)
+        self.transient(parent)
+        self.grab_set()
+
+        container = ttk.Frame(self, padding=16)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="新增事实卡片", style="SectionTitle.TLabel").pack(anchor=tk.W)
+        ttk.Label(
+            container,
+            text="手工录入一张项目事实卡片；保存后会加入事实卡片库，后续可在生成参数中引用。",
+            justify=tk.LEFT,
+            wraplength=840,
+        ).pack(anchor=tk.W, pady=(6, 10))
+
+        self.editor = FactCardDraftEditor(
+            container,
+            drafts=[
+                FactCardDraft(
+                    name="",
+                    content="",
+                    category="",
+                    scope="local",
+                    enforcement="reference",
+                )
+            ],
+            **self._editor_options(),
+        )
+        self.editor.pack(fill=tk.BOTH, expand=True)
+
+        button_row = ttk.Frame(container)
+        button_row.pack(anchor=tk.E, pady=(12, 0))
+        ttk.Button(
+            button_row,
+            text="取消",
+            command=self._on_cancel,
+            width=10,
+            **_bootstyle_kwargs("secondary"),
+        ).pack(side=tk.LEFT, padx=6)
+        ttk.Button(
+            button_row,
+            text="保存卡片",
+            command=self._on_save,
+            width=10,
+            **_bootstyle_kwargs("primary"),
+        ).pack(side=tk.LEFT)
+
+    @staticmethod
+    def _editor_options() -> dict[str, object]:
+        return {
+            "allow_add": False,
+            "show_card_frame": False,
+            "max_rows": 1,
+            "show_delete_button": False,
+            "stretch_content": True,
+        }
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+    def _on_save(self) -> None:
+        try:
+            drafts = self.editor.get_drafts()
+        except ValueError as exc:
+            messagebox.showwarning("提示", str(exc), parent=self)
+            return
+        if not drafts:
+            messagebox.showwarning("提示", "请填写事实卡片名称和内容。", parent=self)
+            return
+        self.result = drafts[0]
         self.destroy()
 
 

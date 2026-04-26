@@ -214,7 +214,61 @@ def test_fact_card_extraction_workspace_dialog_keeps_only_current_initial_draft(
 
 def test_fact_card_extraction_dialog_reserves_width_for_delete_button():
     assert fact_card_dialogs.FACT_CARD_EXTRACTION_WORKSPACE_WIDTH >= 1080
-    assert fact_card_dialogs.FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE[0] >= 940
+    assert fact_card_dialogs.FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE[0] >= fact_card_dialogs.FACT_CARD_EXTRACTION_WORKSPACE_WIDTH
+
+
+def test_fact_card_extraction_workspace_dialog_uses_single_card_editor_options():
+    assert fact_card_dialogs.FactCardExtractionWorkspaceDialog._editor_options() == {
+        "allow_add": False,
+        "show_card_frame": False,
+        "max_rows": 1,
+        "show_delete_button": True,
+        "stretch_content": True,
+    }
+
+
+def test_fact_card_draft_editor_stretches_content_in_single_card_mode():
+    assert fact_card_dialogs.FactCardDraftEditor._container_pack_options(True) == {
+        "fill": fact_card_dialogs.tk.BOTH,
+        "expand": True,
+        "pady": (0, 10),
+    }
+    assert fact_card_dialogs.FactCardDraftEditor._content_pack_options(True) == {
+        "fill": fact_card_dialogs.tk.BOTH,
+        "expand": True,
+    }
+
+
+def test_manual_fact_card_dialog_stretches_content_editor():
+    assert fact_card_dialogs.ManualFactCardDialog._editor_options() == {
+        "allow_add": False,
+        "show_card_frame": False,
+        "max_rows": 1,
+        "show_delete_button": False,
+        "stretch_content": True,
+    }
+
+
+def test_fact_card_extraction_workspace_dialog_uses_default_instruction_as_placeholder():
+    dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
+        fact_card_dialogs.FactCardExtractionWorkspaceDialog
+    )
+    dialog._default_instruction = "默认提炼要求"
+    dialog._instruction_placeholder_active = True
+    dialog.instruction_text = SimpleNamespace(get=lambda *_args: "")
+
+    assert dialog._get_instruction() == "默认提炼要求"
+
+
+def test_fact_card_extraction_workspace_dialog_prefers_user_instruction_over_placeholder():
+    dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
+        fact_card_dialogs.FactCardExtractionWorkspaceDialog
+    )
+    dialog._default_instruction = "默认提炼要求"
+    dialog._instruction_placeholder_active = False
+    dialog.instruction_text = SimpleNamespace(get=lambda *_args: "只提炼资质")
+
+    assert dialog._get_instruction() == "只提炼资质"
 
 
 def test_fact_card_extraction_workspace_dialog_shows_empty_result_details(monkeypatch):
@@ -483,6 +537,130 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
         )
     ]
     assert fake_window.status_text.get() == "已保存事实卡片库：1 张"
+
+
+def test_mainwindow_manual_fact_card_dialog_appends_to_library(monkeypatch):
+    saved_drafts: list[FactCardDraft] = []
+    workspace_messages: list[tuple[str, str, str, int]] = []
+    manual_card = FactCard(
+        id="manual-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    extracted_card = FactCard(
+        id="extract-a",
+        name="服务承诺",
+        content="7×24小时响应",
+        category="承诺",
+        scope="local",
+        enforcement="reference",
+        source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
+    )
+    new_draft = FactCardDraft(
+        name="项目经理",
+        content="项目经理具备高级职称",
+        category="人员",
+        scope="local",
+        enforcement="reference",
+    )
+
+    class _FakeDialog:
+        def __init__(self, _parent):
+            self.result = new_draft
+
+    monkeypatch.setattr(fact_card_dialogs, "ManualFactCardDialog", _FakeDialog)
+
+    class _FakeBidWriter:
+        def __init__(self):
+            self.fact_card_store = SimpleNamespace(list_cards=lambda active_only=False: [manual_card, extracted_card])
+
+        def save_fact_card_library(self, drafts):
+            saved_drafts.extend(drafts)
+            return [
+                FactCard(
+                    id=draft.card_id or f"fact-card-{index}",
+                    name=draft.name,
+                    content=draft.content,
+                    category=draft.category,
+                    scope=draft.scope,
+                    enforcement=draft.enforcement,
+                    source=FactCardSource(type="manual" if not draft.card_id else "manual"),
+                )
+                for index, draft in enumerate(drafts, start=1)
+            ]
+
+    fake_window = SimpleNamespace(
+        bid_writer=_FakeBidWriter(),
+        status_text=_FakeStatus(),
+        wait_window=lambda _dialog: None,
+        _show_workspace_message=lambda title, subtitle, detail, generated_char_count=0: workspace_messages.append(
+            (title, subtitle, detail, generated_char_count)
+        ),
+    )
+
+    MainWindow.open_manual_fact_card_dialog(fake_window)
+
+    assert saved_drafts == [
+        FactCardDraft(
+            card_id="manual-a",
+            name="企业资质",
+            content="一级资质",
+            category="资质",
+            scope="global",
+            enforcement="strong",
+        ),
+        FactCardDraft(
+            card_id="extract-a",
+            name="服务承诺",
+            content="7×24小时响应",
+            category="承诺",
+            scope="local",
+            enforcement="reference",
+        ),
+        new_draft,
+    ]
+    assert workspace_messages == [
+        (
+            "事实卡片库",
+            "已新增事实卡片",
+            "- 项目经理：项目经理具备高级职称",
+            len("- 项目经理：项目经理具备高级职称"),
+        )
+    ]
+    assert fake_window.status_text.get() == "已新增事实卡片：项目经理"
+
+
+def test_mainwindow_chapter_menu_exposes_manual_fact_card_entry():
+    class _FakeMenu:
+        def __init__(self):
+            self.labels: list[str] = []
+
+        def add_command(self, *, label, command):
+            del command
+            self.labels.append(label)
+
+    fake_window = SimpleNamespace(
+        edit_selected_dependencies=lambda: None,
+        prewarm_dependency_summaries=lambda: None,
+        extract_selected_facts=lambda: None,
+        open_manual_fact_card_dialog=lambda: None,
+        open_fact_card_library_dialog=lambda: None,
+    )
+    menu = _FakeMenu()
+
+    MainWindow._populate_chapter_tools_menu(fake_window, menu)
+
+    assert menu.labels == [
+        "设置章节依赖...",
+        "预提炼依赖摘要...",
+        "提炼当前章节事实卡片",
+        "新增事实卡片...",
+        "管理事实卡片",
+    ]
 
 
 def test_generation_fact_card_dialog_state_exposes_only_local_cards():

@@ -1460,10 +1460,7 @@ class MainWindow(tk.Tk):
             **_bootstyle_kwargs("secondary")
         )
         self.chapter_tools_menu = tk.Menu(self.btn_chapter_tools_menu, tearoff=0)
-        self.chapter_tools_menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
-        self.chapter_tools_menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
-        self.chapter_tools_menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
-        self.chapter_tools_menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
+        self._populate_chapter_tools_menu(self.chapter_tools_menu)
         self.btn_chapter_tools_menu["menu"] = self.chapter_tools_menu
         self.btn_chapter_tools_menu.pack(side=tk.LEFT, padx=6)
 
@@ -1495,6 +1492,13 @@ class MainWindow(tk.Tk):
             **_bootstyle_kwargs("primary")
         )
         self.btn_generate.pack(side=tk.LEFT, padx=(6, 0))
+
+    def _populate_chapter_tools_menu(self, menu: tk.Menu) -> None:
+        menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
+        menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
+        menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
+        menu.add_command(label="新增事实卡片...", command=self.open_manual_fact_card_dialog)
+        menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
 
     def create_main_panes(self):
         """创建主面板"""
@@ -3323,6 +3327,29 @@ class MainWindow(tk.Tk):
             generated_char_count=_count_text_characters(detail),
         )
         self.status_text.set(f"已保存事实卡片库：{len(saved_cards)} 张")
+
+    def open_manual_fact_card_dialog(self):
+        """打开手工新增事实卡片对话框。"""
+        from .fact_card_dialogs import FactCardLibraryDialog, ManualFactCardDialog
+
+        dialog = ManualFactCardDialog(self)
+        self.wait_window(dialog)
+        draft = dialog.result
+        if draft is None:
+            self.status_text.set("已取消新增事实卡片")
+            return
+
+        existing_cards = self.bid_writer.fact_card_store.list_cards(active_only=False)
+        drafts = [*FactCardLibraryDialog._build_library_drafts(existing_cards), draft]
+        self.bid_writer.save_fact_card_library(drafts)
+        detail = f"- {draft.name}：{draft.content}"
+        self._show_workspace_message(
+            "事实卡片库",
+            "已新增事实卡片",
+            detail,
+            generated_char_count=_count_text_characters(detail),
+        )
+        self.status_text.set(f"已新增事实卡片：{draft.name}")
 
     @staticmethod
     def _build_generation_fact_card_dialog_state(
