@@ -19,11 +19,19 @@ from .config_editor import (
 from .config_editor_tooltips import get_tooltip_text
 from .gui import (
     _bootstyle_kwargs,
+    _compute_screen_limited_dialog_size,
+    _set_centered_window_geometry,
     apply_window_surface,
     setup_gui_theme,
     style_canvas_widget,
     style_text_widget,
 )
+
+
+CONFIG_EDITOR_DEFAULT_WIDTH = 1280
+CONFIG_EDITOR_DEFAULT_HEIGHT = 860
+CONFIG_EDITOR_MIN_WIDTH = 1100
+CONFIG_EDITOR_MIN_HEIGHT = 760
 
 
 class ScrollableSection(ttk.Frame):
@@ -186,8 +194,16 @@ class ConfigEditorDialog(tk.Toplevel):
         self._tooltips: list[HoverTooltip] = []
 
         self.title("配置编辑器")
-        self.geometry("1280x860")
-        self.minsize(1100, 760)
+        window_size = _compute_screen_limited_dialog_size(
+            desired_width=CONFIG_EDITOR_DEFAULT_WIDTH,
+            desired_height=CONFIG_EDITOR_DEFAULT_HEIGHT,
+            min_width=CONFIG_EDITOR_MIN_WIDTH,
+            min_height=CONFIG_EDITOR_MIN_HEIGHT,
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        _set_centered_window_geometry(self, window_size.width, window_size.height)
+        self.minsize(window_size.min_width, window_size.min_height)
         self.transient(parent)
         self.grab_set()
 

@@ -1,3 +1,4 @@
+import bid_writer.gui as gui
 from bid_writer.gui import (
     MainWindow,
     _build_gui_scale_profile,
@@ -7,16 +8,13 @@ from bid_writer.gui import (
     _compute_outline_tree_column_widths,
     _count_text_characters,
     _compute_dialog_target_size,
+    _compute_centered_window_geometry,
     _compute_gui_font_delta,
-    _format_dependency_summary_busy_message,
     _format_batch_generation_failure_message,
-    _format_dependency_tooltip,
     _format_heading_tree_title,
     _format_workspace_char_count,
-    _extract_heading_serial_token,
     _shift_hex_color,
 )
-from bid_writer.outline_parser import HeadingNode
 
 
 class _FakeLayoutWidget:
@@ -89,11 +87,28 @@ def test_build_gui_scale_profile_scales_fonts_and_spacing_together():
     assert profile.text_padding == (11, 9)
 
 
-def test_main_window_target_size_matches_screenshot_width_on_large_display():
+def test_main_window_target_size_uses_sixty_five_percent_cap_on_large_display():
     width, height = _compute_main_window_target_size(screen_width=2048, screen_height=1226)
 
-    assert width == 2000
-    assert height == 1176
+    assert width == 1331
+    assert height == 796
+
+
+def test_main_window_target_size_leaves_breathing_room_on_low_resolution_display():
+    width, height = _compute_main_window_target_size(screen_width=1366, screen_height=768)
+
+    assert width == 887
+    assert height == 499
+
+
+def test_main_window_min_size_shrinks_when_screen_is_shorter_than_default_minimum():
+    size_fn = getattr(gui, "_compute_main_window_min_size", None)
+    assert size_fn is not None
+
+    width, height = size_fn(screen_width=1024, screen_height=600)
+
+    assert width == 665
+    assert height == 390
 
 
 def test_main_outline_pane_width_uses_left_right_ratio_for_wide_window():
@@ -157,6 +172,36 @@ def test_compute_dialog_target_size_keeps_existing_larger_window_size():
     assert height == 320
 
 
+def test_compute_centered_window_geometry_uses_screen_center():
+    geometry = _compute_centered_window_geometry(
+        width=887,
+        height=499,
+        screen_width=1366,
+        screen_height=768,
+    )
+
+    assert geometry == "887x499+239+134"
+
+
+def test_screen_limited_dialog_size_caps_target_and_minimum_to_display():
+    size_fn = getattr(gui, "_compute_screen_limited_dialog_size", None)
+    assert size_fn is not None
+
+    size = size_fn(
+        desired_width=1280,
+        desired_height=860,
+        min_width=1100,
+        min_height=760,
+        screen_width=1366,
+        screen_height=768,
+    )
+
+    assert size.width == 1229
+    assert size.height == 691
+    assert size.min_width == 1100
+    assert size.min_height == 691
+
+
 def test_shift_hex_color_darkens_surface_color_for_subtle_borders():
     assert _shift_hex_color("#dcdad5", -18) == "#cac8c3"
 
@@ -173,58 +218,8 @@ def test_format_workspace_char_count_formats_large_numbers_for_readability():
     assert _format_workspace_char_count(12345) == "当前节点已生成字符数：12,345"
 
 
-def test_format_heading_tree_title_adds_dependency_marker():
-    assert _format_heading_tree_title("进度计划安排", is_dependency_source=True) == "进度计划安排 🔗"
-
-
-def test_format_heading_tree_title_shows_dependency_count_when_reused_multiple_times():
-    assert _format_heading_tree_title("进度计划安排", depends_on_count=3) == "进度计划安排 ⇢3章"
-
-
-def test_format_heading_tree_title_shows_both_source_and_target_markers():
-    assert (
-        _format_heading_tree_title(
-            "进度计划安排",
-            is_dependency_source=True,
-            depends_on_count=2,
-        )
-        == "进度计划安排 🔗 ⇢2章"
-    )
-
-
-def test_extract_heading_serial_token_supports_multilevel_numbers():
-    assert _extract_heading_serial_token("3.2.1 质量保障措施") == "3.2.1"
-
-
-def test_extract_heading_serial_token_supports_chinese_outline_numbers():
-    assert _extract_heading_serial_token("（三）实施方案") == "（三）"
-
-
-def test_format_dependency_tooltip_lists_dependency_titles():
-    dependencies = [
-        HeadingNode(level=3, title="3.2.1 质量保障措施", full_path="", line_number=1),
-        HeadingNode(level=3, title="应急保障机制", full_path="", line_number=2),
-    ]
-
-    tooltip = _format_dependency_tooltip(dependencies)
-
-    assert "当前章节依赖了 2 个章节" in tooltip
-    assert "- 3.2.1 质量保障措施" in tooltip
-    assert "- 应急保障机制" in tooltip
-
-
-def test_format_dependency_summary_busy_message_for_check_mode():
-    message = _format_dependency_summary_busy_message("check", 2)
-
-    assert "正在后台检查 2 个依赖章节" in message
-    assert "自动刷新可复用结果" in message
-
-
-def test_format_dependency_summary_busy_message_for_generate_mode():
-    message = _format_dependency_summary_busy_message("generate", 3)
-
-    assert "正在后台为 3 个依赖章节提炼关联摘要" in message
-    assert "自动继续当前生成流程" in message
+def test_format_heading_tree_title_returns_plain_title():
+    assert _format_heading_tree_title("进度计划安排") == "进度计划安排"
 
 
 def test_build_generation_error_feedback_for_timeout_before_output():

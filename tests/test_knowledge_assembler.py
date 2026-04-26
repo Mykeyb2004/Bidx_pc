@@ -1,7 +1,7 @@
+import json
 from pathlib import Path
 
 from bid_writer.chapter_fact_extractor import ChapterFactExtractor
-from bid_writer.chapter_dependency_store import ChapterDependencyStore
 from bid_writer.chapter_fact_store import ChapterFactStore, ExtractedFact
 from bid_writer.config import Config
 from bid_writer.file_saver import FileSaver
@@ -76,7 +76,7 @@ processing:
     assert "### 团队" not in section
 
 
-def test_knowledge_assembler_merges_dependency_facts_and_filters_local_scope(tmp_path: Path):
+def test_knowledge_assembler_ignores_legacy_dependency_facts(tmp_path: Path):
     project_root = tmp_path / "project"
     project_root.mkdir()
     (project_root / "outline.md").write_text(
@@ -114,7 +114,23 @@ processing:
     dep_c = parser.find_heading_by_title("其他章节")
     assert target is not None and dep_a is not None and dep_b is not None and dep_c is not None
 
-    ChapterDependencyStore(config).set_dependencies(target, [dep_a, dep_b])
+    dependency_path = project_root / ".bid_writer" / "chapter_dependencies.json"
+    dependency_path.parent.mkdir(parents=True)
+    dependency_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "items": {
+                    target.full_path: {
+                        "title": target.title,
+                        "dependencies": [dep_a.full_path, dep_b.full_path],
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     file_saver = FileSaver(config.output_directory, config.output_prefix)
     file_saver.save(dep_a, "人员配置正文")
     file_saver.save(dep_b, "进度计划正文")
@@ -148,27 +164,18 @@ processing:
         focus_terms=["质量"],
     )
 
-    assert "### 已确立事实" in section
-    assert "- 项目经理: 张三 [来源: 人员配置方案、进度计划安排]" in section
-    assert "- 质量巡检: 每周一次 [来源: 人员配置方案]" in section
+    assert section == ""
+    assert dependency_path.exists()
+    assert "项目经理" not in section
+    assert "质量巡检" not in section
     assert "阶段划分" not in section
     assert "无关事实" not in section
 
 
-def test_knowledge_assembler_skips_stale_dependency_facts(tmp_path: Path):
+def test_knowledge_assembler_keeps_manual_knowledge_as_only_runtime_source(tmp_path: Path):
     project_root = tmp_path / "project"
     project_root.mkdir()
-    (project_root / "outline.md").write_text(
-        "\n".join(
-            [
-                "# 项目",
-                "## 实施方案",
-                "### 人员配置方案",
-                "### 质量保障措施",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    (project_root / "公司简介.md").write_text("- 公司名称：测试投标主体\n", encoding="utf-8")
 
     config = _build_config(
         tmp_path,
@@ -176,7 +183,8 @@ def test_knowledge_assembler_skips_stale_dependency_facts(tmp_path: Path):
 project:
   root_dir: "./project"
   inputs:
-    outline_file: "./outline.md"
+    knowledge_files:
+      - "./公司简介.md"
 processing:
   knowledge:
     enabled: true
@@ -184,23 +192,7 @@ processing:
 """,
     )
 
-    parser = parse_outline(config.get_outline_content())
-    target = parser.find_heading_by_title("质量保障措施")
-    dependency = parser.find_heading_by_title("人员配置方案")
-    assert target is not None and dependency is not None
+    section = KnowledgeAssembler(config).build_prompt_section()
 
-    ChapterDependencyStore(config).set_dependencies(target, [dependency])
-    FileSaver(config.output_directory, config.output_prefix).save(dependency, "最新正文")
-    ChapterFactStore(config).save(
-        heading=dependency,
-        source_hash="output:stale",
-        facts=[ExtractedFact(scope="global", category="项目经理", value="张三")],
-    )
-
-    section = KnowledgeAssembler(config).build_prompt_section(
-        heading=target,
-        focus_terms=["质量"],
-    )
-
-    assert "已确立事实" not in section
-    assert "项目经理" not in section
+    assert "## 投标方知识库" in section
+    assert "### 公司简介" in section

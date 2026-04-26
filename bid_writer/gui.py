@@ -55,6 +55,8 @@ MAIN_WINDOW_SCREEN_MARGIN_WIDTH = 48
 MAIN_WINDOW_SCREEN_MARGIN_HEIGHT = 50
 MAIN_WINDOW_MIN_WIDTH = 800
 MAIN_WINDOW_MIN_HEIGHT = 600
+MAIN_WINDOW_SCREEN_WIDTH_RATIO = 0.65
+MAIN_WINDOW_SCREEN_HEIGHT_RATIO = 0.65
 MAIN_OUTLINE_DEFAULT_WIDTH = 520
 MAIN_OUTLINE_DEFAULT_RATIO = 0.31
 MAIN_OUTLINE_MIN_WIDTH = 360
@@ -69,6 +71,10 @@ GENERATION_DIALOG_MIN_WIDTH = 520
 GENERATION_DIALOG_MIN_HEIGHT = 280
 GENERATION_DIALOG_EXTRA_WIDTH = 24
 GENERATION_DIALOG_EXTRA_HEIGHT = 20
+DIALOG_SCREEN_MARGIN_WIDTH = 48
+DIALOG_SCREEN_MARGIN_HEIGHT = 50
+DIALOG_SCREEN_WIDTH_RATIO = 0.9
+DIALOG_SCREEN_HEIGHT_RATIO = 0.9
 GUI_DEFAULT_FONT_SIZE = 11
 GUI_COMPACT_FONT_SIZE = 10
 GUI_HEADING_FONT_SIZE = 12
@@ -83,9 +89,8 @@ _WORKSPACE_CHAR_COUNT_UNCHANGED = object()
 _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
-CHAPTER_MENU_FACT_CARD_INDEX = 3
-CHAPTER_TOOLS_FACT_CARD_INDEX = 2
-CONTEXT_MENU_FACT_CARD_INDEX = 2
+CHAPTER_MENU_FACT_CARD_INDEX = 1
+CONTEXT_MENU_FACT_CARD_INDEX = 0
 
 
 @dataclass
@@ -108,6 +113,16 @@ class GuiScaleProfile:
     button_padding: tuple[int, int]
     field_padding: tuple[int, int]
     text_padding: tuple[int, int]
+
+
+@dataclass(frozen=True)
+class WindowSizeSpec:
+    """屏幕约束后的窗口尺寸规格。"""
+
+    width: int
+    height: int
+    min_width: int
+    min_height: int
 
 
 @dataclass(frozen=True)
@@ -289,75 +304,9 @@ def _format_workspace_char_count(count: Optional[int]) -> str:
     return f"当前节点已生成字符数：{max(0, count):,}"
 
 
-def _format_heading_tree_title(
-    title: str,
-    *,
-    is_dependency_source: bool = False,
-    depends_on_count: int = 0,
-) -> str:
-    """格式化章节树标题，区分“被依赖”与“依赖他人”两类标记。"""
-    suffixes: list[str] = []
-    if is_dependency_source:
-        suffixes.append("🔗")
-    if depends_on_count > 0:
-        suffixes.append(f"⇢{depends_on_count}章")
-    if not suffixes:
-        return title
-    return f"{title} {' '.join(suffixes)}"
-
-
-def _extract_heading_serial_token(title: str) -> str:
-    """尽量从标题前缀中提取章节序号。"""
-    normalized = title.strip()
-    if not normalized:
-        return ""
-
-    patterns = [
-        r"^(\d+(?:\.\d+)+)",
-        r"^(\d+)[、._\s)]",
-        r"^([一二三四五六七八九十百千]+、)",
-        r"^([（(][一二三四五六七八九十百千]+[)）])",
-        r"^([（(]\d+[)）])",
-        r"^(\d+[.)])",
-    ]
-    for pattern in patterns:
-        match = re.match(pattern, normalized)
-        if match:
-            return match.group(1).strip()
-    return ""
-
-
-def _format_dependency_tooltip(dependencies: list["HeadingNode"]) -> str:
-    """格式化依赖章节悬浮提示。"""
-    if not dependencies:
-        return ""
-
-    lines = [f"当前章节依赖了 {len(dependencies)} 个章节：", ""]
-    for dependency in dependencies:
-        serial = _extract_heading_serial_token(dependency.title)
-        if serial:
-            remainder = dependency.title[len(serial):].strip()
-            if remainder:
-                lines.append(f"- {serial} {remainder}")
-            else:
-                lines.append(f"- {serial}")
-        else:
-            lines.append(f"- {dependency.title}")
-    return "\n".join(lines)
-
-
-def _format_dependency_summary_busy_message(mode: str, count: int) -> str:
-    """格式化依赖摘要后台处理提示文案。"""
-    normalized_count = max(0, count)
-    if mode == "generate":
-        return (
-            f"正在后台为 {normalized_count} 个依赖章节提炼关联摘要。\n\n"
-            "完成后会自动继续当前生成流程，请稍候。"
-        )
-    return (
-        f"正在后台检查 {normalized_count} 个依赖章节的关联摘要缓存。\n\n"
-        "若发现缺失或过期摘要，系统会自动刷新可复用结果。"
-    )
+def _format_heading_tree_title(title: str) -> str:
+    """格式化章节树标题。"""
+    return title
 
 
 def _matches_exception_type(
@@ -676,6 +625,94 @@ def _compute_dialog_target_size(
     return width, height
 
 
+def _compute_centered_window_geometry(
+    *,
+    width: int,
+    height: int,
+    screen_width: int,
+    screen_height: int,
+) -> str:
+    x = max(0, (screen_width - width) // 2)
+    y = max(0, (screen_height - height) // 2)
+    return f"{width}x{height}+{x}+{y}"
+
+
+def _set_centered_window_geometry(window: tk.Misc, width: int, height: int) -> None:
+    window.geometry(
+        _compute_centered_window_geometry(
+            width=width,
+            height=height,
+            screen_width=window.winfo_screenwidth(),
+            screen_height=window.winfo_screenheight(),
+        )
+    )
+
+
+def _compute_screen_size_limit(
+    screen_size: Optional[int],
+    *,
+    margin: int,
+    ratio: Optional[float] = None,
+    ratio_threshold: Optional[int] = None,
+) -> Optional[int]:
+    if not screen_size or screen_size <= 0:
+        return None
+
+    limit = max(1, screen_size - margin)
+    if ratio is not None and (ratio_threshold is None or screen_size <= ratio_threshold):
+        limit = min(limit, max(1, int(screen_size * ratio)))
+    return limit
+
+
+def _compute_screen_limited_dialog_size(
+    *,
+    desired_width: int,
+    desired_height: int,
+    min_width: int,
+    min_height: int,
+    screen_width: Optional[int] = None,
+    screen_height: Optional[int] = None,
+    width_ratio: float = DIALOG_SCREEN_WIDTH_RATIO,
+    height_ratio: float = DIALOG_SCREEN_HEIGHT_RATIO,
+    margin_width: int = DIALOG_SCREEN_MARGIN_WIDTH,
+    margin_height: int = DIALOG_SCREEN_MARGIN_HEIGHT,
+) -> WindowSizeSpec:
+    max_width = _compute_screen_size_limit(
+        screen_width,
+        margin=margin_width,
+        ratio=width_ratio,
+    )
+    max_height = _compute_screen_size_limit(
+        screen_height,
+        margin=margin_height,
+        ratio=height_ratio,
+    )
+
+    width, height = _compute_dialog_target_size(
+        requested_width=desired_width,
+        requested_height=desired_height,
+        min_width=min_width,
+        min_height=min_height,
+        max_width=max_width,
+        max_height=max_height,
+    )
+    limited_min_width, limited_min_height = _compute_dialog_target_size(
+        requested_width=min_width,
+        requested_height=min_height,
+        min_width=min_width,
+        min_height=min_height,
+        max_width=max_width,
+        max_height=max_height,
+    )
+
+    return WindowSizeSpec(
+        width=width,
+        height=height,
+        min_width=limited_min_width,
+        min_height=limited_min_height,
+    )
+
+
 def _compute_main_window_target_size(
     *,
     screen_width: Optional[int] = None,
@@ -683,18 +720,47 @@ def _compute_main_window_target_size(
 ) -> tuple[int, int]:
     """计算主窗口初始尺寸，优先匹配当前截图宽度并避免超出屏幕。"""
 
-    if screen_width and screen_width > 0:
-        max_width = max(MAIN_WINDOW_MIN_WIDTH, screen_width - MAIN_WINDOW_SCREEN_MARGIN_WIDTH)
+    max_width = _compute_screen_size_limit(
+        screen_width,
+        margin=MAIN_WINDOW_SCREEN_MARGIN_WIDTH,
+        ratio=MAIN_WINDOW_SCREEN_WIDTH_RATIO,
+    )
+    if max_width is not None:
         width = min(MAIN_WINDOW_DEFAULT_WIDTH, max_width)
     else:
         width = MAIN_WINDOW_DEFAULT_WIDTH
 
-    if screen_height and screen_height > 0:
-        max_height = max(MAIN_WINDOW_MIN_HEIGHT, screen_height - MAIN_WINDOW_SCREEN_MARGIN_HEIGHT)
+    max_height = _compute_screen_size_limit(
+        screen_height,
+        margin=MAIN_WINDOW_SCREEN_MARGIN_HEIGHT,
+        ratio=MAIN_WINDOW_SCREEN_HEIGHT_RATIO,
+    )
+    if max_height is not None:
         height = min(MAIN_WINDOW_DEFAULT_HEIGHT, max_height)
     else:
         height = MAIN_WINDOW_DEFAULT_HEIGHT
 
+    return width, height
+
+
+def _compute_main_window_min_size(
+    *,
+    screen_width: Optional[int] = None,
+    screen_height: Optional[int] = None,
+) -> tuple[int, int]:
+    max_width = _compute_screen_size_limit(
+        screen_width,
+        margin=MAIN_WINDOW_SCREEN_MARGIN_WIDTH,
+        ratio=MAIN_WINDOW_SCREEN_WIDTH_RATIO,
+    )
+    max_height = _compute_screen_size_limit(
+        screen_height,
+        margin=MAIN_WINDOW_SCREEN_MARGIN_HEIGHT,
+        ratio=MAIN_WINDOW_SCREEN_HEIGHT_RATIO,
+    )
+
+    width = min(MAIN_WINDOW_MIN_WIDTH, max_width) if max_width is not None else MAIN_WINDOW_MIN_WIDTH
+    height = min(MAIN_WINDOW_MIN_HEIGHT, max_height) if max_height is not None else MAIN_WINDOW_MIN_HEIGHT
     return width, height
 
 
@@ -1272,9 +1338,7 @@ class ConfigSelectionDialog(tk.Toplevel):
         self.update_idletasks()
         width = self.winfo_width()
         height = self.winfo_height()
-        x = (self.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.winfo_screenheight() // 2) - (height // 2)
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        _set_centered_window_geometry(self, width, height)
 
     def _fit_to_content(self) -> None:
         """根据当前内容调整对话框尺寸，避免路径换行时遮挡按钮。"""
@@ -1306,7 +1370,7 @@ class ConfigSelectionDialog(tk.Toplevel):
             current_height=current_height,
         )
 
-        self.geometry(f"{target_width}x{target_height}")
+        _set_centered_window_geometry(self, target_width, target_height)
 
     def _show_dialog(self) -> None:
         """确保对话框在 macOS 上可见并获得焦点"""
@@ -1410,10 +1474,14 @@ class MainWindow(tk.Tk):
             screen_width=self.winfo_screenwidth(),
             screen_height=self.winfo_screenheight(),
         )
-        self.geometry(f"{target_width}x{target_height}")
+        _set_centered_window_geometry(self, target_width, target_height)
 
         # 最小尺寸
-        self.minsize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
+        min_width, min_height = _compute_main_window_min_size(
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        self.minsize(min_width, min_height)
 
         # 窗口居中
         self.center_window()
@@ -1456,9 +1524,7 @@ class MainWindow(tk.Tk):
         self.update_idletasks()
         width = self.winfo_width()
         height = self.winfo_height()
-        x = (self.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.winfo_screenheight() // 2) - (height // 2)
-        self.geometry(f'{width}x{height}+{x}+{y}')
+        _set_centered_window_geometry(self, width, height)
 
     def create_menu_bar(self):
         """创建菜单栏"""
@@ -2068,25 +2134,10 @@ class MainWindow(tk.Tk):
         """创建章节树右键菜单。"""
         self.outline_context_menu = tk.Menu(self, tearoff=0)
         self.outline_context_menu.add_command(
-            label="生成提炼总结",
-            command=self.generate_context_menu_summary,
-        )
-        self.outline_context_menu.add_command(
-            label="设置章节依赖...",
-            command=self.edit_context_menu_dependencies,
-        )
-        self.outline_context_menu.add_command(
             label="提炼事实卡片",
             command=self.extract_context_menu_facts,
         )
         self._context_menu_heading: Optional[HeadingNode] = None
-
-    def _summary_menu_label_for_heading(self, heading: HeadingNode) -> str:
-        """根据章节状态生成右键菜单文案。"""
-        output_status = self.bid_writer.get_output_summary_status(heading)
-        if output_status == "missing_output":
-            return "生成规划摘要"
-        return "刷新提炼总结"
 
     def _list_extracted_fact_cards_for_heading(self, heading: HeadingNode) -> list[Any]:
         """读取当前章节已保存的正文提炼事实卡片。"""
@@ -2290,7 +2341,8 @@ class MainWindow(tk.Tk):
         if not self.bid_writer.load_outline():
             messagebox.showerror(
                 "错误",
-                self.bid_writer.last_error_message or "加载大纲失败"
+                self.bid_writer.last_error_message or "加载大纲失败",
+                parent=self,
             )
             return False
 
@@ -2330,17 +2382,12 @@ class MainWindow(tk.Tk):
         root_headings = self.adapter.get_outline_tree()
         query = self.search_var.get().strip() if hasattr(self, "search_var") else ""
         status_filter = self.status_filter_var.get() if hasattr(self, "status_filter_var") else "全部"
-        dependency_source_targets = self.bid_writer.get_dependency_source_targets()
-        dependency_target_sources = self.bid_writer.get_dependency_target_sources()
-
         for heading in root_headings:
             self._add_tree_node(
                 "",
                 heading,
                 query,
                 status_filter,
-                dependency_source_targets,
-                dependency_target_sources,
             )
 
     def reset_tree_view_state(self):
@@ -2507,8 +2554,6 @@ class MainWindow(tk.Tk):
         heading: HeadingNode,
         query: str = "",
         status_filter: str = "全部",
-        dependency_source_targets: Optional[dict[str, list[HeadingNode]]] = None,
-        dependency_target_sources: Optional[dict[str, list[HeadingNode]]] = None,
     ):
         """递归添加树节点"""
         if not self._heading_or_descendant_matches(heading, query, status_filter):
@@ -2517,13 +2562,7 @@ class MainWindow(tk.Tk):
         status, progress_info, row_tag = self._get_heading_tree_row_values(heading)
         if not heading.children:
             self.visible_leaf_count += 1
-        source_targets = (dependency_source_targets or {}).get(heading.full_path, [])
-        dependency_sources = (dependency_target_sources or {}).get(heading.full_path, [])
-        display_title = _format_heading_tree_title(
-            heading.title,
-            is_dependency_source=bool(source_targets),
-            depends_on_count=len(dependency_sources),
-        )
+        display_title = _format_heading_tree_title(heading.title)
 
         node_id = self.outline_tree.insert(
             parent, 'end',
@@ -2534,10 +2573,6 @@ class MainWindow(tk.Tk):
 
         # 保存节点映射
         self.tree_node_map[node_id] = heading
-        tooltip_text = _format_dependency_tooltip(dependency_sources)
-        if tooltip_text:
-            self._outline_tree_tooltips[node_id] = tooltip_text
-
         # 递归添加子节点
         for child in heading.children:
             self._add_tree_node(
@@ -2545,8 +2580,6 @@ class MainWindow(tk.Tk):
                 child,
                 query,
                 status_filter,
-                dependency_source_targets,
-                dependency_target_sources,
             )
 
     def _get_selected_leaf_headings(self) -> List[HeadingNode]:
@@ -2629,10 +2662,10 @@ class MainWindow(tk.Tk):
                 label=self._selected_fact_card_action_label(selected_headings),
                 state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
             )
-            self.chapter_menu.entryconfigure(4, state=chapter_tools_state)
-            self.chapter_menu.entryconfigure(5, state=chapter_tools_state)
+            self.chapter_menu.entryconfigure(2, state=chapter_tools_state)
+            self.chapter_menu.entryconfigure(3, state=chapter_tools_state)
             self.chapter_menu.entryconfigure(
-                7,
+                5,
                 state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL),
             )
 
@@ -2715,10 +2748,6 @@ class MainWindow(tk.Tk):
         self.outline_tree.focus(item_id)
         self._context_menu_heading = heading
         self.outline_context_menu.entryconfigure(
-            0,
-            label=self._summary_menu_label_for_heading(heading),
-        )
-        self.outline_context_menu.entryconfigure(
             CONTEXT_MENU_FACT_CARD_INDEX,
             label=self._fact_card_menu_label_for_heading(heading),
         )
@@ -2735,63 +2764,6 @@ class MainWindow(tk.Tk):
         if heading is not None:
             return heading
         return self._get_single_selected_leaf_heading()
-
-    def generate_context_menu_summary(self):
-        """为右键选中的章节生成或复用摘要。"""
-        heading = self._get_context_menu_heading()
-        if heading is None:
-            messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
-            return
-        self._set_single_heading_selection(heading)
-
-        output_status = self.bid_writer.get_output_summary_status(heading)
-        summary_kind = "正文摘要"
-        previous_status = self.status_text.get()
-        try:
-            if output_status == "missing_output":
-                should_generate = messagebox.askyesno(
-                    "生成提炼总结",
-                    "该章节当前还没有已生成正文。\n\n是否基于章节边界、需求和评分关注先生成一份规划摘要？",
-                    parent=self,
-                )
-                if not should_generate:
-                    return
-                self.status_text.set(f"正在生成规划摘要：{heading.title}")
-                self.update_idletasks()
-                result = self.bid_writer.ensure_planned_chapter_summary(heading)
-                summary_kind = "规划摘要"
-            else:
-                self.status_text.set(f"正在生成正文摘要：{heading.title}")
-                self.update_idletasks()
-                result = self.bid_writer.ensure_output_chapter_summary(heading)
-                summary_kind = "正文摘要"
-        finally:
-            self.status_text.set(previous_status)
-
-        if result is None:
-            messagebox.showwarning(
-                "提示",
-                "当前未能生成该章节的提炼总结，请稍后重试。",
-                parent=self,
-            )
-            return
-
-        self._show_workspace_message(
-            f"章节摘要：{heading.full_path}",
-            f"已生成并缓存{summary_kind}",
-            result.summary,
-            generated_char_count=_count_text_characters(result.summary),
-        )
-        self.status_text.set(f"已生成{summary_kind}：{heading.title}")
-
-    def edit_context_menu_dependencies(self):
-        """为右键选中的章节设置依赖项。"""
-        heading = self._get_context_menu_heading()
-        if heading is None:
-            messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
-            return
-        self._set_single_heading_selection(heading)
-        self.edit_selected_dependencies()
 
     def on_tree_open_close(self, event):
         """记录用户手动展开/收缩的树状态"""
@@ -2848,14 +2820,15 @@ class MainWindow(tk.Tk):
         try:
             next_bid_writer = BidWriter(str(selected_path))
         except Exception as e:
-            messagebox.showerror("错误", f"加载配置失败：\n{e}")
+            messagebox.showerror("错误", f"加载配置失败：\n{e}", parent=self)
             self.status_text.set("配置切换失败")
             return
 
         if not next_bid_writer.load_outline():
             messagebox.showerror(
                 "错误",
-                next_bid_writer.last_error_message or "切换配置后加载大纲失败"
+                next_bid_writer.last_error_message or "切换配置后加载大纲失败",
+                parent=self,
             )
             self.status_text.set("配置切换失败")
             return
@@ -2891,7 +2864,7 @@ class MainWindow(tk.Tk):
         """批量生成选中的标题"""
         selected_headings = self._get_selected_leaf_headings()
         if not selected_headings:
-            messagebox.showwarning("警告", "请先选择要生成的四级标题")
+            messagebox.showwarning("警告", "请先选择要生成的四级标题", parent=self)
             return
 
         # 获取生成参数
@@ -2921,7 +2894,8 @@ class MainWindow(tk.Tk):
             f"附加要求：{additional_requirements or '（无）'}\n"
             f"目标篇幅：{target_word_range.display_text} 字\n"
             f"Mermaid图示上限：{max_mermaid_flowcharts_per_section}"
-            f"{warning_line}"
+            f"{warning_line}",
+            parent=self,
         ):
             return
 
@@ -3051,7 +3025,7 @@ class MainWindow(tk.Tk):
             return
 
         if self.generated_leaf_count == 0:
-            messagebox.showwarning("提示", "当前没有可整合的已生成章节")
+            messagebox.showwarning("提示", "当前没有可整合的已生成章节", parent=self)
             return
 
         output_title = self._prompt_merge_output_title()
@@ -3066,7 +3040,7 @@ class MainWindow(tk.Tk):
             result = self.bid_writer.merge_generated_sections(output_title=output_title)
         except Exception as e:
             self.status_text.set("整合标书失败")
-            messagebox.showerror("错误", f"生成整合标书失败：\n{e}")
+            messagebox.showerror("错误", f"生成整合标书失败：\n{e}", parent=self)
             return
 
         output_path = _display_path(result.filepath.resolve(), Path.cwd().resolve())
@@ -3078,7 +3052,7 @@ class MainWindow(tk.Tk):
 
         merged_message += f"\n\n输出文件：\n{output_path}"
         self.status_text.set(f"整合标书已生成: {result.filepath.name}")
-        messagebox.showinfo("整合完成", merged_message)
+        messagebox.showinfo("整合完成", merged_message, parent=self)
 
     def _prompt_merge_output_title(self) -> Optional[str]:
         """提示用户输入整合标书文件名。"""
@@ -3141,148 +3115,6 @@ class MainWindow(tk.Tk):
                 else:
                     # 递归处理子节点
                     self._select_all_leaf_nodes(child_id)
-
-    def _dependency_source_status_text(self, heading: HeadingNode) -> str:
-        has_output = self.bid_writer.file_saver.find_existing_filepath(heading) is not None
-        has_summary = self.bid_writer.has_cached_chapter_summary(heading)
-        if has_output and has_summary:
-            return "已有正文/摘要"
-        if has_output:
-            return "已有正文"
-        if has_summary:
-            return "已有摘要"
-        return "未生成"
-
-    def _edit_chapter_dependencies_dialog(self, target_heading: HeadingNode) -> Optional[list[HeadingNode]]:
-        all_leaf_headings = [
-            heading
-            for heading in self.adapter.get_all_headings()
-            if not heading.children and heading.full_path != target_heading.full_path
-        ]
-        current_dependency_paths = {
-            heading.full_path for heading in self.bid_writer.get_dependency_headings(target_heading)
-        }
-
-        dialog = tk.Toplevel(self)
-        dialog.title("设置章节依赖")
-        apply_window_surface(dialog)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.minsize(760, 520)
-
-        ttk.Label(
-            dialog,
-            text=f"目标章节：{target_heading.full_path}",
-            style="SectionTitle.TLabel",
-        ).pack(fill=tk.X, padx=16, pady=(16, 8))
-        ttk.Label(
-            dialog,
-            text="请选择当前章节依赖的关联章节（可多选）。状态仅作参考：已有正文会优先提炼正文摘要，已有摘要会直接复用。",
-            style="Muted.TLabel",
-            wraplength=700,
-            justify=tk.LEFT,
-        ).pack(fill=tk.X, padx=16, pady=(0, 10))
-
-        list_frame = ttk.Frame(dialog, padding=(16, 0, 16, 0))
-        list_frame.pack(fill=tk.BOTH, expand=True)
-        dependency_tree = ttk.Treeview(
-            list_frame,
-            columns=("status",),
-            show="tree headings",
-            selectmode="extended",
-        )
-        dependency_tree.heading("#0", text="章节")
-        dependency_tree.heading("status", text="状态")
-        dependency_tree.column("#0", width=540, anchor=tk.W)
-        dependency_tree.column("status", width=140, anchor=tk.CENTER, stretch=False)
-        self._configure_heading_tree_tags(dependency_tree)
-
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=dependency_tree.yview)
-        dependency_tree.configure(yscrollcommand=scrollbar.set)
-        dependency_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        dependency_item_map: dict[str, HeadingNode] = {}
-        for heading in all_leaf_headings:
-            item_id = dependency_tree.insert(
-                "",
-                tk.END,
-                text=heading.full_path,
-                values=(self._dependency_source_status_text(heading),),
-            )
-            dependency_item_map[item_id] = heading
-            if heading.full_path in current_dependency_paths:
-                dependency_tree.selection_add(item_id)
-
-        footer = ttk.Frame(dialog, padding=(16, 12, 16, 16))
-        footer.pack(fill=tk.X)
-
-        status_var = tk.StringVar(
-            value=f"当前已选 {len(current_dependency_paths)} 个依赖章节"
-        )
-        ttk.Label(footer, textvariable=status_var, style="SummaryLabel.TLabel").pack(
-            side=tk.LEFT
-        )
-
-        def _sync_status(*_args):
-            status_var.set(f"当前已选 {len(dependency_tree.selection())} 个依赖章节")
-
-        dependency_tree.bind("<<TreeviewSelect>>", _sync_status)
-
-        result: dict[str, Optional[list[HeadingNode]]] = {"value": None}
-
-        def _save_selection():
-            selected = [
-                dependency_item_map[item_id]
-                for item_id in dependency_tree.selection()
-                if item_id in dependency_item_map
-            ]
-            result["value"] = selected
-            dialog.destroy()
-
-        ttk.Button(
-            footer,
-            text="保存",
-            command=_save_selection,
-            width=10,
-            **_bootstyle_kwargs("primary"),
-        ).pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(
-            footer,
-            text="取消",
-            command=dialog.destroy,
-            width=10,
-            **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.RIGHT)
-
-        dialog.update_idletasks()
-        width = max(dialog.winfo_reqwidth(), 760)
-        height = max(dialog.winfo_reqheight(), 520)
-        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (height // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
-
-        self.wait_window(dialog)
-        return result["value"]
-
-    def edit_selected_dependencies(self):
-        """为当前唯一选中的叶子章节设置依赖关系。"""
-        target_heading = self._get_single_selected_leaf_heading()
-        if target_heading is None:
-            messagebox.showwarning("提示", "请先只选择一个叶子章节，再设置依赖关系。", parent=self)
-            return
-
-        selected_dependencies = self._edit_chapter_dependencies_dialog(target_heading)
-        if selected_dependencies is None:
-            return
-
-        self.bid_writer.set_chapter_dependencies(target_heading, selected_dependencies)
-        self.apply_tree_filters()
-        count = len(selected_dependencies)
-        if count == 0:
-            self.status_text.set(f"已清空章节依赖：{target_heading.title}")
-        else:
-            self.status_text.set(f"已保存章节依赖：{target_heading.title}（{count} 个）")
 
     def extract_selected_facts(self):
         """为当前唯一选中的章节提炼事实卡片。"""
@@ -3445,101 +3277,6 @@ class MainWindow(tk.Tk):
                 lines.append(f"  • {card.name}：{card.content}")
         return "\n".join(lines)
 
-    def prewarm_dependency_summaries(self):
-        """提前提炼所有被依赖且已有正文的章节摘要。"""
-        dependency_headings = self.bid_writer.get_all_dependency_source_headings()
-        if not dependency_headings:
-            messagebox.showinfo(
-                "预提炼依赖摘要",
-                "当前项目还没有配置任何章节依赖关系。",
-                parent=self,
-            )
-            return
-
-        up_to_date: list[HeadingNode] = []
-        needs_refresh: list[HeadingNode] = []
-        missing_output: list[HeadingNode] = []
-        for heading in dependency_headings:
-            status = self.bid_writer.get_output_summary_status(heading)
-            if status == "up_to_date":
-                up_to_date.append(heading)
-            elif status == "needs_refresh":
-                needs_refresh.append(heading)
-            else:
-                missing_output.append(heading)
-
-        if not needs_refresh:
-            message_lines = [
-                f"当前共有 {len(dependency_headings)} 个被依赖章节。",
-                f"- 已有最新正文摘要：{len(up_to_date)}",
-                f"- 暂无正文，无法预提炼：{len(missing_output)}",
-                "",
-                "目前没有需要预提炼或刷新的正文摘要。",
-            ]
-            messagebox.showinfo(
-                "预提炼依赖摘要",
-                "\n".join(message_lines),
-                parent=self,
-            )
-            return
-
-        preview_lines = [f"- {heading.full_path}" for heading in needs_refresh[:10]]
-        remaining = len(needs_refresh) - len(preview_lines)
-        if remaining > 0:
-            preview_lines.append(f"- 其余 {remaining} 个章节未展开显示")
-
-        should_run = messagebox.askyesno(
-            "预提炼依赖摘要",
-            "\n".join(
-                [
-                    f"当前共有 {len(dependency_headings)} 个被依赖章节。",
-                    f"- 已有最新正文摘要：{len(up_to_date)}",
-                    f"- 需要预提炼/刷新：{len(needs_refresh)}",
-                    f"- 暂无正文，无法预提炼：{len(missing_output)}",
-                    "",
-                    "将处理以下章节：",
-                    *preview_lines,
-                    "",
-                    "是否现在开始预提炼这些依赖摘要？",
-                ]
-            ),
-            parent=self,
-        )
-        if not should_run:
-            return
-
-        previous_status = self.status_text.get()
-        refreshed = 0
-        failed: list[HeadingNode] = []
-        try:
-            for index, heading in enumerate(needs_refresh, 1):
-                self.status_text.set(
-                    f"正在预提炼依赖摘要 {index}/{len(needs_refresh)}: {heading.title}"
-                )
-                self.update_idletasks()
-                result = self.bid_writer.ensure_output_chapter_summary(heading)
-                if result is None:
-                    failed.append(heading)
-                    continue
-                refreshed += 1
-        finally:
-            self.status_text.set(previous_status)
-
-        result_lines = [
-            f"已处理 {len(needs_refresh)} 个需预提炼章节。",
-            f"- 成功刷新/生成摘要：{refreshed}",
-            f"- 已是最新摘要，未处理：{len(up_to_date)}",
-            f"- 暂无正文，已跳过：{len(missing_output)}",
-        ]
-        if failed:
-            result_lines.append(f"- 提炼失败：{len(failed)}")
-        messagebox.showinfo(
-            "预提炼完成",
-            "\n".join(result_lines),
-            parent=self,
-        )
-        self.status_text.set(f"依赖摘要预提炼完成：成功 {refreshed} 个")
-
     def _run_background_task_with_busy_dialog(
         self,
         *,
@@ -3606,9 +3343,7 @@ class MainWindow(tk.Tk):
                 extra_width=20,
                 extra_height=16,
             )
-            x = (busy_dialog.winfo_screenwidth() // 2) - (width // 2)
-            y = (busy_dialog.winfo_screenheight() // 2) - (height // 2)
-            busy_dialog.geometry(f"{width}x{height}+{x}+{y}")
+            _set_centered_window_geometry(busy_dialog, width, height)
             return busy_dialog, indicator
 
         def _worker_wrapper() -> None:
@@ -3725,7 +3460,6 @@ class MainWindow(tk.Tk):
         headings: list[HeadingNode],
         *,
         initial_requirements: str = "",
-        dependency_hint: str = "",
     ):
         """
         获取生成参数对话框
@@ -3762,14 +3496,6 @@ class MainWindow(tk.Tk):
         style_text_widget(req_text)
         req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
         req_text.insert('1.0', initial_requirements)
-        if dependency_hint.strip():
-            ttk.Label(
-                dialog,
-                text=dependency_hint,
-                style="Muted.TLabel",
-                wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
-                justify=tk.LEFT,
-            ).pack(padx=20, pady=(0, 10), anchor=tk.W)
 
         # 目标篇幅基准值
         words_frame = ttk.Frame(dialog)
@@ -3891,13 +3617,17 @@ class MainWindow(tk.Tk):
             try:
                 target_words = words_var.get()
                 if target_words < target_words_min or target_words > target_words_max:
-                    messagebox.showwarning("警告", f"目标篇幅基准必须在{target_words_min}-{target_words_max}之间")
+                    messagebox.showwarning(
+                        "警告",
+                        f"目标篇幅基准必须在{target_words_min}-{target_words_max}之间",
+                        parent=dialog,
+                    )
                     return
 
                 additional_req = req_text.get('1.0', tk.END).strip()
                 max_mermaid_flowcharts_per_section = mermaid_var.get()
                 if max_mermaid_flowcharts_per_section < 0:
-                    messagebox.showwarning("警告", "Mermaid图示上限不能小于 0")
+                    messagebox.showwarning("警告", "Mermaid图示上限不能小于 0", parent=dialog)
                     return
                 fact_card_mode = bool(fact_card_mode_var.get()) if self.bid_writer.config.fact_cards_enabled else False
                 manual_fact_card_selections = (
@@ -3918,7 +3648,11 @@ class MainWindow(tk.Tk):
                 )
                 dialog.destroy()
             except tk.TclError:
-                messagebox.showwarning("警告", "请输入有效的目标篇幅和 Mermaid 图示上限")
+                messagebox.showwarning(
+                    "警告",
+                    "请输入有效的目标篇幅和 Mermaid 图示上限",
+                    parent=dialog,
+                )
 
         def on_cancel():
             dialog.destroy()
@@ -3947,11 +3681,7 @@ class MainWindow(tk.Tk):
             extra_width=GENERATION_DIALOG_EXTRA_WIDTH,
             extra_height=GENERATION_DIALOG_EXTRA_HEIGHT,
         )
-        dialog.geometry(f"{dialog_width}x{dialog_height}")
-
-        x = (dialog.winfo_screenwidth() // 2) - (dialog_width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (dialog_height // 2)
-        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        _set_centered_window_geometry(dialog, dialog_width, dialog_height)
 
         # 等待对话框关闭
         self.wait_window(dialog)
@@ -4305,7 +4035,7 @@ class MainWindow(tk.Tk):
             else:
                 subprocess.Popen(["xdg-open", str(output_dir)])
         else:
-            messagebox.showerror("错误", "输出目录不存在")
+            messagebox.showerror("错误", "输出目录不存在", parent=self)
 
     def update_stats(self):
         """更新统计信息"""
@@ -4339,7 +4069,7 @@ class MainWindow(tk.Tk):
 - Ctrl+0: 收缩全部
 - Esc: 清空当前选择
 """
-        messagebox.showinfo("使用说明", help_text)
+        messagebox.showinfo("使用说明", help_text, parent=self)
 
     def show_about(self):
         """显示关于"""
@@ -4355,7 +4085,7 @@ class MainWindow(tk.Tk):
 - 状态跟踪
 - 进度显示
 """
-        messagebox.showinfo("关于", about_text)
+        messagebox.showinfo("关于", about_text, parent=self)
 
 
 def run_gui(config_path: Optional[str] = None):

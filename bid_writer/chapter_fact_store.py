@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional
 
-from .chapter_summary_store import _now_string, _write_json_atomic
 from .config import Config
 from .outline_parser import HeadingNode
+
+
+def _now_string() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
 
 
 @dataclass(frozen=True)
@@ -105,8 +121,6 @@ class ChapterFactStore:
             }
 
         try:
-            import json
-
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {

@@ -15,6 +15,8 @@ from .fact_cards import (
 )
 from .gui import (
     _bootstyle_kwargs,
+    _compute_screen_limited_dialog_size,
+    _set_centered_window_geometry,
     apply_window_surface,
     setup_gui_theme,
     style_canvas_widget,
@@ -22,13 +24,20 @@ from .gui import (
 )
 
 
-FACT_CARD_LIBRARY_GEOMETRY = "980x820"
+FACT_CARD_LIBRARY_WIDTH = 980
+FACT_CARD_LIBRARY_HEIGHT = 820
 FACT_CARD_LIBRARY_MIN_SIZE = (860, 720)
 FACT_CARD_LIBRARY_CURRENT_TREE_ROWS = 7
 FACT_CARD_LIBRARY_MANUAL_EDITOR_MIN_HEIGHT = 400
 FACT_CARD_EXTRACTION_WORKSPACE_WIDTH = 1080
 FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT = 760
 FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE = (1080, 620)
+FACT_CARD_DRAFT_REVIEW_WIDTH = 920
+FACT_CARD_DRAFT_REVIEW_HEIGHT = 720
+FACT_CARD_DRAFT_REVIEW_MIN_SIZE = (780, 560)
+FACT_CARD_MANUAL_WIDTH = 920
+FACT_CARD_MANUAL_HEIGHT = 520
+FACT_CARD_MANUAL_MIN_SIZE = (820, 460)
 FACT_CARD_INSTRUCTION_PLACEHOLDER_COLOR = "#6b7280"
 
 
@@ -365,8 +374,16 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
         self._instruction_normal_foreground = ""
 
         self.title("提炼章节事实卡片")
-        self.geometry(f"{FACT_CARD_EXTRACTION_WORKSPACE_WIDTH}x{FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT}")
-        self.minsize(*FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE)
+        window_size = _compute_screen_limited_dialog_size(
+            desired_width=FACT_CARD_EXTRACTION_WORKSPACE_WIDTH,
+            desired_height=FACT_CARD_EXTRACTION_WORKSPACE_HEIGHT,
+            min_width=FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE[0],
+            min_height=FACT_CARD_EXTRACTION_WORKSPACE_MIN_SIZE[1],
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        _set_centered_window_geometry(self, window_size.width, window_size.height)
+        self.minsize(window_size.min_width, window_size.min_height)
         self.transient(parent)
         self.grab_set()
 
@@ -604,8 +621,16 @@ class FactCardDraftReviewDialog(tk.Toplevel):
         self.result: Optional[list[FactCardDraft]] = None
 
         self.title("提炼事实卡片草稿")
-        self.geometry("920x720")
-        self.minsize(780, 560)
+        window_size = _compute_screen_limited_dialog_size(
+            desired_width=FACT_CARD_DRAFT_REVIEW_WIDTH,
+            desired_height=FACT_CARD_DRAFT_REVIEW_HEIGHT,
+            min_width=FACT_CARD_DRAFT_REVIEW_MIN_SIZE[0],
+            min_height=FACT_CARD_DRAFT_REVIEW_MIN_SIZE[1],
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        _set_centered_window_geometry(self, window_size.width, window_size.height)
+        self.minsize(window_size.min_width, window_size.min_height)
         self.transient(parent)
         self.grab_set()
 
@@ -661,8 +686,16 @@ class ManualFactCardDialog(tk.Toplevel):
         self.result: Optional[FactCardDraft] = None
 
         self.title("新增事实卡片")
-        self.geometry("920x520")
-        self.minsize(820, 460)
+        window_size = _compute_screen_limited_dialog_size(
+            desired_width=FACT_CARD_MANUAL_WIDTH,
+            desired_height=FACT_CARD_MANUAL_HEIGHT,
+            min_width=FACT_CARD_MANUAL_MIN_SIZE[0],
+            min_height=FACT_CARD_MANUAL_MIN_SIZE[1],
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        _set_centered_window_geometry(self, window_size.width, window_size.height)
+        self.minsize(window_size.min_width, window_size.min_height)
         self.transient(parent)
         self.grab_set()
 
@@ -745,8 +778,16 @@ class FactCardLibraryDialog(tk.Toplevel):
         self.cards = cards
 
         self.title("事实卡片库")
-        self.geometry(FACT_CARD_LIBRARY_GEOMETRY)
-        self.minsize(*FACT_CARD_LIBRARY_MIN_SIZE)
+        window_size = _compute_screen_limited_dialog_size(
+            desired_width=FACT_CARD_LIBRARY_WIDTH,
+            desired_height=FACT_CARD_LIBRARY_HEIGHT,
+            min_width=FACT_CARD_LIBRARY_MIN_SIZE[0],
+            min_height=FACT_CARD_LIBRARY_MIN_SIZE[1],
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        _set_centered_window_geometry(self, window_size.width, window_size.height)
+        self.minsize(window_size.min_width, window_size.min_height)
         self.transient(parent)
         self.grab_set()
 
