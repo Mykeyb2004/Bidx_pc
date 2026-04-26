@@ -634,7 +634,7 @@ def test_mainwindow_manual_fact_card_dialog_appends_to_library(monkeypatch):
     assert fake_window.status_text.get() == "已新增事实卡片：项目经理"
 
 
-def test_mainwindow_chapter_menu_exposes_manual_fact_card_entry():
+def test_mainwindow_chapter_menu_hides_dependency_entries():
     class _FakeMenu:
         def __init__(self):
             self.labels: list[str] = []
@@ -644,8 +644,6 @@ def test_mainwindow_chapter_menu_exposes_manual_fact_card_entry():
             self.labels.append(label)
 
     fake_window = SimpleNamespace(
-        edit_selected_dependencies=lambda: None,
-        prewarm_dependency_summaries=lambda: None,
         extract_selected_facts=lambda: None,
         open_manual_fact_card_dialog=lambda: None,
         open_fact_card_library_dialog=lambda: None,
@@ -655,8 +653,6 @@ def test_mainwindow_chapter_menu_exposes_manual_fact_card_entry():
     MainWindow._populate_chapter_tools_menu(fake_window, menu)
 
     assert menu.labels == [
-        "设置章节依赖...",
-        "预提炼依赖摘要...",
         "提炼当前章节事实卡片",
         "新增事实卡片...",
         "管理事实卡片",
@@ -683,8 +679,6 @@ def test_mainwindow_top_menus_expose_project_chapter_and_view_groups():
         open_output_dir=lambda: None,
         quit=lambda: None,
         batch_generate=lambda: None,
-        edit_selected_dependencies=lambda: None,
-        prewarm_dependency_summaries=lambda: None,
         extract_selected_facts=lambda: None,
         open_manual_fact_card_dialog=lambda: None,
         open_fact_card_library_dialog=lambda: None,
@@ -717,8 +711,6 @@ def test_mainwindow_top_menus_expose_project_chapter_and_view_groups():
     ]
     assert chapter_menu.labels == [
         "生成所选",
-        "设置章节依赖...",
-        "预提炼依赖摘要...",
         "提炼当前章节事实卡片",
         "新增事实卡片...",
         "管理事实卡片",

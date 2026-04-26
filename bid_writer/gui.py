@@ -1594,8 +1594,6 @@ class MainWindow(tk.Tk):
         menu.add_command(label="整合标书", command=self.merge_generated_sections)
 
     def _populate_chapter_tools_menu(self, menu: tk.Menu) -> None:
-        menu.add_command(label="设置章节依赖...", command=self.edit_selected_dependencies)
-        menu.add_command(label="预提炼依赖摘要...", command=self.prewarm_dependency_summaries)
         menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
         menu.add_command(label="新增事实卡片...", command=self.open_manual_fact_card_dialog)
         menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
