@@ -245,6 +245,65 @@ class FactCardStore:
         self._save_config_payload(payload)
         return saved_cards
 
+    def save_library_card(
+        self,
+        draft: FactCardDraft | dict[str, Any],
+        *,
+        source: FactCardSource | None = None,
+    ) -> list[FactCard]:
+        payload = self._load_config_payload()
+        block = self._normalize_fact_cards_block(payload)
+        existing_cards = self._cards_from_block(block)
+        normalized_draft = self._coerce_draft(draft)
+        if normalized_draft is None:
+            return existing_cards
+
+        now = self._now_iso()
+        saved_card: FactCard | None = None
+        updated_cards: list[FactCard] = []
+
+        for card in existing_cards:
+            if normalized_draft.card_id and card.id == normalized_draft.card_id:
+                saved_card = FactCard(
+                    id=card.id,
+                    name=normalized_draft.name,
+                    content=normalized_draft.content,
+                    category=normalized_draft.category,
+                    scope=normalized_draft.scope,
+                    enforcement=normalized_draft.enforcement,
+                    active=card.active,
+                    source=source or card.source,
+                    created_at=card.created_at,
+                    updated_at=now,
+                )
+                updated_cards.append(saved_card)
+                continue
+            updated_cards.append(card)
+
+        if saved_card is None:
+            next_generated_id = max(len(existing_cards) + 1, 1)
+            while self._id_exists(f"fact-card-{next_generated_id}", existing_cards, updated_cards):
+                next_generated_id += 1
+            saved_card = FactCard(
+                id=f"fact-card-{next_generated_id}",
+                name=normalized_draft.name,
+                content=normalized_draft.content,
+                category=normalized_draft.category,
+                scope=normalized_draft.scope,
+                enforcement=normalized_draft.enforcement,
+                active=True,
+                source=source or FactCardSource(type="manual"),
+                created_at=now,
+                updated_at=now,
+            )
+            updated_cards.append(saved_card)
+
+        block["cards"] = [card.to_dict() for card in updated_cards]
+        self._clean_all_chapter_defaults(block)
+        payload["fact_cards"] = block
+        self._save_config_payload(payload)
+        return updated_cards
+
     def replace_extracted_cards(
         self,
         chapter_path: str,

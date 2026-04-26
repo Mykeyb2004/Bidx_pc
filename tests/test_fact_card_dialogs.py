@@ -496,10 +496,11 @@ def test_fact_card_library_dialog_layout_uses_list_only_window_size():
     assert fact_card_dialogs.FACT_CARD_LIBRARY_MIN_SIZE[1] <= 520
 
 
-def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monkeypatch):
-    saved_drafts: list[FactCardDraft] = []
+def test_mainwindow_fact_card_library_edit_reuses_extraction_workspace(monkeypatch):
+    saved_calls: list[tuple[FactCardDraft, FactCardSource | None]] = []
     workspace_messages: list[tuple[str, str, str, int]] = []
-    manual_dialog_initials: list[FactCardDraft] = []
+    extraction_dialog_calls: list[dict[str, object]] = []
+    extract_callback_calls: list[str] = []
 
     class _FakeLibraryDialog:
         calls = 0
@@ -522,13 +523,16 @@ def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monk
         enforcement="strong",
     )
 
-    class _FakeManualDialog:
-        def __init__(self, _parent, *, initial_draft=None, **_kwargs):
-            manual_dialog_initials.append(initial_draft)
-            self.result = edited_draft
+    class _FakeExtractionDialog:
+        def __init__(self, _parent, **kwargs):
+            extraction_dialog_calls.append(kwargs)
+            self.result = fact_card_dialogs.FactCardExtractionDialogResult(
+                instruction="重新提炼服务承诺",
+                drafts=[edited_draft],
+            )
 
     monkeypatch.setattr(fact_card_dialogs, "FactCardLibraryDialog", _FakeLibraryDialog)
-    monkeypatch.setattr(fact_card_dialogs, "ManualFactCardDialog", _FakeManualDialog)
+    monkeypatch.setattr(fact_card_dialogs, "FactCardExtractionWorkspaceDialog", _FakeExtractionDialog)
 
     manual_card = FactCard(
         id="manual-a",
@@ -546,19 +550,28 @@ def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monk
         category="承诺",
         scope="local",
         enforcement="reference",
-        source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
+        source=FactCardSource(
+            type="chapter_extract",
+            chapter_path="技术方案 > 质量保障措施",
+            extraction_instruction="提炼承诺",
+        ),
     )
+    heading = SimpleNamespace(title="质量保障措施", full_path="技术方案 > 质量保障措施")
 
     class _FakeBidWriter:
         def __init__(self):
             self.cards = [manual_card, extracted_card]
             self.fact_card_store = SimpleNamespace(list_cards=lambda active_only=False: self.cards)
+            self.parser = SimpleNamespace(find_heading_by_full_path=lambda path: heading if path == heading.full_path else None)
 
-        def save_fact_card_library(self, drafts):
-            draft_list = list(drafts)
-            saved_drafts.extend(draft_list)
-            source_by_id = {card.id: card.source for card in self.cards}
+        def extract_fact_card_drafts_from_output_with_diagnostics(self, heading_arg, instruction):
+            extract_callback_calls.append(f"{heading_arg.full_path}|{instruction}")
+            return [edited_draft]
+
+        def save_fact_card_library_card(self, draft, source=None):
+            saved_calls.append((draft, source))
             self.cards = [
+                self.cards[0],
                 FactCard(
                     id=draft.card_id,
                     name=draft.name,
@@ -566,9 +579,8 @@ def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monk
                     category=draft.category,
                     scope=draft.scope,
                     enforcement=draft.enforcement,
-                    source=source_by_id[draft.card_id],
-                )
-                for draft in draft_list
+                    source=source or self.cards[1].source,
+                ),
             ]
             return self.cards
 
@@ -583,34 +595,38 @@ def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monk
 
     MainWindow.open_fact_card_library_dialog(fake_window)
 
-    assert saved_drafts == [
-        FactCardDraft(
-            card_id="manual-a",
-            name="企业资质",
-            content="一级资质",
-            category="资质",
-            scope="global",
-            enforcement="strong",
-        ),
-        FactCardDraft(
-            card_id="extract-a",
-            name="服务响应承诺",
-            content="提供 7×24 小时响应支持",
-            category="服务承诺",
-            scope="global",
-            enforcement="strong",
-        ),
+    assert extraction_dialog_calls == [
+        {
+            "heading_title": "质量保障措施",
+            "initial_instruction": "提炼承诺",
+            "extract_callback": extraction_dialog_calls[0]["extract_callback"],
+            "initial_drafts": [
+                FactCardDraft(
+                    card_id="extract-a",
+                    name="服务承诺",
+                    content="7×24小时响应",
+                    category="承诺",
+                    scope="local",
+                    enforcement="reference",
+                )
+            ],
+            "initial_status": "来源：提炼 · 技术方案 > 质量保障措施",
+        }
     ]
-    assert manual_dialog_initials == [
-        FactCardDraft(
-            card_id="extract-a",
-            name="服务承诺",
-            content="7×24小时响应",
-            category="承诺",
-            scope="local",
-            enforcement="reference",
-        ),
+    assert saved_calls == [
+        (
+            edited_draft,
+            FactCardSource(
+                type="chapter_extract",
+                chapter_path="技术方案 > 质量保障措施",
+                extraction_instruction="重新提炼服务承诺",
+            ),
+        )
     ]
+    extract_callback = extraction_dialog_calls[0]["extract_callback"]
+    assert callable(extract_callback)
+    assert extract_callback("重新提炼服务承诺") == [edited_draft]
+    assert extract_callback_calls == ["技术方案 > 质量保障措施|重新提炼服务承诺"]
     assert workspace_messages == [
         (
             "事实卡片库",
@@ -619,7 +635,7 @@ def test_mainwindow_fact_card_library_edit_preserves_other_cards_and_source(monk
             len("- 服务响应承诺：提供 7×24 小时响应支持"),
         )
     ]
-    assert fake_window.bid_writer.cards[1].source.type == "chapter_extract"
+    assert fake_window.bid_writer.cards[1].source.extraction_instruction == "重新提炼服务承诺"
     assert fake_window.status_text.get() == "已更新事实卡片：服务响应承诺"
 
 

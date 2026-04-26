@@ -16,7 +16,7 @@ from .chapter_fact_store import ChapterFactStore
 from .config import Config
 from .fact_card_extractor import FactCardExtractionResult, FactCardExtractor
 from .fact_card_store import FactCardStore
-from .fact_cards import FactCard, FactCardDraft, FactCardSelection
+from .fact_cards import FactCard, FactCardDraft, FactCardSelection, FactCardSource
 from .file_saver import FileSaver
 from .outline_parser import HeadingNode, parse_outline
 
@@ -132,6 +132,15 @@ class BidWriter:
     ) -> list[FactCard]:
         """保存事实卡片库编辑结果，保留已有卡片来源和 ID。"""
         return self.fact_card_store.save_library_cards(drafts)
+
+    def save_fact_card_library_card(
+        self,
+        draft: FactCardDraft | dict,
+        *,
+        source: FactCardSource | None = None,
+    ) -> list[FactCard]:
+        """保存单张事实卡片编辑结果，可选择更新来源元数据。"""
+        return self.fact_card_store.save_library_card(draft, source=source)
 
     def replace_extracted_fact_cards(
         self,

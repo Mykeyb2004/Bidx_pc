@@ -734,6 +734,71 @@ fact_cards:
     ]
 
 
+def test_save_library_card_updates_single_card_source_instruction(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: manual-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      category: 资质
+      active: true
+      source:
+        type: manual
+    - id: extract-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      category: 承诺
+      active: true
+      source:
+        type: chapter_extract
+        chapter_path: 技术方案 > 质量保障措施
+        extraction_instruction: 提炼承诺
+  chapter_defaults:
+    技术方案 > 质量保障措施:
+      - card_id: extract-a
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    saved = store.save_library_card(
+        FactCardDraft(
+            card_id="extract-a",
+            name="服务响应承诺",
+            content="提供 7×24 小时响应支持",
+            category="服务承诺",
+            scope="local",
+            enforcement="strong",
+        ),
+        source=FactCardSource(
+            type="chapter_extract",
+            chapter_path="技术方案 > 质量保障措施",
+            extraction_instruction="重新提炼服务承诺",
+        ),
+    )
+
+    assert [(card.id, card.name, card.source.extraction_instruction) for card in saved] == [
+        ("manual-a", "企业资质", ""),
+        ("extract-a", "服务响应承诺", "重新提炼服务承诺"),
+    ]
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert [
+        (item["id"], item["name"], item["source"]["type"], item["source"].get("chapter_path"), item["source"].get("extraction_instruction"))
+        for item in payload["fact_cards"]["cards"]
+    ] == [
+        ("manual-a", "企业资质", "manual", None, None),
+        ("extract-a", "服务响应承诺", "chapter_extract", "技术方案 > 质量保障措施", "重新提炼服务承诺"),
+    ]
+    assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [{"card_id": "extract-a"}]
+
+
 def test_resolve_generation_fact_cards_prefers_explicit_selection_over_defaults(tmp_path: Path):
     config_path = _build_config(
         tmp_path,
