@@ -91,24 +91,32 @@ fact_cards:
     - id: card-qualification
       name: 企业资质
       content: 具备建筑工程施工总承包一级资质。
+      scope: global
+      enforcement: strong
       active: true
       source:
         type: manual
     - id: card-service
       name: 服务承诺
       content: 提供7×24小时响应机制。
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
     - id: card-manager-a
       name: 项目经理
       content: 张三
+      scope: local
+      enforcement: strong
       active: true
       source:
         type: manual
     - id: card-manager-b
       name: 项目经理
       content: 李四
+      scope: local
+      enforcement: strong
       active: true
       source:
         type: chapter_extract
@@ -116,7 +124,4 @@ fact_cards:
         extraction_instruction: 提取项目经理
   chapter_defaults:
     综合服务项目投标方案 > 项目实施方案 > 质量保障措施:
-      - card_id: card-qualification
-        usage: strong
       - card_id: card-service
-        usage: reference

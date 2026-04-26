@@ -6,7 +6,13 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Any, Callable, Optional
 
-from .fact_cards import FactCard, FactCardDraft, FactCardSelection
+from .fact_cards import (
+    FactCard,
+    FactCardDraft,
+    FactCardSelection,
+    normalize_fact_card_enforcement,
+    normalize_fact_card_scope,
+)
 from .gui import (
     _bootstyle_kwargs,
     apply_window_surface,
@@ -62,16 +68,15 @@ class FactCardSelectionPanel(ttk.LabelFrame):
         super().__init__(master, text="事实卡片选择", padding=(12, 10))
         self.cards = cards
         self._selection_vars: dict[str, tk.BooleanVar] = {}
-        self._usage_vars: dict[str, tk.StringVar] = {}
 
-        initial_map = {selection.card_id: selection.usage for selection in initial_selections or []}
+        initial_card_ids = {selection.card_id for selection in initial_selections or []}
 
         actions = ttk.Frame(self)
         actions.pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             actions,
-            text="全选为参考",
-            command=self.select_all_reference,
+            text="全选局部卡片",
+            command=self.select_all,
             width=12,
             **_bootstyle_kwargs("secondary"),
         ).pack(side=tk.LEFT)
@@ -95,10 +100,8 @@ class FactCardSelectionPanel(ttk.LabelFrame):
         scrollable.pack(fill=tk.BOTH, expand=True)
 
         for card in cards:
-            selected_var = tk.BooleanVar(value=card.id in initial_map)
-            usage_var = tk.StringVar(value=initial_map.get(card.id, "reference"))
+            selected_var = tk.BooleanVar(value=card.id in initial_card_ids)
             self._selection_vars[card.id] = selected_var
-            self._usage_vars[card.id] = usage_var
 
             row = ttk.Frame(scrollable.body, padding=(0, 6))
             row.pack(fill=tk.X)
@@ -112,18 +115,8 @@ class FactCardSelectionPanel(ttk.LabelFrame):
             )
             check.pack(side=tk.LEFT, anchor=tk.W)
 
-            ttk.Label(title_row, text=f"来源：{self._format_source(card)}").pack(side=tk.LEFT, padx=(12, 0))
-
-            usage_combo = ttk.Combobox(
-                title_row,
-                textvariable=usage_var,
-                state="readonly",
-                width=10,
-                values=("strong", "reference"),
-            )
-            usage_combo.pack(side=tk.RIGHT)
-
-            ttk.Label(title_row, text="用途：").pack(side=tk.RIGHT, padx=(0, 6))
+            meta = f"{self._format_source(card)} · {card.scope}/{card.enforcement}"
+            ttk.Label(title_row, text=f"来源：{meta}").pack(side=tk.LEFT, padx=(12, 0))
 
             ttk.Label(
                 row,
@@ -132,22 +125,15 @@ class FactCardSelectionPanel(ttk.LabelFrame):
                 wraplength=620,
             ).pack(fill=tk.X, padx=(24, 0), pady=(4, 0))
 
-            def _sync_usage(*_args, combo=usage_combo, flag=selected_var):
-                combo.configure(state="readonly" if flag.get() else "disabled")
-
-            selected_var.trace_add("write", _sync_usage)
-            _sync_usage()
-
     @staticmethod
     def _format_source(card: FactCard) -> str:
         if card.source.type == "chapter_extract" and card.source.chapter_path:
             return f"提炼 · {card.source.chapter_path}"
         return "手工"
 
-    def select_all_reference(self) -> None:
-        for card_id, selected_var in self._selection_vars.items():
+    def select_all(self) -> None:
+        for selected_var in self._selection_vars.values():
             selected_var.set(True)
-            self._usage_vars[card_id].set("reference")
 
     def clear_all(self) -> None:
         for selected_var in self._selection_vars.values():
@@ -158,12 +144,7 @@ class FactCardSelectionPanel(ttk.LabelFrame):
         for card in self.cards:
             if not self._selection_vars.get(card.id) or not self._selection_vars[card.id].get():
                 continue
-            selections.append(
-                FactCardSelection(
-                    card_id=card.id,
-                    usage=self._usage_vars.get(card.id, tk.StringVar(value="reference")).get() or "reference",
-                )
-            )
+            selections.append(FactCardSelection(card_id=card.id))
         return selections
 
 
@@ -210,7 +191,7 @@ class FactCardDraftEditor(ttk.Frame):
             self.add_empty_row()
 
     def add_empty_row(self) -> None:
-        self.add_row(FactCardDraft(name="", content="", category=""))
+        self.add_row(FactCardDraft(name="", content="", category="", scope="local", enforcement="reference"))
 
     def add_row(self, draft: FactCardDraft) -> None:
         row_data: dict[str, object] = {}
@@ -224,13 +205,33 @@ class FactCardDraftEditor(ttk.Frame):
 
         name_var = tk.StringVar(value=draft.name)
         category_var = tk.StringVar(value=draft.category)
+        scope_var = tk.StringVar(value=draft.scope or "local")
+        enforcement_var = tk.StringVar(value=draft.enforcement or "reference")
         row_data["name_var"] = name_var
         row_data["category_var"] = category_var
+        row_data["scope_var"] = scope_var
+        row_data["enforcement_var"] = enforcement_var
 
         ttk.Label(top_row, text="名称").pack(side=tk.LEFT)
         ttk.Entry(top_row, textvariable=name_var, width=22).pack(side=tk.LEFT, padx=(6, 12))
         ttk.Label(top_row, text="分类").pack(side=tk.LEFT)
         ttk.Entry(top_row, textvariable=category_var, width=18).pack(side=tk.LEFT, padx=(6, 12))
+        ttk.Label(top_row, text="作用域").pack(side=tk.LEFT)
+        ttk.Combobox(
+            top_row,
+            textvariable=scope_var,
+            values=("global", "local"),
+            state="readonly",
+            width=9,
+        ).pack(side=tk.LEFT, padx=(6, 12))
+        ttk.Label(top_row, text="约束").pack(side=tk.LEFT)
+        ttk.Combobox(
+            top_row,
+            textvariable=enforcement_var,
+            values=("strong", "reference"),
+            state="readonly",
+            width=11,
+        ).pack(side=tk.LEFT, padx=(6, 12))
         ttk.Button(
             top_row,
             text="删除",
@@ -270,12 +271,20 @@ class FactCardDraftEditor(ttk.Frame):
                 continue
             if not name or not content:
                 raise ValueError("每张卡片都需要同时填写名称和内容。")
+            scope = normalize_fact_card_scope(str(row["scope_var"].get()).strip())
+            enforcement = normalize_fact_card_enforcement(str(row["enforcement_var"].get()).strip())
+            if not scope:
+                raise ValueError("每张卡片都需要选择作用域：global 或 local。")
+            if not enforcement:
+                raise ValueError("每张卡片都需要选择约束：strong 或 reference。")
             drafts.append(
                 FactCardDraft(
                     card_id=str(row.get("card_id", "") or "").strip(),
                     name=name,
                     content=content,
                     category=category,
+                    scope=scope,
+                    enforcement=enforcement,
                 )
             )
         return drafts
@@ -577,7 +586,7 @@ class FactCardLibraryDialog(tk.Toplevel):
         tree_frame = ttk.LabelFrame(container, text="当前卡片", padding=(8, 8))
         tree_frame.pack(fill=tk.X)
 
-        columns = ("name", "source", "category", "content")
+        columns = ("name", "source", "scope", "enforcement", "category", "content")
         tree = ttk.Treeview(
             tree_frame,
             columns=columns,
@@ -586,12 +595,16 @@ class FactCardLibraryDialog(tk.Toplevel):
         )
         tree.heading("name", text="名称")
         tree.heading("source", text="来源")
+        tree.heading("scope", text="作用域")
+        tree.heading("enforcement", text="约束")
         tree.heading("category", text="分类")
         tree.heading("content", text="内容")
         tree.column("name", width=180, anchor=tk.W)
         tree.column("source", width=170, anchor=tk.W)
+        tree.column("scope", width=80, anchor=tk.W)
+        tree.column("enforcement", width=90, anchor=tk.W)
         tree.column("category", width=100, anchor=tk.W)
-        tree.column("content", width=420, anchor=tk.W)
+        tree.column("content", width=320, anchor=tk.W)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
@@ -603,7 +616,14 @@ class FactCardLibraryDialog(tk.Toplevel):
             tree.insert(
                 "",
                 tk.END,
-                values=(card.name, source_text, card.category or "-", card.content),
+                values=(
+                    card.name,
+                    source_text,
+                    card.scope,
+                    card.enforcement,
+                    card.category or "-",
+                    card.content,
+                ),
             )
 
         edit_frame = ttk.LabelFrame(container, text="卡片库编辑", padding=(8, 8))
@@ -642,6 +662,8 @@ class FactCardLibraryDialog(tk.Toplevel):
                 name=card.name,
                 content=card.content,
                 category=card.category,
+                scope=card.scope,
+                enforcement=card.enforcement,
             )
             for card in cards
         ]
@@ -654,6 +676,8 @@ class FactCardLibraryDialog(tk.Toplevel):
                 name=card.name,
                 content=card.content,
                 category=card.category,
+                scope=card.scope,
+                enforcement=card.enforcement,
             )
             for card in cards
             if card.source.type == "manual"

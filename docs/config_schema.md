@@ -186,6 +186,8 @@ fact_cards:
       name: "企业资质"
       content: "具备建筑工程施工总承包一级资质。"
       category: "资质"
+      scope: "global"        # global / local
+      enforcement: "strong"  # strong / reference
       active: true
       source:
         type: "manual"  # 或 "chapter_extract"
@@ -195,8 +197,7 @@ fact_cards:
       updated_at: "2026-04-24T10:00:00+08:00"
   chapter_defaults:
     "综合服务项目投标方案 > 项目实施方案 > 质量保障措施":
-      - card_id: "fact-card-1"
-        usage: "strong"  # 或 "reference"
+      - card_id: "fact-card-2"
 ```
 
 说明：
@@ -205,9 +206,10 @@ fact_cards:
 - `cards` 是项目级事实卡片库；可在“事实卡片库”窗口编辑名称、分类和内容，保存时保留已有卡片 ID 和来源，避免章节默认方案失效
   - `manual`：用户直接录入或在卡片库窗口新增的卡片
   - `chapter_extract`：从已生成章节正文手动提炼后，经草稿审阅确认保存，也可在卡片库窗口修订名称和内容
-- `chapter_defaults` 以**章节完整路径**为 key，保存该章节默认勾选的卡片方案
-- `usage` 只支持 `strong` / `reference`
-- 开启事实卡片模式后，本次章节扩写会优先使用显式选择或章节默认方案，不再默认注入 `knowledge_context`
+- `scope` 只支持 `global` / `local`：全局卡片在事实卡片模式下自动进入每个章节，局部卡片只通过章节显式选择或章节默认方案进入 prompt
+- `enforcement` 只支持 `strong` / `reference`：强制卡片要求扩写结果保持一致，参考卡片仅作为可引用素材
+- `chapter_defaults` 以**章节完整路径**为 key，只保存局部卡片的默认 `card_id` 列表
+- 开启事实卡片模式后，本次章节扩写会自动纳入 active 全局卡片，并使用显式选择或章节默认方案中的局部卡片，不再默认注入 `knowledge_context`
 
 ### 3.5 `models`
 

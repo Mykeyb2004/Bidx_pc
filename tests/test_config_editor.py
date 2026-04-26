@@ -166,6 +166,8 @@ fact_cards:
       name: 企业资质
       content: 示例
       category: 资质
+      scope: local
+      enforcement: strong
       source:
         type: chapter_extract
         chapter_path: 技术方案 > 质量保障措施
@@ -176,7 +178,6 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: fact-card-1
-        usage: strong
 """.strip(),
         encoding="utf-8",
     )
@@ -192,6 +193,8 @@ fact_cards:
                 "name": "企业资质",
                 "content": "示例",
                 "category": "资质",
+                "scope": "local",
+                "enforcement": "strong",
                 "source": {
                     "type": "chapter_extract",
                     "chapter_path": "技术方案 > 质量保障措施",
@@ -203,7 +206,7 @@ fact_cards:
             }
         ],
         "chapter_defaults": {
-            "技术方案 > 质量保障措施": [{"card_id": "fact-card-1", "usage": "strong"}]
+            "技术方案 > 质量保障措施": [{"card_id": "fact-card-1"}]
         },
     }
 

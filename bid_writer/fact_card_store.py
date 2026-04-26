@@ -57,34 +57,41 @@ class FactCardStore:
         self,
         selections: Iterable[FactCardSelection | dict[str, Any]],
     ) -> list[SelectedFactCard]:
-        normalized_selections = self._coerce_selection_iterable(selections)
-        cards_by_id = {card.id: card for card in self.list_cards()}
-        resolved: list[SelectedFactCard] = []
-        seen: set[str] = set()
-        for selection in normalized_selections:
-            if not selection.card_id or selection.card_id in seen:
-                continue
-            card = cards_by_id.get(selection.card_id)
-            if card is None:
-                continue
-            seen.add(selection.card_id)
-            resolved.append(SelectedFactCard.from_fact_card(card, usage=selection.usage))
-
-        conflicts = detect_strong_fact_card_conflicts(resolved)
-        if conflicts:
-            raise FactCardConflictError(conflicts)
-        return resolved
+        """Resolve active global cards plus the provided active local selections."""
+        return self.resolve_chapter_prompt_cards("", selections)
 
     def resolve_chapter_prompt_cards(
         self,
         chapter_path: str,
         selections: Iterable[FactCardSelection | dict[str, Any]] | None = None,
     ) -> list[SelectedFactCard]:
-        if selections is None:
-            normalized_selections = self.list_chapter_defaults(chapter_path)
-        else:
-            normalized_selections = self._coerce_selection_iterable(selections)
-        return self.resolve_selected_cards(normalized_selections)
+        cards = self.list_cards(active_only=False)
+        global_cards = self._active_global_cards(cards)
+        local_cards_by_id = self._active_local_cards_by_id(cards)
+        normalized_selections = (
+            self.list_chapter_defaults(chapter_path)
+            if selections is None
+            else self._coerce_selection_iterable(selections)
+        )
+
+        resolved: list[SelectedFactCard] = []
+        seen: set[str] = set()
+        for card in global_cards:
+            resolved.append(SelectedFactCard.from_fact_card(card))
+            seen.add(card.id)
+        for selection in normalized_selections:
+            if selection.card_id in seen:
+                continue
+            card = local_cards_by_id.get(selection.card_id)
+            if card is None:
+                continue
+            resolved.append(SelectedFactCard.from_fact_card(card))
+            seen.add(card.id)
+
+        conflicts = detect_strong_fact_card_conflicts(resolved)
+        if conflicts:
+            raise FactCardConflictError(conflicts)
+        return resolved
 
     def save_chapter_defaults(
         self,
@@ -137,6 +144,8 @@ class FactCardStore:
                         name=draft.name,
                         content=draft.content,
                         category=draft.category,
+                        scope=draft.scope,
+                        enforcement=draft.enforcement,
                         active=True,
                         source=FactCardSource(type="manual"),
                         created_at=matched.created_at,
@@ -155,6 +164,8 @@ class FactCardStore:
                     name=draft.name,
                     content=draft.content,
                     category=draft.category,
+                    scope=draft.scope,
+                    enforcement=draft.enforcement,
                     active=True,
                     source=FactCardSource(type="manual"),
                     created_at=now,
@@ -198,6 +209,8 @@ class FactCardStore:
                         name=draft.name,
                         content=draft.content,
                         category=draft.category,
+                        scope=draft.scope,
+                        enforcement=draft.enforcement,
                         active=matched.active,
                         source=matched.source,
                         created_at=matched.created_at,
@@ -215,6 +228,8 @@ class FactCardStore:
                 name=draft.name,
                 content=draft.content,
                 category=draft.category,
+                scope=draft.scope,
+                enforcement=draft.enforcement,
                 active=True,
                 source=FactCardSource(type="manual"),
                 created_at=now,
@@ -270,6 +285,8 @@ class FactCardStore:
                         name=draft.name,
                         content=draft.content,
                         category=draft.category,
+                        scope=draft.scope,
+                        enforcement=draft.enforcement,
                         active=True,
                         source=source,
                         created_at=matched.created_at,
@@ -288,6 +305,8 @@ class FactCardStore:
                     name=draft.name,
                     content=draft.content,
                     category=draft.category,
+                    scope=draft.scope,
+                    enforcement=draft.enforcement,
                     active=True,
                     source=source,
                     created_at=now,
@@ -323,9 +342,17 @@ class FactCardStore:
         return any(card.id == card_id for card in [*existing_cards, *replacement_cards])
 
     @staticmethod
+    def _active_global_cards(cards: list[FactCard]) -> list[FactCard]:
+        return [card for card in cards if card.active and card.scope == "global"]
+
+    @staticmethod
+    def _active_local_cards_by_id(cards: list[FactCard]) -> dict[str, FactCard]:
+        return {card.id: card for card in cards if card.active and card.scope == "local"}
+
+    @staticmethod
     def _coerce_draft(item: FactCardDraft | dict[str, Any]) -> FactCardDraft | None:
         if isinstance(item, FactCardDraft):
-            return item
+            return FactCardDraft.from_dict(item.to_dict())
         return FactCardDraft.from_dict(item if isinstance(item, dict) else None)
 
     def _load_cards(self) -> list[FactCard]:
@@ -378,7 +405,7 @@ class FactCardStore:
             raw_ids = payload.get("card_ids")
             if isinstance(raw_ids, list):
                 return [
-                    FactCardSelection(card_id=str(card_id).strip(), usage="reference")
+                    FactCardSelection(card_id=str(card_id).strip())
                     for card_id in raw_ids
                     if str(card_id).strip()
                 ]
@@ -389,7 +416,7 @@ class FactCardStore:
         selections: list[FactCardSelection],
         cards: list[FactCard],
     ) -> list[FactCardSelection]:
-        existing_ids = {card.id for card in cards}
+        existing_ids = {card.id for card in cards if card.active and card.scope == "local"}
         filtered: list[FactCardSelection] = []
         seen: set[str] = set()
         for selection in selections:

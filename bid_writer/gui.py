@@ -126,6 +126,16 @@ class GenerationErrorFeedback:
     append_to_workspace: bool = False
 
 
+@dataclass(frozen=True)
+class GenerationFactCardSelectionDialogState:
+    """生成参数对话框中的事实卡片选择状态。"""
+
+    global_cards: list[Any]
+    available_cards: list[Any]
+    default_mode: bool
+    summary_text: str
+
+
 class GenerationFailedError(RuntimeError):
     """包装扩写失败反馈，便于 UI 统一处理。"""
 
@@ -2074,6 +2084,8 @@ class MainWindow(tk.Tk):
                 name=str(getattr(card, "name", "") or ""),
                 content=str(getattr(card, "content", "") or ""),
                 category=str(getattr(card, "category", "") or ""),
+                scope=str(getattr(card, "scope", "") or ""),
+                enforcement=str(getattr(card, "enforcement", "") or ""),
             )
             for card in cards
             if str(getattr(card, "name", "") or "").strip() and str(getattr(card, "content", "") or "").strip()
@@ -3312,6 +3324,23 @@ class MainWindow(tk.Tk):
         self.status_text.set(f"已保存事实卡片库：{len(saved_cards)} 张")
 
     @staticmethod
+    def _build_generation_fact_card_dialog_state(
+        all_active_cards: list[Any],
+        initial_selections: list[Any],
+    ) -> GenerationFactCardSelectionDialogState:
+        global_cards = [card for card in all_active_cards if card.scope == "global"]
+        available_cards = [card for card in all_active_cards if card.scope == "local"]
+        return GenerationFactCardSelectionDialogState(
+            global_cards=global_cards,
+            available_cards=available_cards,
+            default_mode=bool(global_cards or available_cards or initial_selections),
+            summary_text=(
+                f"本次将自动加入 {len(global_cards)} 张全局事实卡片；"
+                "下方仅选择当前章节局部卡片。"
+            ),
+        )
+
+    @staticmethod
     def _format_fact_card_generation_error(exc: Exception) -> str:
         conflicts = getattr(exc, "conflicts", None)
         if not conflicts:
@@ -3720,12 +3749,13 @@ class MainWindow(tk.Tk):
                 from .fact_card_dialogs import FactCardSelectionPanel
 
                 heading = headings[0]
-                available_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
+                all_active_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
                 initial_selections = self.bid_writer.list_chapter_default_fact_cards(heading)
-                default_mode = bool(available_cards)
-                if initial_selections:
-                    default_mode = True
-                fact_card_mode_var.set(default_mode)
+                fact_card_dialog_state = self._build_generation_fact_card_dialog_state(
+                    all_active_cards,
+                    initial_selections,
+                )
+                fact_card_mode_var.set(fact_card_dialog_state.default_mode)
 
                 ttk.Checkbutton(
                     fact_card_frame,
@@ -3733,9 +3763,16 @@ class MainWindow(tk.Tk):
                     variable=fact_card_mode_var,
                 ).pack(anchor=tk.W, pady=(0, 8))
 
+                ttk.Label(
+                    fact_card_frame,
+                    text=fact_card_dialog_state.summary_text,
+                    justify=tk.LEFT,
+                    wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
+                ).pack(anchor=tk.W, pady=(0, 8))
+
                 fact_card_panel = FactCardSelectionPanel(
                     fact_card_frame,
-                    cards=available_cards,
+                    cards=fact_card_dialog_state.available_cards,
                     initial_selections=initial_selections,
                 )
                 fact_card_panel.pack(fill=tk.BOTH, expand=True)
@@ -3749,7 +3786,7 @@ class MainWindow(tk.Tk):
                 fact_card_mode_var.set(True)
                 ttk.Label(
                     fact_card_frame,
-                    text="批量生成不会共享临时事实卡片选择；本次仅读取各章节已保存的默认卡片方案。",
+                    text="批量生成会自动加入启用的全局事实卡片，并读取各章节已保存的局部默认卡片方案；本次不提供整批共享临时局部卡片选择。",
                     justify=tk.LEFT,
                     wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
                 ).pack(anchor=tk.W)

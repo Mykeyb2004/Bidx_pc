@@ -4,7 +4,16 @@ import yaml
 
 from bid_writer.config import Config
 from bid_writer.fact_card_store import FactCardStore
-from bid_writer.fact_cards import FactCardDraft, FactCardSelection, parse_bulk_fact_card_input
+from bid_writer.fact_cards import (
+    FactCard,
+    FactCardDraft,
+    FactCardSelection,
+    FactCardSource,
+    SelectedFactCard,
+    build_fact_card_prompt_section,
+    detect_strong_fact_card_conflicts,
+    parse_bulk_fact_card_input,
+)
 from bid_writer.main import BidWriter
 
 
@@ -31,16 +40,132 @@ project:
     return config_path
 
 
-def test_parse_bulk_fact_card_input_splits_name_and_content():
+def test_parse_bulk_fact_card_input_reads_scope_and_enforcement():
     drafts = parse_bulk_fact_card_input(
-        "企业资质：具备建筑工程施工总承包一级资质\n\n服务承诺: 提供7×24小时响应\n无效行\n 项目经理 ： 张三 "
+        "企业资质｜全局｜强制：具备建筑工程施工总承包一级资质\n"
+        "服务承诺|local|reference: 提供7×24小时响应\n"
+        "无效行\n"
+        " 项目经理 ｜ 局部 ｜ 参考 ： 张三 "
     )
 
     assert drafts == [
-        FactCardDraft(name="企业资质", content="具备建筑工程施工总承包一级资质"),
-        FactCardDraft(name="服务承诺", content="提供7×24小时响应"),
-        FactCardDraft(name="项目经理", content="张三"),
+        FactCardDraft(
+            name="企业资质",
+            content="具备建筑工程施工总承包一级资质",
+            scope="global",
+            enforcement="strong",
+        ),
+        FactCardDraft(
+            name="服务承诺",
+            content="提供7×24小时响应",
+            scope="local",
+            enforcement="reference",
+        ),
+        FactCardDraft(
+            name="项目经理",
+            content="张三",
+            scope="local",
+            enforcement="reference",
+        ),
     ]
+
+
+def test_fact_card_requires_scope_and_enforcement():
+    valid = FactCard.from_dict(
+        {
+            "id": "card-a",
+            "name": "企业资质",
+            "content": "一级资质",
+            "category": "资质",
+            "scope": "global",
+            "enforcement": "strong",
+            "active": True,
+            "source": {"type": "manual"},
+        }
+    )
+
+    assert valid is not None
+    assert valid.scope == "global"
+    assert valid.enforcement == "strong"
+    assert valid.to_dict()["scope"] == "global"
+    assert valid.to_dict()["enforcement"] == "strong"
+
+    assert FactCard.from_dict(
+        {
+            "id": "missing-scope",
+            "name": "企业资质",
+            "content": "一级资质",
+            "enforcement": "strong",
+            "source": {"type": "manual"},
+        }
+    ) is None
+    assert FactCard.from_dict(
+        {
+            "id": "bad-enforcement",
+            "name": "企业资质",
+            "content": "一级资质",
+            "scope": "global",
+            "enforcement": "must",
+            "source": {"type": "manual"},
+        }
+    ) is None
+
+
+def test_fact_card_prompt_groups_by_enforcement_and_labels_scope():
+    cards = [
+        SelectedFactCard(
+            card_id="global-strong",
+            name="企业资质",
+            content="一级资质",
+            scope="global",
+            enforcement="strong",
+        ),
+        SelectedFactCard(
+            card_id="local-reference",
+            name="实施经验",
+            content="近三年 5 个同类项目",
+            scope="local",
+            enforcement="reference",
+        ),
+    ]
+
+    section = build_fact_card_prompt_section(cards)
+
+    assert "### 强制事实" in section
+    assert "- [全局] 企业资质：一级资质" in section
+    assert "### 参考事实" in section
+    assert "- [局部] 实施经验：近三年 5 个同类项目" in section
+
+
+def test_strong_conflict_detection_uses_card_enforcement():
+    conflicts = detect_strong_fact_card_conflicts(
+        [
+            SelectedFactCard(
+                card_id="a",
+                name="项目经理",
+                content="张三",
+                scope="global",
+                enforcement="strong",
+            ),
+            SelectedFactCard(
+                card_id="b",
+                name="项目经理",
+                content="李四",
+                scope="local",
+                enforcement="strong",
+            ),
+            SelectedFactCard(
+                card_id="c",
+                name="项目经理",
+                content="王五",
+                scope="local",
+                enforcement="reference",
+            ),
+        ]
+    )
+
+    assert len(conflicts) == 1
+    assert {card.card_id for card in conflicts[0].cards} == {"a", "b"}
 
 
 def test_fact_card_store_lists_cards_and_filters_active_only(tmp_path: Path):
@@ -53,6 +178,8 @@ fact_cards:
     - id: card-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       category: 资质
       active: true
       source:
@@ -62,6 +189,8 @@ fact_cards:
     - id: card-b
       name: 历史案例
       content: 近三年完成 5 个同类项目
+      scope: local
+      enforcement: reference
       active: false
       source:
         type: manual
@@ -80,7 +209,20 @@ fact_cards:
     assert [card.id for card in all_cards] == ["card-a", "card-b"]
 
 
-def test_fact_card_store_saves_and_reads_chapter_defaults_with_usage(tmp_path: Path):
+def test_fact_card_store_reads_tracked_statistics_config_cards():
+    config_path = Path(__file__).resolve().parents[1] / "config_统计台账.yaml"
+    store = FactCardStore(Config(str(config_path)))
+
+    cards = store.list_cards(active_only=False)
+
+    assert [card.id for card in cards] == ["fact-card-1", "fact-card-2"]
+    assert [(card.scope, card.enforcement) for card in cards] == [
+        ("local", "reference"),
+        ("local", "reference"),
+    ]
+
+
+def test_fact_card_store_saves_and_reads_chapter_defaults_with_card_ids(tmp_path: Path):
     config_path = _build_config(
         tmp_path,
         """
@@ -90,6 +232,8 @@ fact_cards:
     - id: card-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -98,6 +242,8 @@ fact_cards:
     - id: card-b
       name: 服务承诺
       content: 7×24小时响应
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -110,23 +256,23 @@ fact_cards:
     saved = store.save_chapter_defaults(
         "技术方案 > 质量保障措施",
         [
-            FactCardSelection(card_id="card-a", usage="strong"),
-            FactCardSelection(card_id="missing-card", usage="reference"),
-            FactCardSelection(card_id="card-b", usage="reference"),
+            FactCardSelection(card_id="card-a"),
+            FactCardSelection(card_id="missing-card"),
+            FactCardSelection(card_id="card-b"),
         ],
     )
 
     assert saved == [
-        FactCardSelection(card_id="card-a", usage="strong"),
-        FactCardSelection(card_id="card-b", usage="reference"),
+        FactCardSelection(card_id="card-a"),
+        FactCardSelection(card_id="card-b"),
     ]
     assert store.list_chapter_defaults("技术方案 > 质量保障措施") == saved
 
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert payload["fact_cards"]["chapter_defaults"] == {
         "技术方案 > 质量保障措施": [
-            {"card_id": "card-a", "usage": "strong"},
-            {"card_id": "card-b", "usage": "reference"},
+            {"card_id": "card-a"},
+            {"card_id": "card-b"},
         ]
     }
 
@@ -141,6 +287,8 @@ fact_cards:
     - id: card-old-a
       name: 企业资质证书
       content: 初始值
+      scope: local
+      enforcement: reference
       category: 资质
       active: true
       source:
@@ -152,6 +300,8 @@ fact_cards:
     - id: keep-other
       name: 实施团队配置
       content: 保留
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: chapter_extract
@@ -162,7 +312,6 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: card-old-a
-        usage: strong
 """,
     )
     store = FactCardStore(Config(str(config_path)))
@@ -171,8 +320,8 @@ fact_cards:
         "技术方案 > 质量保障措施",
         "提取可复用资质与承诺",
         [
-            FactCardDraft(name="企业资质 证书", content="更新后", category="资质"),
-            FactCardDraft(name="服务承诺", content="新增卡片", category="承诺"),
+            FactCardDraft(name="企业资质 证书", content="更新后", category="资质", scope="local", enforcement="reference"),
+            FactCardDraft(name="服务承诺", content="新增卡片", category="承诺", scope="local", enforcement="reference"),
         ],
     )
 
@@ -203,6 +352,8 @@ fact_cards:
     - id: card-a
       name: 实施周期
       content: A 章节原值
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: chapter_extract
@@ -213,6 +364,8 @@ fact_cards:
     - id: card-b
       name: 实施周期
       content: B 章节原值
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: chapter_extract
@@ -227,7 +380,7 @@ fact_cards:
     replaced = store.replace_extracted_cards(
         "项目 > A > 质量保障措施",
         "提取 A 章节事实",
-        [FactCardDraft(name="实施周期", content="A 章节新值", category="进度")],
+        [FactCardDraft(name="实施周期", content="A 章节新值", category="进度", scope="local", enforcement="reference")],
     )
 
     assert [(card.id, card.content, card.source.chapter_path) for card in replaced] == [
@@ -251,6 +404,8 @@ fact_cards:
     - id: card-old-a
       name: 企业资质证书
       content: 原值
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: chapter_extract
@@ -265,8 +420,8 @@ fact_cards:
         "技术方案 > 质量保障措施",
         "提取资质",
         [
-            FactCardDraft(name="企业资质证书", content="更新值一", category="资质"),
-            FactCardDraft(name="企业资质 证书", content="更新值二", category="资质"),
+            FactCardDraft(name="企业资质证书", content="更新值一", category="资质", scope="local", enforcement="reference"),
+            FactCardDraft(name="企业资质 证书", content="更新值二", category="资质", scope="local", enforcement="reference"),
         ],
     )
 
@@ -293,6 +448,8 @@ fact_cards:
     - id: card-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -304,7 +461,7 @@ fact_cards:
 
     store.save_chapter_defaults(
         "技术方案 > 质量保障措施",
-        [FactCardSelection(card_id="card-a", usage="strong")],
+        [FactCardSelection(card_id="card-a")],
     )
 
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -321,6 +478,8 @@ fact_cards:
     - id: card-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -329,7 +488,6 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: card-a
-        usage: strong
 """,
     )
     store = FactCardStore(Config(str(config_path)))
@@ -353,8 +511,8 @@ fact_cards:
 
     saved = store.save_manual_cards(
         [
-            FactCardDraft(name="企业资质", content="一级资质", category="资质"),
-            FactCardDraft(name="服务承诺", content="7×24小时响应", category="承诺"),
+            FactCardDraft(name="企业资质", content="一级资质", category="资质", scope="local", enforcement="reference"),
+            FactCardDraft(name="服务承诺", content="7×24小时响应", category="承诺", scope="local", enforcement="reference"),
         ]
     )
 
@@ -369,6 +527,23 @@ fact_cards:
     ]
 
 
+def test_save_manual_cards_skips_direct_drafts_without_scope_and_enforcement(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    saved = store.save_manual_cards([FactCardDraft(name="企业资质", content="一级资质")])
+
+    assert saved == []
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["fact_cards"]["cards"] == []
+
+
 def test_save_manual_cards_preserves_category_and_non_manual_cards(tmp_path: Path):
     config_path = _build_config(
         tmp_path,
@@ -379,6 +554,8 @@ fact_cards:
     - id: manual-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       category: 资质
       active: true
       source:
@@ -388,6 +565,8 @@ fact_cards:
     - id: extract-a
       name: 服务承诺
       content: 7×24小时响应
+      scope: local
+      enforcement: reference
       category: 承诺
       active: true
       source:
@@ -398,15 +577,13 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: manual-a
-        usage: strong
       - card_id: extract-a
-        usage: reference
 """,
     )
     store = FactCardStore(Config(str(config_path)))
 
     saved = store.save_manual_cards(
-        [FactCardDraft(name="企业资质", content="一级资质", category="资质")]
+        [FactCardDraft(name="企业资质", content="一级资质", category="资质", scope="local", enforcement="reference")]
     )
 
     assert [(card.id, card.category, card.source.type) for card in saved] == [
@@ -418,8 +595,8 @@ fact_cards:
         ("manual-a", "资质", "manual"),
     ]
     assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
-        {"card_id": "manual-a", "usage": "strong"},
-        {"card_id": "extract-a", "usage": "reference"},
+        {"card_id": "manual-a"},
+        {"card_id": "extract-a"},
     ]
 
 
@@ -433,6 +610,8 @@ fact_cards:
     - id: manual-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       category: 资质
       active: true
       source:
@@ -442,7 +621,6 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: manual-a
-        usage: strong
 """,
     )
     store = FactCardStore(Config(str(config_path)))
@@ -454,6 +632,8 @@ fact_cards:
                 name="企业资质证书",
                 content="具备建筑工程施工总承包一级资质",
                 category="资质",
+                scope="local",
+                enforcement="reference",
             )
         ]
     )
@@ -466,7 +646,7 @@ fact_cards:
         ("manual-a", "企业资质证书", "具备建筑工程施工总承包一级资质")
     ]
     assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
-        {"card_id": "manual-a", "usage": "strong"}
+        {"card_id": "manual-a"}
     ]
 
 
@@ -480,6 +660,8 @@ fact_cards:
     - id: manual-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       category: 资质
       active: true
       source:
@@ -489,6 +671,8 @@ fact_cards:
     - id: extract-a
       name: 服务承诺
       content: 7×24小时响应
+      scope: local
+      enforcement: reference
       category: 承诺
       active: true
       source:
@@ -500,9 +684,7 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: manual-a
-        usage: strong
       - card_id: extract-a
-        usage: reference
 """,
     )
     store = FactCardStore(Config(str(config_path)))
@@ -514,14 +696,18 @@ fact_cards:
                 name="企业资质证书",
                 content="具备建筑工程施工总承包一级资质",
                 category="资质证书",
+                scope="local",
+                enforcement="reference",
             ),
             FactCardDraft(
                 card_id="extract-a",
                 name="服务响应承诺",
                 content="提供 7×24 小时响应支持",
                 category="服务承诺",
+                scope="local",
+                enforcement="reference",
             ),
-            FactCardDraft(name="项目经理", content="项目经理由张三担任", category="人员团队"),
+            FactCardDraft(name="项目经理", content="项目经理由张三担任", category="人员团队", scope="local", enforcement="reference"),
         ]
     )
 
@@ -543,8 +729,8 @@ fact_cards:
     assert payload["fact_cards"]["cards"][1]["source"]["chapter_path"] == "技术方案 > 质量保障措施"
     assert payload["fact_cards"]["cards"][1]["source"]["extraction_instruction"] == "提炼承诺"
     assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
-        {"card_id": "manual-a", "usage": "strong"},
-        {"card_id": "extract-a", "usage": "reference"},
+        {"card_id": "manual-a"},
+        {"card_id": "extract-a"},
     ]
 
 
@@ -558,6 +744,8 @@ fact_cards:
     - id: card-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -566,6 +754,8 @@ fact_cards:
     - id: card-b
       name: 服务承诺
       content: 7×24小时响应
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -574,18 +764,17 @@ fact_cards:
   chapter_defaults:
     技术方案 > 质量保障措施:
       - card_id: card-a
-        usage: strong
 """,
     )
     writer = BidWriter(str(config_path))
 
     selected = writer.resolve_generation_fact_cards(
         "技术方案 > 质量保障措施",
-        [FactCardSelection(card_id="card-b", usage="reference")],
+        [FactCardSelection(card_id="card-b")],
         fact_card_mode=True,
     )
 
-    assert [(card.card_id, card.usage) for card in selected] == [("card-b", "reference")]
+    assert [(card.card_id, card.scope, card.enforcement) for card in selected] == [("card-b", "local", "reference")]
 
 
 def test_bid_writer_exposes_task_1_and_task_2_fact_card_apis(tmp_path: Path):
@@ -598,6 +787,8 @@ fact_cards:
     - id: card-a
       name: 企业资质
       content: 一级资质
+      scope: local
+      enforcement: reference
       active: true
       source:
         type: manual
@@ -610,10 +801,95 @@ fact_cards:
     listed = writer.list_fact_cards()
     saved = writer.save_chapter_default_fact_cards(
         "技术方案 > 质量保障措施",
-        [FactCardSelection(card_id="card-a", usage="strong")],
+        [FactCardSelection(card_id="card-a")],
     )
 
     assert writer.config.fact_cards_enabled is True
     assert isinstance(writer.fact_card_store, FactCardStore)
     assert [card.id for card in listed] == ["card-a"]
-    assert saved == [FactCardSelection(card_id="card-a", usage="strong")]
+    assert saved == [FactCardSelection(card_id="card-a")]
+
+
+def test_resolve_chapter_prompt_cards_auto_includes_global_cards(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+    - id: inactive-global
+      name: 不启用
+      content: 不应出现
+      scope: global
+      enforcement: reference
+      active: false
+      source:
+        type: manual
+  chapter_defaults:
+    技术方案 > 质量保障措施:
+      - card_id: local-a
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    selected = store.resolve_chapter_prompt_cards("技术方案 > 质量保障措施")
+
+    assert [(card.card_id, card.scope, card.enforcement) for card in selected] == [
+        ("global-a", "global", "strong"),
+        ("local-a", "local", "reference"),
+    ]
+
+
+def test_save_chapter_defaults_filters_global_cards_and_writes_card_ids_only(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    saved = store.save_chapter_defaults(
+        "技术方案 > 质量保障措施",
+        [FactCardSelection(card_id="global-a"), FactCardSelection(card_id="local-a")],
+    )
+
+    assert saved == [FactCardSelection(card_id="local-a")]
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
+        {"card_id": "local-a"}
+    ]

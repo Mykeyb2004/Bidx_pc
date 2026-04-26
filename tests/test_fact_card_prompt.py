@@ -60,8 +60,8 @@ def test_resolve_selected_cards_fails_fast_on_strong_conflict(tmp_path: Path):
     with pytest.raises(FactCardConflictError) as exc_info:
         store.resolve_selected_cards(
             [
-                {"card_id": "card-manager-a", "usage": "required"},
-                {"card_id": "card-manager-b", "usage": "strong"},
+                {"card_id": "card-manager-a"},
+                {"card_id": "card-manager-b"},
             ]
         )
 
@@ -94,6 +94,24 @@ def test_fact_card_mode_prompt_includes_fact_cards_and_skips_knowledge_context(m
     assert block_map["knowledge_context"]["section_names"] == []
 
 
+def test_fact_card_mode_prompt_auto_includes_global_cards_without_defaults(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path)
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "进度计划安排")
+
+    selected_cards = FactCardStore(config).resolve_chapter_prompt_cards(heading.full_path)
+    result = writer.build_prompt_result(
+        heading,
+        target_words=1200,
+        fact_card_mode=True,
+        selected_fact_cards=selected_cards,
+    )
+
+    assert "## 事实卡片参考" in result.prompt
+    assert "[全局] 企业资质" in result.prompt
+    assert "[局部] 服务承诺" not in result.prompt
+
+
 def test_prepare_generation_trace_context_records_fact_card_payload(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path)
     store = FactCardStore(config)
@@ -119,14 +137,16 @@ def test_prepare_generation_trace_context_records_fact_card_payload(monkeypatch,
             "card_id": "card-qualification",
             "name": "企业资质",
             "content": "具备建筑工程施工总承包一级资质。",
-            "usage": "strong",
+            "scope": "global",
+            "enforcement": "strong",
             "source": {"type": "manual"},
         },
         {
             "card_id": "card-service",
             "name": "服务承诺",
             "content": "提供7×24小时响应机制。",
-            "usage": "reference",
+            "scope": "local",
+            "enforcement": "reference",
             "source": {"type": "manual"},
         },
     ]
@@ -142,14 +162,16 @@ def test_fact_card_mode_disabled_ignores_selected_cards_and_trace(monkeypatch, t
             "card_id": "card-manager-a",
             "name": "项目经理",
             "content": "项目经理由张三担任。",
-            "usage": "strong",
+            "scope": "local",
+            "enforcement": "strong",
             "source": {"type": "manual"},
         },
         {
             "card_id": "card-manager-b",
             "name": "项目经理",
             "content": "项目经理由李四担任。",
-            "usage": "strong",
+            "scope": "local",
+            "enforcement": "strong",
             "source": {"type": "manual"},
         },
     ]
@@ -161,7 +183,8 @@ def test_fact_card_mode_disabled_ignores_selected_cards_and_trace(monkeypatch, t
                 card_id=item["card_id"],
                 name=item["name"],
                 content=item["content"],
-                usage=item["usage"],
+                scope=item["scope"],
+                enforcement=item["enforcement"],
             )
         )
 

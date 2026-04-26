@@ -7,7 +7,7 @@ from typing import Any
 from openai import OpenAI
 
 from .config import Config
-from .fact_cards import FactCardDraft
+from .fact_cards import FactCardDraft, normalize_fact_card_enforcement, normalize_fact_card_scope
 from .file_saver import FileSaver
 from .outline_parser import HeadingNode
 
@@ -104,9 +104,11 @@ class FactCardExtractor:
                 "输出要求：",
                 "1. 仅输出 JSON 数组，不要输出额外说明。",
                 "2. 只输出 1 张事实卡片；如果没有明确核心事实，则输出空数组 []。",
-                "3. 每项字段包含：name、content，可选 category。",
-                "4. 选择最能代表本章节核心内容、最适合后续章节复用或引用的一条事实。",
-                "5. 内容必须具体、可验证、信息密度高，避免泛泛总结、修饰性评价和重复表述。",
+                "3. 每项字段必须包含：name、content、scope、enforcement，可选 category。",
+                "4. scope 只能是 global 或 local：主体信息、资质能力、统一承诺、全项目通用要求用 global；只适用于当前章节主题、局部措施、局部流程的内容用 local。",
+                "5. enforcement 只能是 strong 或 reference：必须全文一致、不能被改写成相反含义的信息用 strong；仅供借鉴、可按章节选择性吸收的信息用 reference。",
+                "6. 选择最能代表本章节核心内容、最适合后续章节复用或引用的一条事实。",
+                "7. 内容必须具体、可验证、信息密度高，避免泛泛总结、修饰性评价和重复表述。",
                 f"章节标题：{heading.title}",
                 f"章节路径：{heading.full_path}",
                 f"用户要求：{instruction.strip() or '提炼最能代表当前章节核心内容的一张事实卡片。'}",
@@ -172,8 +174,18 @@ class FactCardExtractor:
                 missing_fields.append("name")
             if not str(item.get("content", item.get("value", "")) or "").strip():
                 missing_fields.append("content")
+            if not str(item.get("scope", "") or "").strip():
+                missing_fields.append("scope")
+            if not str(item.get("enforcement", "") or "").strip():
+                missing_fields.append("enforcement")
             if missing_fields:
                 invalid_reasons.append(f"存在缺少 {'、'.join(missing_fields)} 字段的数组项。")
+            scope_value = str(item.get("scope", "") or "").strip()
+            enforcement_value = str(item.get("enforcement", "") or "").strip()
+            if scope_value and not normalize_fact_card_scope(scope_value):
+                invalid_reasons.append("存在 scope 取值不是 global/local 的数组项。")
+            if enforcement_value and not normalize_fact_card_enforcement(enforcement_value):
+                invalid_reasons.append("存在 enforcement 取值不是 strong/reference 的数组项。")
         if drafts:
             return FactCardExtractionResult(drafts=drafts)
         return FactCardExtractionResult(

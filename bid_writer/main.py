@@ -271,9 +271,10 @@ class BidWriter:
         """解析当前生成应使用的事实卡片。"""
         if not fact_card_mode:
             return []
-        if manual_selections is not None:
-            return self.fact_card_store.resolve_selected_cards(manual_selections)
-        return self.fact_card_store.resolve_chapter_prompt_cards(self._resolve_heading_path(heading))
+        return self.fact_card_store.resolve_chapter_prompt_cards(
+            self._resolve_heading_path(heading),
+            manual_selections,
+        )
 
     def extract_fact_card_drafts_from_output(
         self,

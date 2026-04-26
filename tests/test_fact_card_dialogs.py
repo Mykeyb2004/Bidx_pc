@@ -34,7 +34,15 @@ def test_fact_card_extraction_workspace_dialog_save_returns_instruction_and_draf
     dialog._last_extracted_instruction = "提取资质与承诺"
     dialog._get_instruction = lambda: "提取资质与承诺"
     dialog.editor = SimpleNamespace(
-        get_drafts=lambda: [FactCardDraft(name="企业资质", content="一级资质", category="资质")]
+        get_drafts=lambda: [
+            FactCardDraft(
+                name="企业资质",
+                content="一级资质",
+                category="资质",
+                scope="global",
+                enforcement="strong",
+            )
+        ]
     )
     closed: list[str] = []
     dialog.destroy = lambda: closed.append("destroy")
@@ -43,7 +51,15 @@ def test_fact_card_extraction_workspace_dialog_save_returns_instruction_and_draf
 
     assert dialog.result == fact_card_dialogs.FactCardExtractionDialogResult(
         instruction="提取资质与承诺",
-        drafts=[FactCardDraft(name="企业资质", content="一级资质", category="资质")],
+        drafts=[
+            FactCardDraft(
+                name="企业资质",
+                content="一级资质",
+                category="资质",
+                scope="global",
+                enforcement="strong",
+            )
+        ],
     )
     assert closed == ["destroy"]
 
@@ -64,7 +80,15 @@ def test_fact_card_extraction_workspace_dialog_save_requires_reextract_when_inst
     dialog._last_extracted_instruction = "提取资质与承诺"
     dialog._get_instruction = lambda: "只提取人员信息"
     dialog.editor = SimpleNamespace(
-        get_drafts=lambda: [FactCardDraft(name="企业资质", content="一级资质", category="资质")]
+        get_drafts=lambda: [
+            FactCardDraft(
+                name="企业资质",
+                content="一级资质",
+                category="资质",
+                scope="global",
+                enforcement="strong",
+            )
+        ]
     )
     dialog.destroy = lambda: warnings.append("destroy")
 
@@ -123,13 +147,35 @@ def test_fact_card_extraction_workspace_dialog_finish_extract_keeps_single_core_
     dialog._finish_extract(
         "提炼核心事实",
         [
-            FactCardDraft(name="核心卡片", content="核心事实", category="综合"),
-            FactCardDraft(name="次要卡片", content="次要事实", category="补充"),
+            FactCardDraft(
+                name="核心卡片",
+                content="核心事实",
+                category="综合",
+                scope="local",
+                enforcement="reference",
+            ),
+            FactCardDraft(
+                name="次要卡片",
+                content="次要事实",
+                category="补充",
+                scope="local",
+                enforcement="reference",
+            ),
         ],
         None,
     )
 
-    assert replaced == [[FactCardDraft(name="核心卡片", content="核心事实", category="综合")]]
+    assert replaced == [
+        [
+            FactCardDraft(
+                name="核心卡片",
+                content="核心事实",
+                category="综合",
+                scope="local",
+                enforcement="reference",
+            )
+        ]
+    ]
     assert dialog._has_extracted is True
     assert dialog._last_extracted_instruction == "提炼核心事实"
     assert dialog.status_var.get() == "已生成 1 张核心草稿，可继续编辑或调整要求后重提。"
@@ -164,12 +210,39 @@ def test_fact_card_extraction_workspace_dialog_shows_empty_result_details(monkey
     assert dialog.status_var.get() == "本次未生成可保存草稿，可查看提示详情。"
 
 
+def test_fact_card_draft_editor_returns_scope_and_enforcement():
+    editor = fact_card_dialogs.FactCardDraftEditor.__new__(fact_card_dialogs.FactCardDraftEditor)
+    editor._rows = [
+        {
+            "card_id": "card-a",
+            "name_var": SimpleNamespace(get=lambda: "企业资质"),
+            "category_var": SimpleNamespace(get=lambda: "资质"),
+            "scope_var": SimpleNamespace(get=lambda: "global"),
+            "enforcement_var": SimpleNamespace(get=lambda: "strong"),
+            "content_text": SimpleNamespace(get=lambda *_args: "一级资质"),
+        }
+    ]
+
+    assert editor.get_drafts() == [
+        FactCardDraft(
+            card_id="card-a",
+            name="企业资质",
+            content="一级资质",
+            category="资质",
+            scope="global",
+            enforcement="strong",
+        )
+    ]
+
+
 def test_fact_card_library_dialog_builds_editable_manual_drafts_with_card_ids():
     manual_card = FactCard(
         id="manual-a",
         name="企业资质",
         content="一级资质",
         category="资质",
+        scope="global",
+        enforcement="strong",
         source=FactCardSource(type="manual"),
     )
     extracted_card = FactCard(
@@ -177,6 +250,8 @@ def test_fact_card_library_dialog_builds_editable_manual_drafts_with_card_ids():
         name="服务承诺",
         content="7×24小时响应",
         category="承诺",
+        scope="local",
+        enforcement="reference",
         source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
     )
 
@@ -190,6 +265,8 @@ def test_fact_card_library_dialog_builds_editable_manual_drafts_with_card_ids():
             name="企业资质",
             content="一级资质",
             category="资质",
+            scope="global",
+            enforcement="strong",
         )
     ]
 
@@ -200,6 +277,8 @@ def test_fact_card_library_dialog_builds_editable_drafts_for_all_cards_with_ids(
         name="企业资质",
         content="一级资质",
         category="资质",
+        scope="global",
+        enforcement="strong",
         source=FactCardSource(type="manual"),
     )
     extracted_card = FactCard(
@@ -207,6 +286,8 @@ def test_fact_card_library_dialog_builds_editable_drafts_for_all_cards_with_ids(
         name="服务承诺",
         content="7×24小时响应",
         category="承诺",
+        scope="local",
+        enforcement="reference",
         source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
     )
 
@@ -220,12 +301,16 @@ def test_fact_card_library_dialog_builds_editable_drafts_for_all_cards_with_ids(
             name="企业资质",
             content="一级资质",
             category="资质",
+            scope="global",
+            enforcement="strong",
         ),
         FactCardDraft(
             card_id="extract-a",
             name="服务承诺",
             content="7×24小时响应",
             category="承诺",
+            scope="local",
+            enforcement="reference",
         ),
     ]
 
@@ -248,6 +333,8 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
                     name="服务响应承诺",
                     content="提供 7×24 小时响应支持",
                     category="服务承诺",
+                    scope="local",
+                    enforcement="reference",
                 )
             ]
 
@@ -262,6 +349,8 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
         name="服务承诺",
         content="7×24小时响应",
         category="承诺",
+        scope="local",
+        enforcement="reference",
         source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
     )
 
@@ -277,6 +366,8 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
                     name=draft.name,
                     content=draft.content,
                     category=draft.category,
+                    scope=draft.scope,
+                    enforcement=draft.enforcement,
                     source=fake_card.source,
                 )
                 for draft in drafts
@@ -299,6 +390,8 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
             name="服务响应承诺",
             content="提供 7×24 小时响应支持",
             category="服务承诺",
+            scope="local",
+            enforcement="reference",
         )
     ]
     assert workspace_messages == [
@@ -310,6 +403,37 @@ def test_mainwindow_fact_card_library_saves_entire_library(monkeypatch):
         )
     ]
     assert fake_window.status_text.get() == "已保存事实卡片库：1 张"
+
+
+def test_generation_fact_card_dialog_state_exposes_only_local_cards():
+    global_card = FactCard(
+        id="global-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    local_card = FactCard(
+        id="local-a",
+        name="章节承诺",
+        content="本章节服务承诺",
+        category="承诺",
+        scope="local",
+        enforcement="reference",
+        source=FactCardSource(type="chapter_extract", chapter_path="项目 > 技术方案"),
+    )
+
+    dialog_state = MainWindow._build_generation_fact_card_dialog_state(
+        [global_card, local_card],
+        initial_selections=[],
+    )
+
+    assert dialog_state.global_cards == [global_card]
+    assert dialog_state.available_cards == [local_card]
+    assert dialog_state.default_mode is True
+    assert dialog_state.summary_text == "本次将自动加入 1 张全局事实卡片；下方仅选择当前章节局部卡片。"
 
 
 def test_mainwindow_extract_facts_for_heading_uses_workspace_dialog_result(monkeypatch, tmp_path: Path):
@@ -329,7 +453,15 @@ def test_mainwindow_extract_facts_for_heading_uses_workspace_dialog_result(monke
 
         def extract_fact_card_drafts_from_output(self, heading_arg, instruction: str = ""):
             extract_calls.append((heading_arg, instruction))
-            return [FactCardDraft(name="企业资质", content="一级资质", category="资质")]
+            return [
+                FactCardDraft(
+                    name="企业资质",
+                    content="一级资质",
+                    category="资质",
+                    scope="global",
+                    enforcement="strong",
+                )
+            ]
 
         def replace_extracted_fact_cards(self, heading_arg, instruction: str, drafts):
             draft_list = list(drafts)
@@ -396,7 +528,15 @@ def test_mainwindow_extract_facts_for_heading_uses_workspace_dialog_result(monke
         (
             heading,
             "只提炼资质与承诺",
-            [FactCardDraft(name="企业资质", content="一级资质", category="资质")],
+            [
+                FactCardDraft(
+                    name="企业资质",
+                    content="一级资质",
+                    category="资质",
+                    scope="global",
+                    enforcement="strong",
+                )
+            ],
         )
     ]
     assert workspace_messages == [
@@ -421,6 +561,8 @@ def test_mainwindow_extract_facts_for_heading_loads_existing_cards(monkeypatch, 
         name="服务承诺",
         content="提供 7×24 小时响应支持",
         category="服务承诺",
+        scope="local",
+        enforcement="reference",
         source=FactCardSource(
             type="chapter_extract",
             chapter_path="项目 > 技术方案 > 质量保障措施",
@@ -500,6 +642,8 @@ def test_mainwindow_extract_facts_for_heading_loads_existing_cards(monkeypatch, 
                     name="服务承诺",
                     content="提供 7×24 小时响应支持",
                     category="服务承诺",
+                    scope="local",
+                    enforcement="reference",
                 )
             ],
             "initial_status": "已存在上次提炼结果（1 张），当前正文未检测到更新，可直接复用或编辑后保存。",
@@ -515,6 +659,8 @@ def test_mainwindow_extract_facts_for_heading_loads_existing_cards(monkeypatch, 
                     name="服务承诺",
                     content="提供 7×24 小时响应支持",
                     category="服务承诺",
+                    scope="local",
+                    enforcement="reference",
                 )
             ],
         )

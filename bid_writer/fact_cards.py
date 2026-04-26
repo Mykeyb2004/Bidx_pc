@@ -5,7 +5,25 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-_BULK_FACT_CARD_LINE_RE = re.compile(r"^\s*(?P<name>[^:：]+?)\s*[:：]\s*(?P<content>.+?)\s*$")
+_BULK_FACT_CARD_LINE_RE = re.compile(
+    r"^\s*(?P<name>[^|｜:：]+?)\s*[|｜]\s*(?P<scope>[^|｜:：]+?)\s*[|｜]\s*"
+    r"(?P<enforcement>[^:：]+?)\s*[:：]\s*(?P<content>.+?)\s*$"
+)
+
+VALID_FACT_CARD_SCOPES = {"global", "local"}
+VALID_FACT_CARD_ENFORCEMENTS = {"strong", "reference"}
+FACT_CARD_SCOPE_LABELS = {"global": "全局", "local": "局部"}
+FACT_CARD_ENFORCEMENT_LABELS = {"strong": "强制", "reference": "参考"}
+
+
+def normalize_fact_card_scope(scope: str) -> str:
+    value = str(scope or "").strip().lower()
+    return value if value in VALID_FACT_CARD_SCOPES else ""
+
+
+def normalize_fact_card_enforcement(enforcement: str) -> str:
+    value = str(enforcement or "").strip().lower()
+    return value if value in VALID_FACT_CARD_ENFORCEMENTS else ""
 
 
 def normalize_fact_card_name(name: str) -> str:
@@ -46,6 +64,8 @@ class FactCardDraft:
     name: str
     content: str
     category: str = ""
+    scope: str = ""
+    enforcement: str = ""
     card_id: str = ""
 
     @classmethod
@@ -54,13 +74,27 @@ class FactCardDraft:
         name = str(data.get("name", "") or "").strip()
         content = str(data.get("content", data.get("value", "")) or "").strip()
         category = str(data.get("category", "") or "").strip()
-        if not name or not content:
+        scope = normalize_fact_card_scope(str(data.get("scope", "") or ""))
+        enforcement = normalize_fact_card_enforcement(str(data.get("enforcement", "") or ""))
+        if not name or not content or not scope or not enforcement:
             return None
         card_id = str(data.get("card_id", data.get("id", "")) or "").strip()
-        return cls(name=name, content=content, category=category, card_id=card_id)
+        return cls(
+            name=name,
+            content=content,
+            category=category,
+            scope=scope,
+            enforcement=enforcement,
+            card_id=card_id,
+        )
 
     def to_dict(self) -> dict[str, Any]:
-        payload = {"name": self.name, "content": self.content}
+        payload = {
+            "name": self.name,
+            "content": self.content,
+            "scope": self.scope,
+            "enforcement": self.enforcement,
+        }
         if self.category:
             payload["category"] = self.category
         if self.card_id:
@@ -74,6 +108,8 @@ class FactCard:
     name: str
     content: str
     category: str = ""
+    scope: str = ""
+    enforcement: str = ""
     active: bool = True
     source: FactCardSource = field(default_factory=FactCardSource)
     created_at: str = ""
@@ -85,13 +121,17 @@ class FactCard:
         card_id = str(data.get("id", "") or "").strip()
         name = str(data.get("name", "") or "").strip()
         content = str(data.get("content", data.get("value", "")) or "").strip()
-        if not card_id or not name or not content:
+        scope = normalize_fact_card_scope(str(data.get("scope", "") or ""))
+        enforcement = normalize_fact_card_enforcement(str(data.get("enforcement", "") or ""))
+        if not card_id or not name or not content or not scope or not enforcement:
             return None
         return cls(
             id=card_id,
             name=name,
             content=content,
             category=str(data.get("category", "") or "").strip(),
+            scope=scope,
+            enforcement=enforcement,
             active=bool(data.get("active", True)),
             source=FactCardSource.from_dict(data.get("source")),
             created_at=str(data.get("created_at", "") or "").strip(),
@@ -107,6 +147,8 @@ class FactCard:
             "id": self.id,
             "name": self.name,
             "content": self.content,
+            "scope": self.scope,
+            "enforcement": self.enforcement,
             "active": self.active,
             "source": self.source.to_dict(),
         }
@@ -122,25 +164,17 @@ class FactCard:
 @dataclass(frozen=True)
 class FactCardSelection:
     card_id: str
-    usage: str = "reference"
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any] | None) -> "FactCardSelection" | None:
         data = payload if isinstance(payload, dict) else {}
         card_id = str(data.get("card_id", data.get("id", "")) or "").strip()
-        usage = str(data.get("usage", "reference") or "reference").strip().lower() or "reference"
         if not card_id:
             return None
-        if usage == "required":
-            usage = "strong"
-        elif usage == "optional":
-            usage = "reference"
-        if usage not in {"strong", "reference"}:
-            usage = "reference"
-        return cls(card_id=card_id, usage=usage)
+        return cls(card_id=card_id)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"card_id": self.card_id, "usage": self.usage or "reference"}
+        return {"card_id": self.card_id}
 
 
 @dataclass(frozen=True)
@@ -148,18 +182,19 @@ class SelectedFactCard:
     card_id: str
     name: str
     content: str
-    usage: str = "reference"
+    scope: str
+    enforcement: str
     category: str = ""
     source: FactCardSource = field(default_factory=FactCardSource)
 
     @classmethod
-    def from_fact_card(cls, card: FactCard, usage: str = "reference") -> "SelectedFactCard":
-        normalized_usage = FactCardSelection.from_dict({"card_id": card.id, "usage": usage})
+    def from_fact_card(cls, card: FactCard) -> "SelectedFactCard":
         return cls(
             card_id=card.id,
             name=card.name,
             content=card.content,
-            usage=normalized_usage.usage if normalized_usage is not None else "reference",
+            scope=card.scope,
+            enforcement=card.enforcement,
             category=card.category,
             source=card.source,
         )
@@ -173,7 +208,8 @@ class SelectedFactCard:
             "card_id": self.card_id,
             "name": self.name,
             "content": self.content,
-            "usage": self.usage,
+            "scope": self.scope,
+            "enforcement": self.enforcement,
             "source": self.source.to_dict(),
         }
         if self.category:
@@ -185,7 +221,8 @@ class SelectedFactCard:
             "card_id": self.card_id,
             "name": self.name,
             "content": self.content,
-            "usage": self.usage,
+            "scope": self.scope,
+            "enforcement": self.enforcement,
             "source": self.source.to_dict(),
         }
         if self.category:
@@ -221,7 +258,7 @@ def _normalize_fact_card_content(content: str) -> str:
 def detect_strong_fact_card_conflicts(selected_cards: list[SelectedFactCard]) -> list[FactCardConflict]:
     strong_cards_by_name: dict[str, list[SelectedFactCard]] = {}
     for card in selected_cards:
-        if card.usage != "strong":
+        if card.enforcement != "strong":
             continue
         strong_cards_by_name.setdefault(card.normalized_name, []).append(card)
 
@@ -240,20 +277,37 @@ def build_fact_card_prompt_section(selected_cards: list[SelectedFactCard]) -> st
     if not selected_cards:
         return ""
 
-    strong_cards = [card for card in selected_cards if card.usage == "strong"]
-    reference_cards = [card for card in selected_cards if card.usage != "strong"]
+    strong_cards = [card for card in selected_cards if card.enforcement == "strong"]
+    reference_cards = [card for card in selected_cards if card.enforcement != "strong"]
 
     lines = [
         "## 事实卡片参考",
-        "以下为当前章节已选事实卡片；“强约束事实”必须保持一致，“参考事实”可按章节需要择优吸收。",
+        "以下事实卡片已进入当前章节扩写上下文；“强制事实”必须保持一致，“参考事实”可按章节需要择优吸收。",
     ]
     if strong_cards:
-        lines.append("### 强约束事实")
-        lines.extend(f"- {card.name}：{card.content}" for card in strong_cards)
+        lines.append("### 强制事实")
+        lines.extend(_format_fact_card_prompt_line(card) for card in strong_cards)
     if reference_cards:
         lines.append("### 参考事实")
-        lines.extend(f"- {card.name}：{card.content}" for card in reference_cards)
+        lines.extend(_format_fact_card_prompt_line(card) for card in reference_cards)
     return "\n".join(lines)
+
+
+def _format_fact_card_prompt_line(card: SelectedFactCard) -> str:
+    scope_label = FACT_CARD_SCOPE_LABELS.get(card.scope, card.scope)
+    return f"- [{scope_label}] {card.name}：{card.content}"
+
+
+def _normalize_bulk_fact_card_scope(scope: str) -> str:
+    aliases = {"全局": "global", "局部": "local"}
+    value = str(scope or "").strip()
+    return normalize_fact_card_scope(aliases.get(value, value))
+
+
+def _normalize_bulk_fact_card_enforcement(enforcement: str) -> str:
+    aliases = {"强制": "strong", "参考": "reference"}
+    value = str(enforcement or "").strip()
+    return normalize_fact_card_enforcement(aliases.get(value, value))
 
 
 def parse_bulk_fact_card_line(line: str) -> FactCardDraft | None:
@@ -261,10 +315,12 @@ def parse_bulk_fact_card_line(line: str) -> FactCardDraft | None:
     if not match:
         return None
     name = match.group("name").strip()
+    scope = _normalize_bulk_fact_card_scope(match.group("scope"))
+    enforcement = _normalize_bulk_fact_card_enforcement(match.group("enforcement"))
     content = match.group("content").strip()
-    if not name or not content:
+    if not name or not content or not scope or not enforcement:
         return None
-    return FactCardDraft(name=name, content=content)
+    return FactCardDraft(name=name, content=content, scope=scope, enforcement=enforcement)
 
 
 def parse_bulk_fact_card_input(text: str) -> list[FactCardDraft]:

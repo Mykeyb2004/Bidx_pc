@@ -374,7 +374,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
 | `knowledge_context` | `## 投标方知识库` | 启用了知识库且成功读取到知识文档时 | 注入用户手写知识文档，经预算截断后作为一致性参考 |
-| `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在显式选择/默认方案时 | 注入当前章节选中的 `strong/reference` 事实卡片，并替代默认 `knowledge_context` |
+| `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入自动命中的全局卡片和当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组，并替代默认 `knowledge_context` |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
 | `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |
@@ -659,7 +659,7 @@ messages = [
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `fact_card_mode` | GUI 运行时入参 | 控制是否启用事实卡片模式 | 是 |
-| `selected_fact_cards` | GUI 运行时入参 / `FactCardStore.resolve_selected_cards()` | 当前章节显式选择或默认方案解析后的事实卡片 | 条件性进入 |
+| `selected_fact_cards` | GUI 运行时入参 / `FactCardStore.resolve_selected_cards()` | 解析后的事实卡片，携带卡片本体的 `scope` 与 `enforcement` | 条件性进入 |
 | `knowledge_files` | `project.inputs.knowledge_files` | 手写知识文档显式声明列表 | 条件性进入 |
 | `knowledge_directory` | `project.inputs.knowledge_directory` | 手写知识目录扫描入口 | 条件性进入 |
 | `knowledge_enabled` | `processing.knowledge.enabled` | 控制是否注入 `knowledge_context` | 是 |

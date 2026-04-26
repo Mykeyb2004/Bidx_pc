@@ -106,8 +106,8 @@ def test_fact_card_extractor_builds_prompt_with_heading_context_and_parses_json(
     output_path = tmp_path / "output" / "quality.md"
     output_path.write_text("已生成正文", encoding="utf-8")
     completions = _FakeCompletions(
-        '[{"name":"项目经理","content":"张三，5年经验","category":"人员"},'
-        '{"name":"服务承诺","content":"7×24小时响应","category":"承诺"}]'
+        '[{"name":"项目经理","content":"张三，5年经验","category":"人员","scope":"global","enforcement":"strong"},'
+        '{"name":"服务承诺","content":"7×24小时响应","category":"承诺","scope":"local","enforcement":"reference"}]'
     )
     extractor = FactCardExtractor(
         config=config,
@@ -118,7 +118,13 @@ def test_fact_card_extractor_builds_prompt_with_heading_context_and_parses_json(
     drafts = extractor.extract_from_output(heading, "提取能直接复用到其他章节的事实卡片")
 
     assert drafts == [
-        FactCardDraft(name="项目经理", content="张三，5年经验", category="人员"),
+        FactCardDraft(
+            name="项目经理",
+            content="张三，5年经验",
+            category="人员",
+            scope="global",
+            enforcement="strong",
+        ),
     ]
     request = completions.calls[0]
     assert request["model"] == "mock-model"
@@ -127,29 +133,55 @@ def test_fact_card_extractor_builds_prompt_with_heading_context_and_parses_json(
     assert f"章节路径：{heading.full_path}" in prompt
     assert "用户要求：提取能直接复用到其他章节的事实卡片" in prompt
     assert "只输出 1 张事实卡片" in prompt
+    assert "每项字段必须包含：name、content、scope、enforcement" in prompt
+    assert "scope 只能是 global 或 local" in prompt
+    assert "enforcement 只能是 strong 或 reference" in prompt
     assert "最能代表本章节核心内容" in prompt
     assert "章节正文：" in prompt
     assert "项目经理由张三担任" in prompt
 
 
+def test_fact_card_extractor_rejects_missing_scope_or_enforcement():
+    result = FactCardExtractor.parse_draft_response_with_diagnostics(
+        '[{"name":"企业资质","content":"一级资质","category":"资质"}]'
+    )
+
+    assert result.drafts == []
+    assert result.message == "模型返回了数组，但没有包含可保存的事实卡片。"
+    assert "scope" in result.detail
+    assert "enforcement" in result.detail
+
+
 def test_fact_card_extractor_parse_json_array_response_filters_invalid_items():
     drafts = FactCardExtractor.parse_draft_response(
-        '[{"name":" 企业资质 ","content":" 一级资质 ","category":"资质"},'
+        '[{"name":" 企业资质 ","content":" 一级资质 ","category":"资质","scope":"global","enforcement":"strong"},'
         '{"name":"服务承诺","content":"7×24小时响应"},{"name":"","content":"忽略"},{"title":"无效"}]'
     )
 
     assert drafts == [
-        FactCardDraft(name="企业资质", content="一级资质", category="资质")
+        FactCardDraft(
+            name="企业资质",
+            content="一级资质",
+            category="资质",
+            scope="global",
+            enforcement="strong",
+        )
     ]
 
 
 def test_fact_card_extractor_parse_json_code_fence_response():
     drafts = FactCardExtractor.parse_draft_response(
-        "```json\n[{\"name\":\"企业资质\",\"content\":\"一级资质\",\"category\":\"资质\"}]\n```"
+        "```json\n[{\"name\":\"企业资质\",\"content\":\"一级资质\",\"category\":\"资质\",\"scope\":\"global\",\"enforcement\":\"strong\"}]\n```"
     )
 
     assert drafts == [
-        FactCardDraft(name="企业资质", content="一级资质", category="资质")
+        FactCardDraft(
+            name="企业资质",
+            content="一级资质",
+            category="资质",
+            scope="global",
+            enforcement="strong",
+        )
     ]
 
 
@@ -211,11 +243,27 @@ def test_bid_writer_extracts_fact_card_drafts_from_output(tmp_path: Path):
     class _StubExtractor:
         def extract_from_output(self, heading_arg, instruction: str = ""):
             calls.append((heading_arg, instruction))
-            return [FactCardDraft(name="项目经理", content="张三", category="人员")]
+            return [
+                FactCardDraft(
+                    name="项目经理",
+                    content="张三",
+                    category="人员",
+                    scope="global",
+                    enforcement="strong",
+                )
+            ]
 
     writer.fact_card_extractor = _StubExtractor()
 
     drafts = writer.extract_fact_card_drafts_from_output(heading, "提取项目人员")
 
-    assert drafts == [FactCardDraft(name="项目经理", content="张三", category="人员")]
+    assert drafts == [
+        FactCardDraft(
+            name="项目经理",
+            content="张三",
+            category="人员",
+            scope="global",
+            enforcement="strong",
+        )
+    ]
     assert calls == [(heading, "提取项目人员")]
