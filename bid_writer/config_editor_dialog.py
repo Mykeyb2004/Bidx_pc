@@ -13,6 +13,7 @@ from .config_editor import (
     ConfigEditorDocument,
     ConnectionStatus,
     ValidationMessage,
+    create_new_config_editor_document,
     load_config_editor_document,
     summarize_model,
 )
@@ -177,12 +178,13 @@ class ConfigEditorDialog(tk.Toplevel):
         ("runtime", "运行"),
     ]
 
-    def __init__(self, parent: tk.Misc, config_path: str | Path):
+    def __init__(self, parent: tk.Misc, config_path: str | Path | None = None, *, new_config: bool = False):
         super().__init__(parent)
         self.parent_window = parent
         self.style = setup_gui_theme(self)
         apply_window_surface(self)
-        self.active_config_path = Path(config_path).expanduser().resolve()
+        self.is_new_config = new_config
+        self.active_config_path = Path(config_path or "config_新项目.yaml").expanduser().resolve()
         self.document: ConfigEditorDocument | None = None
         self.result: dict[str, Any] = {"saved_path": None, "apply_path": None}
         self._refresh_pending = False
@@ -193,7 +195,7 @@ class ConfigEditorDialog(tk.Toplevel):
         self.section_pages: dict[str, ScrollableSection] = {}
         self._tooltips: list[HoverTooltip] = []
 
-        self.title("配置编辑器")
+        self.title("新建配置" if self.is_new_config else "配置编辑器")
         window_size = _compute_screen_limited_dialog_size(
             desired_width=CONFIG_EDITOR_DEFAULT_WIDTH,
             desired_height=CONFIG_EDITOR_DEFAULT_HEIGHT,
@@ -214,7 +216,10 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self._create_variables()
         self._create_widgets()
-        self._load_document(self.active_config_path)
+        if self.is_new_config:
+            self._load_new_document()
+        else:
+            self._load_document(self.active_config_path)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _create_variables(self) -> None:
@@ -790,6 +795,14 @@ class ConfigEditorDialog(tk.Toplevel):
         self._update_connection_panel()
         self._refresh_side_panel()
 
+    def _load_new_document(self) -> None:
+        self.document = create_new_config_editor_document(self.active_config_path)
+        self.current_file_var.set("当前文件：未保存的新配置")
+        self._saved_yaml = ""
+        self._populate_vars(self.document.model)
+        self._update_connection_panel()
+        self._refresh_side_panel()
+
     def _populate_vars(self, model: dict[str, Any]) -> None:
         data = {
             "project.root_dir": model["project"]["root_dir"],
@@ -1134,6 +1147,9 @@ class ConfigEditorDialog(tk.Toplevel):
         if self._has_unsaved_changes():
             if not messagebox.askyesno("确认", "当前有未保存变更，确定要从磁盘重新载入吗？", parent=self):
                 return
+        if self.is_new_config:
+            self._load_new_document()
+            return
         self._load_document(self.document.config_path if self.document else self.active_config_path)
 
     def _has_unsaved_changes(self) -> bool:
@@ -1145,14 +1161,18 @@ class ConfigEditorDialog(tk.Toplevel):
             return True
 
     def _save_current(self) -> None:
-        self._save(target_path=self.document.config_path if self.document else self.active_config_path, ask_switch=False)
+        target_path = self.document.config_path if self.document else self.active_config_path
+        if self.is_new_config and not target_path.exists():
+            self._save_as()
+            return
+        self._save(target_path=target_path, ask_switch=False)
 
     def _save_as(self) -> None:
         initial_path = self.document.config_path if self.document else self.active_config_path
         selected = filedialog.asksaveasfilename(
             parent=self,
             initialdir=str(initial_path.parent),
-            initialfile=initial_path.name,
+            initialfile="config_新项目.yaml" if self.is_new_config else initial_path.name,
             defaultextension=".yaml",
             filetypes=[("YAML", "*.yaml *.yml")],
         )
@@ -1180,6 +1200,8 @@ class ConfigEditorDialog(tk.Toplevel):
         self._saved_yaml = self.document.render_yaml()
         self.current_file_var.set(f"当前文件：{saved_path}")
         self.result["saved_path"] = saved_path
+        self.is_new_config = False
+        self.title("配置编辑器")
 
         if saved_path.resolve() == self.active_config_path.resolve():
             self.result["apply_path"] = saved_path
