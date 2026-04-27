@@ -33,6 +33,7 @@ CONFIG_EDITOR_DEFAULT_WIDTH = 1280
 CONFIG_EDITOR_DEFAULT_HEIGHT = 860
 CONFIG_EDITOR_MIN_WIDTH = 1100
 CONFIG_EDITOR_MIN_HEIGHT = 760
+SCROLLABLE_SECTION_RIGHT_GUTTER = 28
 
 
 class ScrollableSection(ttk.Frame):
@@ -62,7 +63,8 @@ class ScrollableSection(ttk.Frame):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def _on_canvas_configure(self, event):
-        self.canvas.itemconfigure(self.window_id, width=event.width)
+        content_width = max(1, event.width - SCROLLABLE_SECTION_RIGHT_GUTTER)
+        self.canvas.itemconfigure(self.window_id, width=content_width)
 
     def _bind_mousewheel(self, _event=None):
         if self._mousewheel_bound:
@@ -703,6 +705,7 @@ class ConfigEditorDialog(tk.Toplevel):
         browse_kind: str,
         relative_to: str,
     ) -> None:
+        parent.columnconfigure(1, weight=1)
         self._add_entry_row(parent, row, label, key)
         browse_button = ttk.Button(
             parent,

@@ -52,6 +52,18 @@ def test_scrollable_section_mousewheel_catches_tclerror():
     assert calls == ["unbind"]
 
 
+def test_scrollable_section_canvas_leaves_gutter_before_scrollbar():
+    section = ScrollableSection.__new__(ScrollableSection)
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    section.window_id = "content-window"
+    section.canvas = SimpleNamespace(itemconfigure=lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    section._on_canvas_configure(SimpleNamespace(width=240))
+
+    assert calls == [(("content-window",), {"width": 212})]
+
+
 def test_config_editor_new_mode_first_save_uses_save_as_even_when_target_exists(tmp_path):
     target_path = tmp_path / "config_新项目.yaml"
     target_path.write_text("existing: true\n", encoding="utf-8")
