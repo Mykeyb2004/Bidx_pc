@@ -344,21 +344,21 @@ pruned 分支里，需求相关内容只会出现一个区块：
 3. 可选 `first_line_rule`
 4. `scope_reference`
 5. 可选 `project_background`
-6. 若启用事实卡片模式，则注入 `fact_card_context`；否则可选 `knowledge_context`
-7. 可选 `scoring_focus`
-8. 可选 `requirement_brief` / `requirement_points`
+6. 可选 `scoring_focus`
+7. 可选 `requirement_brief` / `requirement_points`
+8. 若存在可用事实卡片，则注入 `fact_card_context`
 9. 可选 `additional_requirements`
 
 #### full-context 分支
 
 1. `structure_contract`
 2. 可选 `project_background`
-3. 若启用事实卡片模式，则注入 `fact_card_context`；否则可选 `knowledge_context`
-4. 可选 `bid_requirements`
-5. 可选 `scoring_criteria`
-6. `task_card`
-7. 可选 `first_line_rule`
-8. `scope_reference`
+3. 可选 `bid_requirements`
+4. 可选 `scoring_criteria`
+5. `task_card`
+6. 可选 `first_line_rule`
+7. `scope_reference`
+8. 若存在可用事实卡片，则注入 `fact_card_context`
 9. 可选 `additional_requirements`
 
 `additional_requirements` 当前只承载操作员手工输入的附加要求。
@@ -373,8 +373,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `structure_contract` | 无独立标题；直接输出短提醒列表 | 总是出现 | 提醒“严格遵守 system 硬门禁”并补充 task 侧简短执行规则 |
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
-| `knowledge_context` | `## 投标方知识库` | 启用了知识库且成功读取到知识文档时；若事实卡片模式开启但本章无可用卡片，仍可作为兜底注入 | 注入用户手写知识文档，经预算截断后作为一致性参考 |
-| `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入自动命中的全局卡片和当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组；full-context 分支中位于章节任务卡和章节边界之后；渲染时会去除“本章节”等来源章节元话语 |
+| `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入默认勾选且未被本章排除的全局卡片，以及当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组；full-context 分支中位于章节任务卡和章节边界之后；渲染时会去除“本章节”等来源章节元话语 |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
 | `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |
@@ -448,10 +447,9 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 1. 公共段落中的 `## 章节边界参考`
 2. 如果存在项目背景摘要，则追加 `## 项目背景`
-3. 如果启用了知识库且成功读取到知识文档，则追加 `## 投标方知识库`
-4. 如果命中评分项，则追加 `## 评分关注`
-5. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
-6. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
+3. 如果命中评分项，则追加 `## 评分关注`
+4. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
+5. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
 
 这条分支不会把完整 `bid_requirements` 和完整 `scoring_criteria` 直接放进 user prompt。
 
@@ -466,9 +464,8 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 1. `structure_contract`（无 `## 结构输出硬要求` 标题，仅为短提醒列表）
 2. `## 项目背景`，仅在项目背景摘要存在时出现
-3. `## 投标方知识库`，仅在知识文档存在时出现
-4. `## 招标需求参考`
-5. `## 评分标准参考`
+3. `## 招标需求参考`
+4. `## 评分标准参考`
 
 对应原文非空时，该 section 才会真正出现。之后再进入章节动态段落，例如 `task_card`、`first_line_rule`、`scope_reference`。
 
@@ -660,10 +657,6 @@ messages = [
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `fact_card_mode` | GUI 运行时入参 | 控制是否启用事实卡片模式 | 是 |
 | `selected_fact_cards` | GUI 运行时入参 / `FactCardStore.resolve_selected_cards()` | 解析后的事实卡片，携带卡片本体的 `scope` 与 `enforcement` | 条件性进入 |
-| `knowledge_files` | `project.inputs.knowledge_files` | 手写知识文档显式声明列表 | 条件性进入 |
-| `knowledge_directory` | `project.inputs.knowledge_directory` | 手写知识目录扫描入口 | 条件性进入 |
-| `knowledge_enabled` | `processing.knowledge.enabled` | 控制是否注入 `knowledge_context` | 是 |
-| `knowledge_max_chars` | `processing.knowledge.max_chars` | 控制 `knowledge_context` 的预算截断 | 是 |
 | `target_words` | 运行时入参 | 目标篇幅基准值；会进一步推导成区间文案 | 是 |
 | `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 图示上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |
@@ -728,16 +721,13 @@ flowchart TD
 
     D --> D1[structure_contract]
     D1 --> D2[project_background 可选]
-    D2 --> D3{fact_card_mode}
-    D3 -- 是 --> D4[fact_card_context 可选]
-    D3 -- 否 --> D5[knowledge_context 可选]
-    D4 --> D6[bid_requirements 可选]
-    D5 --> D6
-    D6 --> D7[scoring_criteria 可选]
-    D7 --> D8[task_card]
-    D8 --> D9[first_line_rule 可选]
-    D9 --> D10[scope_reference]
-    D10 --> D11[additional_requirements 可选]
+    D2 --> D3[bid_requirements 可选]
+    D3 --> D4[scoring_criteria 可选]
+    D4 --> D5[task_card]
+    D5 --> D6[first_line_rule 可选]
+    D6 --> D7[scope_reference]
+    D7 --> D8[fact_card_context 可选]
+    D8 --> D9[additional_requirements 可选]
 
     G6 --> P1[task_card]
     G7 --> P1
@@ -745,19 +735,16 @@ flowchart TD
     P2 --> P3[first_line_rule 可选]
     P3 --> P4[scope_reference]
     P4 --> P5[project_background 可选]
-    P5 --> P6{fact_card_mode}
-    P6 -- 是 --> P7[fact_card_context 可选]
-    P6 -- 否 --> P8[knowledge_context 可选]
-    P7 --> P9[scoring_focus 可选]
-    P8 --> P9
-    P9 --> P10[requirement_points 或 requirement_brief]
-    P10 --> P11[additional_requirements 可选]
+    P5 --> P6[scoring_focus 可选]
+    P6 --> P7[requirement_context 可选]
+    P7 --> P8[fact_card_context 可选]
+    P8 --> P9[additional_requirements 可选]
 
     B --> I[build_system_prompt]
     I --> J[role + 最高优先级输出强约束]
 
-    D11 --> K[组装 messages]
-    P11 --> K
+    D9 --> K[组装 messages]
+    P9 --> K
     J --> K
     K --> L["messages = [system, user]"]
     L --> M[_build_request_options]

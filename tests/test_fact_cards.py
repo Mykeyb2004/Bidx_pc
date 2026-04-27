@@ -955,7 +955,99 @@ fact_cards:
     ]
 
 
-def test_save_chapter_defaults_filters_global_cards_and_writes_card_ids_only(tmp_path: Path):
+def test_resolve_chapter_prompt_cards_respects_saved_global_exclusions(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: global-b
+      name: 服务边界
+      content: 不转包
+      scope: global
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+  chapter_defaults:
+    技术方案 > 质量保障措施:
+      - card_id: global-a
+        selected: false
+      - card_id: local-a
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    selected = store.resolve_chapter_prompt_cards("技术方案 > 质量保障措施")
+
+    assert [(card.card_id, card.scope) for card in selected] == [
+        ("global-b", "global"),
+        ("local-a", "local"),
+    ]
+    assert store.list_chapter_defaults("技术方案 > 质量保障措施") == [
+        FactCardSelection(card_id="global-a", selected=False),
+        FactCardSelection(card_id="local-a"),
+    ]
+
+
+def test_manual_generation_selections_can_exclude_global_cards(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    selected = store.resolve_chapter_prompt_cards(
+        "技术方案 > 质量保障措施",
+        [
+            FactCardSelection(card_id="global-a", selected=False),
+            FactCardSelection(card_id="local-a"),
+        ],
+    )
+
+    assert [(card.card_id, card.scope) for card in selected] == [
+        ("local-a", "local"),
+    ]
+
+
+def test_save_chapter_defaults_keeps_global_exclusions_and_local_selections(tmp_path: Path):
     config_path = _build_config(
         tmp_path,
         """
@@ -984,11 +1076,18 @@ fact_cards:
 
     saved = store.save_chapter_defaults(
         "技术方案 > 质量保障措施",
-        [FactCardSelection(card_id="global-a"), FactCardSelection(card_id="local-a")],
+        [
+            FactCardSelection(card_id="global-a", selected=False),
+            FactCardSelection(card_id="local-a"),
+        ],
     )
 
-    assert saved == [FactCardSelection(card_id="local-a")]
+    assert saved == [
+        FactCardSelection(card_id="global-a", selected=False),
+        FactCardSelection(card_id="local-a"),
+    ]
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
+        {"card_id": "global-a", "selected": False},
         {"card_id": "local-a"}
     ]

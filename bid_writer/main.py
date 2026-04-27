@@ -68,7 +68,6 @@ class BidWriter:
             self.file_saver,
             self.chapter_fact_store,
         )
-        self.knowledge_assembler = self.ai_writer.knowledge_assembler
 
     def load_outline(self) -> bool:
         """加载并解析大纲"""

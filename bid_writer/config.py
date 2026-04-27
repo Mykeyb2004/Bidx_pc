@@ -613,7 +613,7 @@ class Config:
 
     @property
     def knowledge_files(self) -> list[str]:
-        """用户声明的知识文档路径列表。"""
+        """旧知识库兼容字段；当前章节生成不再据此注入 prompt。"""
         project_value = self._get_value('project', 'inputs', 'knowledge_files', default=self._MISSING)
         if project_value is not self._MISSING:
             return self._resolve_declared_paths(project_value, resolver=self._resolve_project_path)
@@ -622,7 +622,7 @@ class Config:
 
     @property
     def knowledge_directory(self) -> str:
-        """知识文档自动扫描目录。"""
+        """旧知识库兼容字段；当前章节生成不再扫描该目录注入 prompt。"""
         project_value = self._get_value('project', 'inputs', 'knowledge_directory', default=self._MISSING)
         if project_value is not self._MISSING:
             return self._resolve_declared_path(
@@ -635,12 +635,12 @@ class Config:
 
     @property
     def knowledge_enabled(self) -> bool:
-        """是否启用知识库注入。"""
+        """旧知识库兼容字段；保留读取能力但不控制章节生成 prompt。"""
         return self._get_bool(('processing', 'knowledge', 'enabled'), ('knowledge', 'enabled'), default=True)
 
     @property
     def knowledge_max_chars(self) -> int:
-        """知识库注入的最大字符数预算。"""
+        """旧知识库兼容字段；保留读取能力但不控制章节生成 prompt。"""
         return self._get_int(('processing', 'knowledge', 'max_chars'), ('knowledge', 'max_chars'), default=800)
 
     @property

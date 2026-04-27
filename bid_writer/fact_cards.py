@@ -173,6 +173,7 @@ class FactCard:
 @dataclass(frozen=True)
 class FactCardSelection:
     card_id: str
+    selected: bool = True
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any] | None) -> "FactCardSelection" | None:
@@ -180,10 +181,14 @@ class FactCardSelection:
         card_id = str(data.get("card_id", data.get("id", "")) or "").strip()
         if not card_id:
             return None
-        return cls(card_id=card_id)
+        selected = bool(data.get("selected", True))
+        return cls(card_id=card_id, selected=selected)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"card_id": self.card_id}
+        payload = {"card_id": self.card_id}
+        if not self.selected:
+            payload["selected"] = False
+        return payload
 
 
 @dataclass(frozen=True)

@@ -21,7 +21,6 @@ from .fact_cards import (
 )
 from .chapter_writing_plan import ChapterWritingPlanGenerator
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
-from .knowledge_assembler import KnowledgeAssembler
 from .outline_parser import HeadingNode
 from .project_background import ProjectBackgroundGenerator
 from .timing_logger import write_timing_log
@@ -70,7 +69,6 @@ class AIWriter:
         ("structure_rules", "Structure Rules", "user"),
         ("chapter_scope", "Chapter Scope", "user"),
         ("project_background", "Project Background", "user"),
-        ("knowledge_context", "Knowledge Context", "user"),
         ("fact_card_context", "Fact Card Context", "user"),
         ("requirement_context", "Requirement Context", "user"),
         ("scoring_context", "Scoring Context", "user"),
@@ -105,7 +103,6 @@ class AIWriter:
         )
         self.context_pruner = ChapterContextPruner(config)
         self.trace_logger = GenerationTraceLogger(config)
-        self.knowledge_assembler = KnowledgeAssembler(config)
         self.project_background_generator = (
             ProjectBackgroundGenerator(config)
             if config.project_background_enabled
@@ -596,7 +593,6 @@ class AIWriter:
     def _build_full_context_stable_prefix_sections(
         self,
         background: str,
-        knowledge_context: str,
         full_context_stats: dict[str, Any],
     ) -> list[tuple[str, str]]:
         sections: list[tuple[str, str]] = [
@@ -607,9 +603,6 @@ class AIWriter:
             sections.append(
                 ("project_background", self._build_project_background_section(background))
             )
-
-        if knowledge_context:
-            sections.append(("knowledge_context", knowledge_context))
 
         bid_requirements = self.config.bid_requirements.strip()
         full_context_stats["bid_requirements_chars"] = len(bid_requirements)
@@ -758,20 +751,6 @@ class AIWriter:
                 ],
             },
             {
-                "id": "knowledge_context",
-                "label": "Knowledge Context",
-                "prompt_kind": "user",
-                "section_names": ["knowledge_context"],
-                "source_context": [
-                    "KnowledgeAssembler.build_prompt_section"
-                    if "knowledge_context" in section_map
-                    else "",
-                    "Config.knowledge_files" if "knowledge_context" in section_map else "",
-                    "Config.knowledge_directory" if "knowledge_context" in section_map else "",
-                    "Config.knowledge_max_chars" if "knowledge_context" in section_map else "",
-                ],
-            },
-            {
                 "id": "fact_card_context",
                 "label": "Fact Card Context",
                 "prompt_kind": "user",
@@ -884,10 +863,6 @@ class AIWriter:
 
         first_line = self._format_first_line(heading)
         scope_reference = self._build_scope_reference(heading)
-        knowledge_context = self.knowledge_assembler.build_prompt_section(
-            heading=heading,
-            focus_terms=self._chapter_focus_terms(heading, pruned_context),
-        ) if not fact_card_context else ""
         background = ""
         try:
             if self.project_background_generator is not None:
@@ -904,7 +879,6 @@ class AIWriter:
         if pruned_context is None:
             full_context_sections = self._build_full_context_stable_prefix_sections(
                 background,
-                knowledge_context,
                 full_context_stats,
             )
             full_context_has_bid_requirements = any(
@@ -1000,14 +974,6 @@ class AIWriter:
                     "project_background",
                     self._build_project_background_section(background),
                 )
-            if knowledge_context:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "knowledge_context",
-                    knowledge_context,
-                )
-
             # 评分注入：优先用分类结果
             has_classified = bool(
                 pruned_context.scoring_must_respond or pruned_context.scoring_reference

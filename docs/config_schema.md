@@ -73,9 +73,6 @@ project:
     outline_file: "./outline.md"
     bid_requirements_file: "./采购需求.md"
     scoring_criteria_file: "./评分标准.md"
-    knowledge_files:
-      - "./knowledge/公司简介.md"
-    knowledge_directory: "./knowledge"
   output_dir: "./output"
 ```
 
@@ -83,8 +80,7 @@ project:
 
 - `project.root_dir` 用于声明项目资料根目录
 - `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
-- `project.inputs.knowledge_files` 允许显式声明知识文档，声明顺序优先于目录扫描顺序
-- `project.inputs.knowledge_directory` 会按文件名排序扫描目录下的 `.md` 文件，并补齐未显式声明的知识文档
+- `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
 
 ### 3.2 `writing`
 
@@ -122,9 +118,6 @@ writing:
 processing:
   path: "hybrid_extract"
   project_background:
-    enabled: true
-    max_chars: 800
-  knowledge:
     enabled: true
     max_chars: 800
   chapter_facts:
@@ -169,7 +162,7 @@ processing:
 
 - `processing.path` 决定当前项目跑哪条链路
 - `processing.project_background.*` 当前会在 `auto` 和 `full_context` 下生效
-- `processing.knowledge.*` 控制是否注入 `knowledge_context`，phase 1 仅做按条目/段落边界的硬截断
+- `processing.knowledge.*` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再注入 `knowledge_context`
 - `processing.chapter_facts.*` 控制正文 facts 提炼与缓存刷新边界；`auto_extract_on_batch` 只建议用于批量生成路径
 - `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”
 - 开启后会增加一次辅助 LLM 调用；当前实现会尽量复用正文扩写的 system prompt 与 full-context 参考前缀，以改善 prompt cache 命中率
@@ -197,6 +190,8 @@ fact_cards:
       updated_at: "2026-04-24T10:00:00+08:00"
   chapter_defaults:
     "综合服务项目投标方案 > 项目实施方案 > 质量保障措施":
+      - card_id: "fact-card-1"
+        selected: false
       - card_id: "fact-card-2"
 ```
 
@@ -206,10 +201,10 @@ fact_cards:
 - `cards` 是项目级事实卡片库；可在“事实卡片库”窗口编辑名称、分类和内容，保存时保留已有卡片 ID 和来源，避免章节默认方案失效
   - `manual`：用户直接录入或在卡片库窗口新增的卡片
   - `chapter_extract`：从已生成章节正文手动提炼后，经草稿审阅确认保存，也可在卡片库窗口修订名称和内容
-- `scope` 只支持 `global` / `local`：全局卡片在事实卡片模式下自动进入每个章节，局部卡片只通过章节显式选择或章节默认方案进入 prompt
+- `scope` 只支持 `global` / `local`：全局卡片在事实卡片模式下默认进入每个章节，并可在生成参数窗口中按章节取消；局部卡片只通过章节显式选择或章节默认方案进入 prompt
 - `enforcement` 只支持 `strong` / `reference`：强制卡片要求扩写结果保持一致，参考卡片仅作为可引用素材
-- `chapter_defaults` 以**章节完整路径**为 key，只保存局部卡片的默认 `card_id` 列表
-- 开启事实卡片模式后，本次章节扩写会自动纳入 active 全局卡片，并使用显式选择或章节默认方案中的局部卡片，不再默认注入 `knowledge_context`
+- `chapter_defaults` 以**章节完整路径**为 key：局部卡片使用 `{card_id: "..."} ` 保存默认选中；全局卡片仅在该章节被用户取消时保存 `{card_id: "...", selected: false}`
+- 开启事实卡片模式后，本次章节扩写会默认纳入 active 全局卡片，排除当前章节已记住的全局取消项，并使用显式选择或章节默认方案中的局部卡片；若没有可用卡片，则不注入投标方事实上下文
 
 ### 3.5 `models`
 

@@ -19,7 +19,6 @@ EXPECTED_BLOCK_IDS = [
     "structure_rules",
     "chapter_scope",
     "project_background",
-    "knowledge_context",
     "fact_card_context",
     "requirement_context",
     "scoring_context",
@@ -90,7 +89,7 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     block_map = {block["id"]: block for block in result.prompt_contract_blocks}
     assert block_map["system_constraints"]["prompt_kind"] == "system"
     assert block_map["chapter_task"]["section_names"] == ["task_card", "additional_requirements"]
-    assert block_map["knowledge_context"]["section_names"] == ["knowledge_context"]
+    assert "knowledge_context" not in block_map
     assert block_map["fact_card_context"]["section_names"] == []
     assert "source_context" in block_map["system_constraints"]
 
@@ -217,22 +216,22 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert "## 章节边界参考" in result.prompt
     assert "## 完整总大纲参考" not in result.prompt
     assert result.prompt.index("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。") < result.prompt.index("## 招标需求参考")
-    assert result.prompt.index("## 投标方知识库") < result.prompt.index("## 招标需求参考")
+    assert "## 投标方知识库" not in result.prompt
     assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节任务卡")
     assert result.prompt.index("## 章节任务卡") < result.prompt.index("## 章节边界参考")
 
 
-def test_full_context_prompt_can_include_knowledge_context(monkeypatch, tmp_path):
+def test_full_context_prompt_ignores_deprecated_knowledge_context(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
     result = writer.build_prompt_result(heading, target_words=1200)
 
-    assert "## 投标方知识库" in result.prompt
-    assert "公司名称：测试投标主体" in result.prompt
-    assert "项目经理：张三" in result.prompt
-    assert "（来源：knowledge_company.md）" in result.prompt
+    assert "## 投标方知识库" not in result.prompt
+    assert "公司名称：测试投标主体" not in result.prompt
+    assert "项目经理：张三" not in result.prompt
+    assert "（来源：knowledge_company.md）" not in result.prompt
 
 
 def test_finalize_generation_does_not_replace_bidder_alias_inside_technical_term(monkeypatch, tmp_path):
@@ -357,7 +356,7 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
 
     assert captured["system_prompt"] == writer.build_system_prompt()
     assert captured["shared_prompt_prefix"].startswith("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。")
-    assert "## 投标方知识库" in captured["shared_prompt_prefix"]
+    assert "## 投标方知识库" not in captured["shared_prompt_prefix"]
     assert "## 项目背景" in captured["shared_prompt_prefix"]
     assert "## 招标需求参考" in captured["shared_prompt_prefix"]
     assert "## 评分标准参考" in captured["shared_prompt_prefix"]
@@ -391,7 +390,7 @@ def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monk
     assert payload["prompt_contract"]["block_order"] == EXPECTED_BLOCK_IDS
     assert [block["id"] for block in payload["prompt_contract"]["blocks"]] == EXPECTED_BLOCK_IDS
     block_map = {block["id"]: block for block in payload["prompt_contract"]["blocks"]}
-    assert block_map["knowledge_context"]["section_names"] == ["knowledge_context"]
+    assert "knowledge_context" not in block_map
     assert block_map["fact_card_context"]["section_names"] == []
     assert block_map["system_constraints"]["source_context"]
     assert heading_payload["target_words"] == 1200

@@ -157,6 +157,7 @@ class GenerationFactCardSelectionDialogState:
 
     global_cards: list[Any]
     available_cards: list[Any]
+    initial_selections: list[Any]
     default_mode: bool
     summary_text: str
 
@@ -3416,14 +3417,16 @@ class MainWindow(tk.Tk):
         initial_selections: list[Any],
     ) -> GenerationFactCardSelectionDialogState:
         global_cards = [card for card in all_active_cards if card.scope == "global"]
-        available_cards = [card for card in all_active_cards if card.scope == "local"]
+        local_cards = [card for card in all_active_cards if card.scope == "local"]
+        available_cards = [*global_cards, *local_cards]
         return GenerationFactCardSelectionDialogState(
             global_cards=global_cards,
             available_cards=available_cards,
+            initial_selections=initial_selections,
             default_mode=bool(global_cards or available_cards or initial_selections),
             summary_text=(
-                f"本次将自动加入 {len(global_cards)} 张全局事实卡片；"
-                "下方仅选择当前章节局部卡片。"
+                "全局事实卡片默认勾选，可按当前章节需要取消；"
+                "局部卡片会读取本章节已保存的默认方案。"
             ),
         )
 
@@ -3754,7 +3757,7 @@ class MainWindow(tk.Tk):
                 fact_card_panel = FactCardSelectionPanel(
                     fact_card_frame,
                     cards=fact_card_dialog_state.available_cards,
-                    initial_selections=initial_selections,
+                    initial_selections=fact_card_dialog_state.initial_selections,
                 )
                 fact_card_panel.pack(fill=tk.BOTH, expand=True)
 
@@ -3776,6 +3779,27 @@ class MainWindow(tk.Tk):
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=(16, 20))
 
+        def collect_fact_card_selections():
+            return (
+                fact_card_panel.get_selections()
+                if fact_card_panel is not None
+                else None
+            )
+
+        def on_save_fact_card_defaults():
+            if not is_single_heading or fact_card_panel is None:
+                return
+            heading = headings[0]
+            selections_to_save = collect_fact_card_selections() or []
+            self.bid_writer.save_chapter_default_fact_cards(heading.full_path, selections_to_save)
+            self.status_text.set(f"已保存默认卡片方案：{heading.title}")
+            messagebox.showinfo(
+                "已保存",
+                "已保存本章节默认卡片方案。",
+                parent=dialog,
+            )
+            dialog.destroy()
+
         def on_ok():
             try:
                 target_words = words_var.get()
@@ -3793,11 +3817,7 @@ class MainWindow(tk.Tk):
                     messagebox.showwarning("警告", "Mermaid图示上限不能小于 0", parent=dialog)
                     return
                 fact_card_mode = bool(fact_card_mode_var.get()) if self.bid_writer.config.fact_cards_enabled else False
-                manual_fact_card_selections = (
-                    fact_card_panel.get_selections()
-                    if fact_card_panel is not None
-                    else None
-                )
+                manual_fact_card_selections = collect_fact_card_selections()
                 result["cancelled"] = False
                 result["requirements"] = additional_req
                 result["target_words"] = target_words
@@ -3820,6 +3840,16 @@ class MainWindow(tk.Tk):
         def on_cancel():
             dialog.destroy()
 
+        save_defaults_button = ttk.Button(
+            button_frame,
+            text="保存默认方案",
+            command=on_save_fact_card_defaults,
+            width=14,
+            **_bootstyle_kwargs("secondary")
+        )
+        save_defaults_button.pack(side=tk.LEFT, padx=5)
+        if not (is_single_heading and fact_card_panel is not None):
+            save_defaults_button.configure(state="disabled")
         ttk.Button(
             button_frame,
             text="确定",
@@ -4084,7 +4114,7 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已阻断生成：{heading.title}")
             return "failed"
 
-        if fact_card_mode and remember_fact_card_defaults:
+        if remember_fact_card_defaults:
             selections_to_save = manual_fact_card_selections or []
             self.bid_writer.save_chapter_default_fact_cards(heading.full_path, selections_to_save)
 

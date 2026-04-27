@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import bid_writer.fact_card_dialogs as fact_card_dialogs
-from bid_writer.fact_cards import FactCard, FactCardDraft, FactCardSource
+from bid_writer.fact_cards import FactCard, FactCardDraft, FactCardSelection, FactCardSource
 from bid_writer.gui import MainWindow
 
 
@@ -71,6 +71,59 @@ def test_fact_card_extraction_workspace_dialog_save_returns_instruction_and_draf
         ],
     )
     assert closed == ["destroy"]
+
+
+def test_fact_card_selection_panel_defaults_globals_and_returns_global_exclusions(monkeypatch):
+    created_vars: list[object] = []
+
+    class _FakeBooleanVar:
+        def __init__(self, value=False):
+            self.value = value
+            created_vars.append(self)
+
+        def get(self):
+            return self.value
+
+        def set(self, value):
+            self.value = value
+
+    monkeypatch.setattr(fact_card_dialogs.tk, "BooleanVar", _FakeBooleanVar)
+
+    panel = fact_card_dialogs.FactCardSelectionPanel.__new__(
+        fact_card_dialogs.FactCardSelectionPanel
+    )
+    panel.cards = [
+        FactCard(
+            id="global-a",
+            name="企业资质",
+            content="一级资质",
+            scope="global",
+            enforcement="strong",
+            source=FactCardSource(type="manual"),
+        ),
+        FactCard(
+            id="local-a",
+            name="服务承诺",
+            content="7×24小时响应",
+            scope="local",
+            enforcement="reference",
+            source=FactCardSource(type="manual"),
+        ),
+    ]
+    panel._selection_vars = {
+        "global-a": _FakeBooleanVar(value=True),
+        "local-a": _FakeBooleanVar(value=False),
+    }
+
+    assert panel.get_selections() == []
+
+    panel._selection_vars["global-a"].set(False)
+    panel._selection_vars["local-a"].set(True)
+
+    assert panel.get_selections() == [
+        FactCardSelection(card_id="global-a", selected=False),
+        FactCardSelection(card_id="local-a"),
+    ]
 
 
 def test_fact_card_extraction_workspace_dialog_save_requires_reextract_when_instruction_changed(monkeypatch):
@@ -1117,7 +1170,7 @@ def test_mainwindow_top_menus_expose_project_chapter_and_view_groups():
     ]
 
 
-def test_generation_fact_card_dialog_state_exposes_only_local_cards():
+def test_generation_fact_card_dialog_state_lists_global_cards_first():
     global_card = FactCard(
         id="global-a",
         name="企业资质",
@@ -1143,9 +1196,44 @@ def test_generation_fact_card_dialog_state_exposes_only_local_cards():
     )
 
     assert dialog_state.global_cards == [global_card]
-    assert dialog_state.available_cards == [local_card]
+    assert dialog_state.available_cards == [global_card, local_card]
     assert dialog_state.default_mode is True
-    assert dialog_state.summary_text == "本次将自动加入 1 张全局事实卡片；下方仅选择当前章节局部卡片。"
+    assert dialog_state.summary_text == "全局事实卡片默认勾选，可按当前章节需要取消；局部卡片会读取本章节已保存的默认方案。"
+
+
+def test_generation_fact_card_dialog_state_keeps_saved_global_exclusion():
+    global_card = FactCard(
+        id="global-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    local_card = FactCard(
+        id="local-a",
+        name="章节承诺",
+        content="本章节服务承诺",
+        category="承诺",
+        scope="local",
+        enforcement="reference",
+        source=FactCardSource(type="chapter_extract", chapter_path="项目 > 技术方案"),
+    )
+
+    dialog_state = MainWindow._build_generation_fact_card_dialog_state(
+        [global_card, local_card],
+        initial_selections=[
+            FactCardSelection(card_id="global-a", selected=False),
+            FactCardSelection(card_id="local-a"),
+        ],
+    )
+
+    assert dialog_state.available_cards == [global_card, local_card]
+    assert dialog_state.initial_selections == [
+        FactCardSelection(card_id="global-a", selected=False),
+        FactCardSelection(card_id="local-a"),
+    ]
 
 
 def test_mainwindow_extract_facts_for_heading_uses_workspace_dialog_result(monkeypatch, tmp_path: Path):

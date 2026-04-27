@@ -73,14 +73,21 @@ class FactCardStore:
             if selections is None
             else self._coerce_selection_iterable(selections)
         )
+        excluded_global_ids = {
+            selection.card_id
+            for selection in normalized_selections
+            if not selection.selected
+        }
 
         resolved: list[SelectedFactCard] = []
         seen: set[str] = set()
         for card in global_cards:
+            if card.id in excluded_global_ids:
+                continue
             resolved.append(SelectedFactCard.from_fact_card(card))
             seen.add(card.id)
         for selection in normalized_selections:
-            if selection.card_id in seen:
+            if not selection.selected or selection.card_id in seen:
                 continue
             card = local_cards_by_id.get(selection.card_id)
             if card is None:
@@ -475,11 +482,17 @@ class FactCardStore:
         selections: list[FactCardSelection],
         cards: list[FactCard],
     ) -> list[FactCardSelection]:
-        existing_ids = {card.id for card in cards if card.active and card.scope == "local"}
+        local_ids = {card.id for card in cards if card.active and card.scope == "local"}
+        global_ids = {card.id for card in cards if card.active and card.scope == "global"}
         filtered: list[FactCardSelection] = []
         seen: set[str] = set()
         for selection in selections:
-            if not selection.card_id or selection.card_id in seen or selection.card_id not in existing_ids:
+            if not selection.card_id or selection.card_id in seen:
+                continue
+            if selection.selected:
+                if selection.card_id not in local_ids:
+                    continue
+            elif selection.card_id not in global_ids:
                 continue
             seen.add(selection.card_id)
             filtered.append(selection)

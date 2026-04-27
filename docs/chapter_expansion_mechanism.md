@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，收集附加要求、目标篇幅基准值、Mermaid 图示上限，以及可选的事实卡片选择；启用事实卡片模式时，本章事实改由 `fact_card_context` 注入，不再默认走 `knowledge_context`
+3. GUI 选择叶子章节，收集附加要求、目标篇幅基准值、Mermaid 图示上限，以及可选的事实卡片选择；本章事实只通过 `fact_card_context` 注入
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -72,8 +72,8 @@ GUI 中批量生成的主要逻辑位于：
 
 - 先获取选中的叶子节点
 - 单章模式下，“附加扩写要求”只承载用户手工输入
-- 单章节模式下，可在生成参数弹窗中手动勾选局部事实卡片；强制/参考由卡片本体 `enforcement` 决定
-- 批量模式下，不提供整批共用的临时事实卡片选择；若启用事实卡片功能，会自动加入 active 全局卡片，并读取各章节已保存的局部默认方案
+- 单章节模式下，可在生成参数弹窗中调整事实卡片；全局卡片排在最前且默认勾选，局部卡片按本章节默认方案回填；强制/参考由卡片本体 `enforcement` 决定
+- 批量模式下，不提供整批共用的临时事实卡片选择；若启用事实卡片功能，会默认加入 active 全局卡片、排除各章节已保存的全局取消项，并读取各章节已保存的局部默认方案
 - 批量模式逐章执行
 - 生成内容在主窗口右侧正文工作区实时显示，完成后自动保存
 - 章节树叶子节点右键菜单提供“生成所选”入口，复用与顶部按钮相同的批量生成流程；若已多选并在其中一个章节上右键，会保留当前多选范围
@@ -177,10 +177,10 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 3. `first_line_rule`，仅在配置了首行模板时出现
 4. `scope_reference`
 5. `project_background`，若存在
-6. 若启用事实卡片模式，则为 `fact_card_context`；否则为 `knowledge_context`
-7. 若有裁剪上下文：
+6. 若有裁剪上下文：
    - `scoring_focus`
    - `requirement_brief` 或 `requirement_points`
+7. 若存在可用事实卡片，则为 `fact_card_context`
 8. 若没有裁剪上下文：
    - `bid_requirements`
    - `scoring_criteria`
@@ -190,12 +190,12 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 1. `structure_contract`
 2. `project_background`，若存在
-3. 若启用事实卡片模式，则为 `fact_card_context`；否则为 `knowledge_context`
-4. `bid_requirements`
-5. `scoring_criteria`
-6. `task_card`
-7. `first_line_rule`，若存在
-8. `scope_reference`
+3. `bid_requirements`
+4. `scoring_criteria`
+5. `task_card`
+6. `first_line_rule`，若存在
+7. `scope_reference`
+8. 若存在可用事实卡片，则为 `fact_card_context`
 9. `additional_requirements`
 
 这里不会把 `scope_reference` 放进共享前缀，因为它包含当前标题、上级标题和同级标题，属于章节动态信息；若放在最前面，反而会降低跨 h3/h4 调用的前缀复用率。
@@ -245,18 +245,18 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 ### 3.6 事实卡片如何进入 prompt
 
-- 全局卡片：`active=true` 且 `scope=global` 时，在启用事实卡片模式后自动进入每个章节
+- 全局卡片：`active=true` 且 `scope=global` 时，在生成参数窗口中默认勾选并排在列表最前面；用户可按章节取消，取消状态可保存为该章节默认方案
 - 局部卡片：`scope=local` 时，只在单章节手动选择或章节默认方案命中时进入 prompt
 - 强制/参考：由卡片本体 `enforcement` 决定，生成参数弹窗不再为每个章节单独设置用途
-- 批量模式：自动加入全局卡片，并读取各章节局部默认方案
-- 启用事实卡片模式且存在可用卡片时，本次扩写不再默认注入 `knowledge_context`；若事实卡片模式开启但本章没有任何可用卡片，仍回退注入知识库上下文
+- 批量模式：默认加入全局卡片，排除各章节已保存的全局取消项，并读取各章节局部默认方案
+- 事实卡片是投标方事实的唯一 prompt 注入口；若事实卡片模式开启但本章没有任何可用卡片，则不注入投标方事实上下文
 - 事实卡片提炼和 prompt 渲染都会去除“本章节”“本文”“上述内容”等来源章节元话语，避免旧卡片或模型输出把章节总结句式带入正文
 - 若同一次扩写中存在 `strong/strong` 冲突，生成会在调用模型前阻断
 
 维护影响：
 
 - facts 是否成功进入 prompt，优先查看 trace 中的 `prompt_sections.fact_card_context`
-- 若未启用事实卡片模式，则仍按原逻辑查看 `prompt_sections.knowledge_context`
+- 若 trace 中没有 `prompt_sections.fact_card_context`，表示本次没有向模型注入投标方事实
 - 若要排查事实卡片来源，优先查看配置 YAML 中的 `fact_cards.cards` 与 `fact_cards.chapter_defaults`
 
 ### 3.6.1 章节事实提炼交互
@@ -545,17 +545,16 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 
 ### 9.2 Prompt Contract 摘要层
 
-当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含九个 block：
+当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含八个 block：
 
 1. `system_constraints`
 2. `chapter_task`
 3. `structure_rules`
 4. `chapter_scope`
 5. `project_background`
-6. `knowledge_context`
-7. `fact_card_context`
-8. `requirement_context`
-9. `scoring_context`
+6. `fact_card_context`
+7. `requirement_context`
+8. `scoring_context`
 
 这层不是替代原始 prompt sections，而是为了让维护者更快看懂“一次章节扩写到底喂给了模型什么”。
 

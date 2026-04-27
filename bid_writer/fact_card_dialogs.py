@@ -109,13 +109,13 @@ class FactCardSelectionPanel(ttk.LabelFrame):
         self.cards = cards
         self._selection_vars: dict[str, tk.BooleanVar] = {}
 
-        initial_card_ids = {selection.card_id for selection in initial_selections or []}
+        initial_selection_by_id = {selection.card_id: selection for selection in initial_selections or []}
 
         actions = ttk.Frame(self)
         actions.pack(fill=tk.X, pady=(0, 8))
         ttk.Button(
             actions,
-            text="全选局部卡片",
+            text="全选卡片",
             command=self.select_all,
             width=12,
             **_bootstyle_kwargs("secondary"),
@@ -140,7 +140,12 @@ class FactCardSelectionPanel(ttk.LabelFrame):
         scrollable.pack(fill=tk.BOTH, expand=True)
 
         for card in cards:
-            selected_var = tk.BooleanVar(value=card.id in initial_card_ids)
+            initial_selection = initial_selection_by_id.get(card.id)
+            if card.scope == "global":
+                initially_selected = initial_selection.selected if initial_selection is not None else True
+            else:
+                initially_selected = bool(initial_selection and initial_selection.selected)
+            selected_var = tk.BooleanVar(value=initially_selected)
             self._selection_vars[card.id] = selected_var
 
             row = ttk.Frame(scrollable.body, padding=(0, 6))
@@ -182,9 +187,16 @@ class FactCardSelectionPanel(ttk.LabelFrame):
     def get_selections(self) -> list[FactCardSelection]:
         selections: list[FactCardSelection] = []
         for card in self.cards:
-            if not self._selection_vars.get(card.id) or not self._selection_vars[card.id].get():
+            selection_var = self._selection_vars.get(card.id)
+            if selection_var is None:
                 continue
-            selections.append(FactCardSelection(card_id=card.id))
+            is_selected = bool(selection_var.get())
+            if card.scope == "global":
+                if not is_selected:
+                    selections.append(FactCardSelection(card_id=card.id, selected=False))
+                continue
+            if is_selected:
+                selections.append(FactCardSelection(card_id=card.id))
         return selections
 
 
