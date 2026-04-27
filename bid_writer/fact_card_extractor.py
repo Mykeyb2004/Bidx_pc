@@ -7,7 +7,12 @@ from typing import Any
 from openai import OpenAI
 
 from .config import Config
-from .fact_cards import FactCardDraft, normalize_fact_card_enforcement, normalize_fact_card_scope
+from .fact_cards import (
+    FactCardDraft,
+    normalize_fact_card_content_for_prompt,
+    normalize_fact_card_enforcement,
+    normalize_fact_card_scope,
+)
 from .file_saver import FileSaver
 from .outline_parser import HeadingNode
 
@@ -109,6 +114,7 @@ class FactCardExtractor:
                 "5. enforcement 只能是 strong 或 reference：必须全文一致、不能被改写成相反含义的信息用 strong；仅供借鉴、可按章节选择性吸收的信息用 reference。",
                 "6. 选择最能代表本章节核心内容、最适合后续章节复用或引用的一条事实。",
                 "7. 内容必须具体、可验证、信息密度高，避免泛泛总结、修饰性评价和重复表述。",
+                "8. content 必须写成可直接复用的事实断言，不要以“本章节”“本文”“上述内容”“该章节”等元话语开头。",
                 f"章节标题：{heading.title}",
                 f"章节路径：{heading.full_path}",
                 f"用户要求：{instruction.strip() or '提炼最能代表当前章节核心内容的一张事实卡片。'}",
@@ -167,7 +173,7 @@ class FactCardExtractor:
                 continue
             draft = FactCardDraft.from_dict(item if isinstance(item, dict) else None)
             if draft is not None:
-                drafts.append(draft)
+                drafts.append(cls._sanitize_draft(draft))
                 break
             missing_fields = []
             if not str(item.get("name", "") or "").strip():
@@ -194,6 +200,21 @@ class FactCardExtractor:
             detail="；".join(dict.fromkeys(invalid_reasons)) or "每张卡片都必须同时包含非空 name 和 content。",
             raw_response_excerpt=cls._excerpt(normalized),
         )
+
+    @classmethod
+    def _sanitize_draft(cls, draft: FactCardDraft) -> FactCardDraft:
+        return FactCardDraft(
+            name=draft.name,
+            content=cls._strip_meta_opening(draft.content),
+            category=draft.category,
+            scope=draft.scope,
+            enforcement=draft.enforcement,
+            card_id=draft.card_id,
+        )
+
+    @classmethod
+    def _strip_meta_opening(cls, content: str) -> str:
+        return normalize_fact_card_content_for_prompt(content)
 
     @staticmethod
     def _load_json_payload(content: str) -> Any:

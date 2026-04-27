@@ -598,7 +598,6 @@ class AIWriter:
         background: str,
         knowledge_context: str,
         full_context_stats: dict[str, Any],
-        fact_card_context: str = "",
     ) -> list[tuple[str, str]]:
         sections: list[tuple[str, str]] = [
             ("structure_contract", self._build_structure_contract_section())
@@ -611,8 +610,6 @@ class AIWriter:
 
         if knowledge_context:
             sections.append(("knowledge_context", knowledge_context))
-        if fact_card_context:
-            sections.append(("fact_card_context", fact_card_context))
 
         bid_requirements = self.config.bid_requirements.strip()
         full_context_stats["bid_requirements_chars"] = len(bid_requirements)
@@ -890,7 +887,7 @@ class AIWriter:
         knowledge_context = self.knowledge_assembler.build_prompt_section(
             heading=heading,
             focus_terms=self._chapter_focus_terms(heading, pruned_context),
-        ) if not fact_card_mode else ""
+        ) if not fact_card_context else ""
         background = ""
         try:
             if self.project_background_generator is not None:
@@ -909,7 +906,6 @@ class AIWriter:
                 background,
                 knowledge_context,
                 full_context_stats,
-                fact_card_context=fact_card_context,
             )
             full_context_has_bid_requirements = any(
                 name == "bid_requirements" for name, _ in full_context_sections
@@ -1004,14 +1000,7 @@ class AIWriter:
                     "project_background",
                     self._build_project_background_section(background),
                 )
-            if fact_card_context:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "fact_card_context",
-                    fact_card_context,
-                )
-            elif knowledge_context:
+            if knowledge_context:
                 self._append_prompt_section(
                     prompt_parts,
                     prompt_sections,
@@ -1063,6 +1052,14 @@ class AIWriter:
 {pruned_context.requirement_seed}
 """,
                 )
+
+            if fact_card_context:
+                self._append_prompt_section(
+                    prompt_parts,
+                    prompt_sections,
+                    "fact_card_context",
+                    fact_card_context,
+                )
         else:
             self._append_prompt_section(
                 prompt_parts,
@@ -1070,6 +1067,13 @@ class AIWriter:
                 "scope_reference",
                 scope_reference,
             )
+            if fact_card_context:
+                self._append_prompt_section(
+                    prompt_parts,
+                    prompt_sections,
+                    "fact_card_context",
+                    fact_card_context,
+                )
 
         # 添加用户附加要求
         if additional_requirements:

@@ -141,6 +141,39 @@ def test_fact_card_extractor_builds_prompt_with_heading_context_and_parses_json(
     assert "项目经理由张三担任" in prompt
 
 
+def test_fact_card_extractor_prompt_requires_direct_fact_assertion(tmp_path: Path):
+    config_path = _build_config(tmp_path)
+    config = Config(str(config_path))
+    heading = _get_heading(config, "质量保障措施")
+
+    prompt = FactCardExtractor.build_prompt(
+        heading=heading,
+        chapter_content="本章节明确质量控制采用三级复核机制。",
+        instruction="提炼事实",
+    )
+
+    assert "content 必须写成可直接复用的事实断言" in prompt
+    assert "不要以“本章节”“本文”“上述内容”“该章节”等元话语开头" in prompt
+    assert "质量控制采用三级复核机制" in prompt
+
+
+def test_fact_card_extractor_strips_meta_opening_from_content():
+    drafts = FactCardExtractor.parse_draft_response(
+        '[{"name":"质量控制","content":"本章节明确质量控制采用三级复核机制。","category":"质量",'
+        '"scope":"local","enforcement":"reference"}]'
+    )
+
+    assert drafts == [
+        FactCardDraft(
+            name="质量控制",
+            content="质量控制采用三级复核机制。",
+            category="质量",
+            scope="local",
+            enforcement="reference",
+        )
+    ]
+
+
 def test_fact_card_extractor_rejects_missing_scope_or_enforcement():
     result = FactCardExtractor.parse_draft_response_with_diagnostics(
         '[{"name":"企业资质","content":"一级资质","category":"资质"}]'

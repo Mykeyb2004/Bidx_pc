@@ -373,8 +373,8 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `structure_contract` | 无独立标题；直接输出短提醒列表 | 总是出现 | 提醒“严格遵守 system 硬门禁”并补充 task 侧简短执行规则 |
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
-| `knowledge_context` | `## 投标方知识库` | 启用了知识库且成功读取到知识文档时 | 注入用户手写知识文档，经预算截断后作为一致性参考 |
-| `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入自动命中的全局卡片和当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组，并替代默认 `knowledge_context` |
+| `knowledge_context` | `## 投标方知识库` | 启用了知识库且成功读取到知识文档时；若事实卡片模式开启但本章无可用卡片，仍可作为兜底注入 | 注入用户手写知识文档，经预算截断后作为一致性参考 |
+| `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入自动命中的全局卡片和当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组；full-context 分支中位于章节任务卡和章节边界之后；渲染时会去除“本章节”等来源章节元话语 |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
 | `requirement_points` | `## 需求要点` | pruned 分支且无 `requirement_brief`、但有 `requirement_seed` 时 | 实际内容是提炼后的要点 |

@@ -9,6 +9,10 @@ _BULK_FACT_CARD_LINE_RE = re.compile(
     r"^\s*(?P<name>[^|｜:：]+?)\s*[|｜]\s*(?P<scope>[^|｜:：]+?)\s*[|｜]\s*"
     r"(?P<enforcement>[^:：]+?)\s*[:：]\s*(?P<content>.+?)\s*$"
 )
+_FACT_CARD_META_OPENING_RE = re.compile(
+    r"^\s*(?:本章节|本章|本文|上述内容|该章节|当前章节|本节)"
+    r"(?:明确|指出|说明|认为|提出|强调|体现|围绕|主要)?"
+)
 
 VALID_FACT_CARD_SCOPES = {"global", "local"}
 VALID_FACT_CARD_ENFORCEMENTS = {"strong", "reference"}
@@ -28,6 +32,11 @@ def normalize_fact_card_enforcement(enforcement: str) -> str:
 
 def normalize_fact_card_name(name: str) -> str:
     return "".join(character.lower() for character in str(name).strip() if not character.isspace())
+
+
+def normalize_fact_card_content_for_prompt(content: str) -> str:
+    cleaned = _FACT_CARD_META_OPENING_RE.sub("", str(content or ""), count=1)
+    return cleaned.lstrip("，,。；;：:、 \t")
 
 
 @dataclass(frozen=True)
@@ -283,6 +292,10 @@ def build_fact_card_prompt_section(selected_cards: list[SelectedFactCard]) -> st
     lines = [
         "## 事实卡片参考",
         "以下事实卡片已进入当前章节扩写上下文；“强制事实”必须保持一致，“参考事实”可按章节需要择优吸收。",
+        "使用规则：",
+        "- 若事实卡片与采购需求或评分标准冲突，以采购需求和评分标准为准。",
+        "- 参考事实只在与当前章节标题、评分关注或需求要点直接相关时吸收，不要为使用卡片而偏题。",
+        "- 不要照搬来源章节中的“本章节”“本文”“上述内容”等指代，应改写为适配当前章节的正文表述。",
     ]
     if strong_cards:
         lines.append("### 强制事实")
@@ -295,7 +308,7 @@ def build_fact_card_prompt_section(selected_cards: list[SelectedFactCard]) -> st
 
 def _format_fact_card_prompt_line(card: SelectedFactCard) -> str:
     scope_label = FACT_CARD_SCOPE_LABELS.get(card.scope, card.scope)
-    return f"- [{scope_label}] {card.name}：{card.content}"
+    return f"- [{scope_label}] {card.name}：{normalize_fact_card_content_for_prompt(card.content)}"
 
 
 def _normalize_bulk_fact_card_scope(scope: str) -> str:

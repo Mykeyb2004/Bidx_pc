@@ -137,6 +137,41 @@ def test_fact_card_prompt_groups_by_enforcement_and_labels_scope():
     assert "- [局部] 实施经验：近三年 5 个同类项目" in section
 
 
+def test_fact_card_prompt_includes_usage_rules():
+    cards = [
+        SelectedFactCard(
+            card_id="local-reference",
+            name="统计指标",
+            content="文化统计指标体系采用五维矩阵结构。",
+            scope="local",
+            enforcement="reference",
+        ),
+    ]
+
+    section = build_fact_card_prompt_section(cards)
+
+    assert "若事实卡片与采购需求或评分标准冲突，以采购需求和评分标准为准。" in section
+    assert "参考事实只在与当前章节标题、评分关注或需求要点直接相关时吸收" in section
+    assert "不要照搬来源章节中的“本章节”“本文”“上述内容”等指代" in section
+
+
+def test_fact_card_prompt_strips_meta_opening_for_legacy_cards():
+    cards = [
+        SelectedFactCard(
+            card_id="local-reference",
+            name="统计指标",
+            content="本章节明确文化统计指标体系采用五维矩阵结构。",
+            scope="local",
+            enforcement="reference",
+        ),
+    ]
+
+    section = build_fact_card_prompt_section(cards)
+
+    assert "- [局部] 统计指标：文化统计指标体系采用五维矩阵结构。" in section
+    assert "- [局部] 统计指标：本章节明确" not in section
+
+
 def test_strong_conflict_detection_uses_card_enforcement():
     conflicts = detect_strong_fact_card_conflicts(
         [
@@ -215,9 +250,8 @@ def test_fact_card_store_reads_tracked_statistics_config_cards():
 
     cards = store.list_cards(active_only=False)
 
-    assert [card.id for card in cards] == ["fact-card-1", "fact-card-2"]
+    assert [card.id for card in cards] == ["fact-card-1"]
     assert [(card.scope, card.enforcement) for card in cards] == [
-        ("local", "reference"),
         ("local", "reference"),
     ]
 

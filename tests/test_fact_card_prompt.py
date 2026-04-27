@@ -94,6 +94,46 @@ def test_fact_card_mode_prompt_includes_fact_cards_and_skips_knowledge_context(m
     assert block_map["knowledge_context"]["section_names"] == []
 
 
+def test_full_context_fact_card_context_follows_task_and_scope(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path)
+    store = FactCardStore(config)
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    selected_cards = store.resolve_chapter_prompt_cards(heading.full_path)
+    result = writer.build_prompt_result(
+        heading,
+        target_words=1200,
+        fact_card_mode=True,
+        selected_fact_cards=selected_cards,
+    )
+
+    section_order = [section["name"] for section in result.prompt_sections]
+    assert section_order.index("bid_requirements") < section_order.index("task_card")
+    assert section_order.index("scoring_criteria") < section_order.index("task_card")
+    assert section_order.index("task_card") < section_order.index("scope_reference")
+    assert section_order.index("scope_reference") < section_order.index("fact_card_context")
+
+
+def test_fact_card_mode_without_selected_cards_keeps_knowledge_context(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path)
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        target_words=1200,
+        fact_card_mode=True,
+        selected_fact_cards=[],
+    )
+    block_map = {block["id"]: block for block in result.prompt_contract_blocks}
+
+    assert "## 事实卡片参考" not in result.prompt
+    assert "## 投标方知识库" in result.prompt
+    assert block_map["fact_card_context"]["section_names"] == []
+    assert block_map["knowledge_context"]["section_names"] == ["knowledge_context"]
+
+
 def test_fact_card_mode_prompt_auto_includes_global_cards_without_defaults(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path)
     writer = _build_writer(monkeypatch, config)
