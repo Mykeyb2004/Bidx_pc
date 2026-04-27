@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import copy
 import tkinter as tk
-from pathlib import Path
+from pathlib import Path, PurePath
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
@@ -692,11 +692,11 @@ class ConfigEditorDialog(tk.Toplevel):
         self._register_tooltip(label_widget, key)
         self._register_tooltip(text, key)
 
-    def _display_relative_path(self, path: Path, base_dir: Path) -> str:
+    def _display_relative_path(self, path: PurePath, base_dir: PurePath) -> str:
         try:
-            return str(path.relative_to(base_dir))
+            return path.relative_to(base_dir).as_posix()
         except ValueError:
-            return str(path)
+            return path.as_posix()
 
     def _current_config_dir(self) -> Path:
         return (self.document.config_path if self.document else self.active_config_path).parent.resolve()

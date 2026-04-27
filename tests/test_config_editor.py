@@ -337,6 +337,22 @@ def test_new_config_editor_document_accepts_valid_required_project_fields(tmp_pa
     assert not [message for message in messages if message.level == "error"]
 
 
+def test_config_editor_validation_warns_about_foreign_absolute_paths(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    document = create_new_config_editor_document(config_path)
+    model = copy.deepcopy(document.model)
+    model["project"]["root_dir"] = "C:/bid/project"
+    model["project"]["output_dir"] = "/Users/example/bid/output"
+    model["runtime"]["trace"]["directory"] = "/home/example/bid/log/generation_traces"
+
+    messages = document.validate(model)
+
+    warnings = [message.text for message in messages if message.level == "warning"]
+    assert any("project.root_dir" in text and "Windows 绝对路径" in text for text in warnings)
+    assert any("project.output_dir" in text and "macOS 绝对路径" in text for text in warnings)
+    assert any("runtime.trace.directory" in text and "Ubuntu/Linux 绝对路径" in text for text in warnings)
+
+
 def test_new_config_editor_document_validation_can_use_config_path_override(tmp_path: Path):
     provisional_dir = tmp_path / "empty-template-dir"
     target_dir = tmp_path / "real-project"

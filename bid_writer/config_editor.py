@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -732,6 +733,8 @@ def validate_editor_model(
     if processing_path not in _SUPPORTED_PROCESSING_PATHS:
         messages.append(ValidationMessage("error", "processing.path 当前仅支持 auto / full_context 两种模式。"))
 
+    _add_cross_platform_path_warnings(messages, model)
+
     root_dir = _resolve_path(model["project"]["root_dir"] or ".", config_path.parent)
     if not root_dir.exists():
         messages.append(ValidationMessage("error", f"project.root_dir 不存在：{root_dir}"))
@@ -808,6 +811,43 @@ def validate_editor_model(
         for note in build_editor_notes(model, raw_config or {})
     )
     return messages
+
+
+def _add_cross_platform_path_warnings(messages: list[ValidationMessage], model: dict[str, Any]) -> None:
+    """提示不便跨系统迁移的绝对路径写法。"""
+    path_items = [
+        ("project.root_dir", model["project"].get("root_dir", "")),
+        ("project.outline_file", model["project"].get("outline_file", "")),
+        ("project.bid_requirements_file", model["project"].get("bid_requirements_file", "")),
+        ("project.scoring_criteria_file", model["project"].get("scoring_criteria_file", "")),
+        ("project.output_dir", model["project"].get("output_dir", "")),
+        ("writing.role_file", model["writing"].get("role_file", "")),
+        ("runtime.trace.directory", model["runtime"]["trace"].get("directory", "")),
+    ]
+    for field_name, raw_value in path_items:
+        path_value = _coerce_str(raw_value).strip()
+        if not path_value:
+            continue
+        platform_name = _platform_absolute_path_name(path_value)
+        if not platform_name:
+            continue
+        messages.append(
+            ValidationMessage(
+                "warning",
+                f"{field_name} 当前像是 {platform_name} 绝对路径，跨系统共享时建议改成相对路径并使用 `/` 分隔符。",
+            )
+        )
+
+
+def _platform_absolute_path_name(path_value: str) -> str:
+    normalized = path_value.strip()
+    if re.match(r"^[A-Za-z]:[\\/]", normalized) or normalized.startswith("\\\\"):
+        return "Windows"
+    if normalized.startswith("/Users/"):
+        return "macOS"
+    if normalized.startswith("/home/"):
+        return "Ubuntu/Linux"
+    return ""
 
 
 def summarize_model(model: dict[str, Any], env_status: dict[str, ConnectionStatus]) -> list[str]:

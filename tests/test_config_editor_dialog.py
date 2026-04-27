@@ -1,3 +1,4 @@
+from pathlib import PureWindowsPath
 from types import SimpleNamespace
 
 import tkinter as tk
@@ -230,3 +231,14 @@ def test_config_editor_save_as_validates_against_selected_target_path(monkeypatc
     assert dialog.result["saved_path"] == target_path
     assert target_path.exists()
     assert loaded_paths == [target_path]
+
+
+def test_config_editor_display_relative_path_uses_posix_separators_for_yaml():
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+
+    result = dialog._display_relative_path(
+        PureWindowsPath("C:/project/项目要求/采购需求.md"),
+        PureWindowsPath("C:/project"),
+    )
+
+    assert result == "项目要求/采购需求.md"

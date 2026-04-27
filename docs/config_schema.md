@@ -67,7 +67,7 @@ processing:
 
 ```yaml
 project:
-  root_dir: "/path/to/bid-project"
+  root_dir: "."
   bidder_name: "示例投标主体名称"
   inputs:
     outline_file: "./outline.md"
@@ -81,6 +81,27 @@ project:
 - `project.root_dir` 用于声明项目资料根目录
 - `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
 - `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
+
+### 3.1.1 跨平台路径规范
+
+推荐配置文件使用相对路径，并统一使用 `/` 作为路径分隔符：
+
+```yaml
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./投标大纲.md"
+    bid_requirements_file: "./采购需求.md"
+    scoring_criteria_file: "./评分标准.md"
+  output_dir: "./output"
+```
+
+说明：
+
+- `./output`、`项目要求/采购需求.md` 这类写法可在 Windows、macOS、Ubuntu 上由 Python 路径库按当前系统解析
+- 不建议在共享配置中写入 `/Users/...`、`/home/...`、`C:/Users/...` 这类绑定本机或操作系统的绝对路径
+- 如果必须写 Windows 绝对路径，建议使用 `C:/Users/example/project`，或使用单引号包裹反斜杠路径：`'C:\Users\example\project'`
+- 配置编辑器选择项目内文件时，会优先保存为相对路径并使用 `/` 分隔符，便于跨系统迁移
 
 ### 3.2 `writing`
 

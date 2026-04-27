@@ -1,5 +1,5 @@
 project:
-  root_dir: "/path/to/bid-project"
+  root_dir: "."
   bidder_name: "示例投标主体名称"
   inputs:
     outline_file: "./outline.md"
