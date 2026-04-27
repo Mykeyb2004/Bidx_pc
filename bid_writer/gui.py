@@ -1644,6 +1644,7 @@ class MainWindow(tk.Tk):
         self.btn_selection_menu.pack(side=tk.LEFT)
 
     def _populate_project_menu(self, menu: tk.Menu) -> None:
+        menu.add_command(label="新建配置...", command=self.open_new_config_editor)
         menu.add_command(label="切换配置...", command=self.select_and_switch_config)
         menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
         menu.add_separator()
@@ -2847,6 +2848,25 @@ class MainWindow(tk.Tk):
         else:
             self.status_text.set(f"已切换配置: {selected_path.name}")
         return True
+
+    def open_new_config_editor(self):
+        """打开新配置创建编辑器。"""
+        from .config_editor_dialog import ConfigEditorDialog
+
+        current_config_path = self.bid_writer.config.config_path.resolve()
+        default_path = current_config_path.parent / "config_新项目.yaml"
+        dialog = ConfigEditorDialog(self, default_path, new_config=True)
+        self.wait_window(dialog)
+
+        apply_path = dialog.result.get("apply_path")
+        if not apply_path:
+            return
+
+        apply_resolved = Path(apply_path).expanduser().resolve()
+        self._switch_to_config_path(
+            apply_resolved,
+            force_reload=(apply_resolved == current_config_path),
+        )
 
     def open_config_editor(self):
         """打开当前配置的可视化编辑器。"""
