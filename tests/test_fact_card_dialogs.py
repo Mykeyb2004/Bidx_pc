@@ -1114,6 +1114,7 @@ def test_mainwindow_top_menus_expose_project_chapter_and_view_groups():
             self.labels.append("---")
 
     fake_window = SimpleNamespace(
+        open_new_config_editor=lambda: None,
         select_and_switch_config=lambda: None,
         open_config_editor=lambda: None,
         reload_outline=lambda: None,
@@ -1141,6 +1142,7 @@ def test_mainwindow_top_menus_expose_project_chapter_and_view_groups():
     MainWindow._populate_view_menu(fake_window, view_menu)
 
     assert project_menu.labels == [
+        "新建配置...",
         "切换配置...",
         "编辑当前配置...",
         "---",

@@ -2644,7 +2644,7 @@ class MainWindow(tk.Tk):
         self.btn_selection_menu.config(state=selection_menu_state)
 
         if hasattr(self, "project_menu"):
-            for entry_index in (0, 1, 3, 4, 6):
+            for entry_index in (0, 1, 2, 4, 5, 7):
                 self.project_menu.entryconfigure(entry_index, state=tool_button_state)
         if hasattr(self, "view_menu"):
             for entry_index in (0, 2, 3, 4, 6):
