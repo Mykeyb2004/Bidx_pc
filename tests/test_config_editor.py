@@ -1,8 +1,12 @@
+import copy
 from pathlib import Path
 
 import yaml
 
-from bid_writer.config_editor import load_config_editor_document
+from bid_writer.config_editor import (
+    create_new_config_editor_document,
+    load_config_editor_document,
+)
 
 
 def _write_project_files(base_dir: Path) -> None:
@@ -263,3 +267,71 @@ processing:
     messages = document.validate()
 
     assert any("embedding" in message.text for message in messages if message.level == "error")
+
+
+def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
+    config_path = tmp_path / "config_新项目.yaml"
+
+    document = create_new_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.config_path == config_path.resolve()
+    assert document.require_project_identity is True
+    assert payload["project"] == {
+        "root_dir": ".",
+        "bidder_name": "",
+        "inputs": {
+            "outline_file": "./outline.md",
+            "bid_requirements_file": "./项目要求/项目采购需求.md",
+            "scoring_criteria_file": "./项目要求/评分标准.md",
+        },
+        "output_dir": "./output",
+    }
+    assert payload["writing"]["role_file"] == "./roles/example_role.md"
+    assert payload["writing"]["target_words"] == {
+        "default": 3000,
+        "min": 100,
+        "max": 15000,
+        "step": 100,
+        "upper_ratio": 1.15,
+    }
+    assert payload["writing"]["output_format"] == "纯正文"
+    assert payload["writing"]["max_tables_per_section"] == 2
+    assert payload["processing"]["path"] == "auto"
+    assert payload["models"]["generation"]["model"] == "gpt-4o-mini"
+    assert payload["models"]["pruning"]["model"] == "gpt-4o-mini"
+    assert payload["models"]["embedding"]["model"] == "text-embedding-3-small"
+    assert payload["runtime"]["stream"]["enabled"] is True
+    assert payload["runtime"]["trace"]["enabled"] is False
+    assert payload["fact_cards"] == {
+        "enabled": True,
+        "cards": [],
+        "chapter_defaults": {},
+    }
+
+
+def test_new_config_editor_document_requires_bidder_name(tmp_path: Path):
+    config_path = tmp_path / "config_新项目.yaml"
+    document = create_new_config_editor_document(config_path)
+
+    messages = document.validate()
+
+    assert any(
+        message.level == "error" and "投标主体名称不能为空" in message.text
+        for message in messages
+    )
+
+
+def test_new_config_editor_document_accepts_valid_required_project_fields(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "config_新项目.yaml"
+    document = create_new_config_editor_document(config_path)
+    model = copy.deepcopy(document.model)
+    model["project"]["bidder_name"] = "示例投标单位"
+    model["project"]["bid_requirements_file"] = "./bid_requirements.md"
+    model["project"]["scoring_criteria_file"] = "./scoring_criteria.md"
+    model["processing"]["path"] = "full_context"
+
+    messages = document.validate(model)
+
+    assert not [message for message in messages if message.level == "error"]

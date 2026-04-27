@@ -38,6 +38,7 @@ class ConfigEditorDocument:
     preserved_extra: dict[str, Any] = field(default_factory=dict)
     env_status: dict[str, ConnectionStatus] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    require_project_identity: bool = False
 
     def render_yaml(self, model: dict[str, Any] | None = None) -> str:
         payload = merge_with_preserved(
@@ -47,7 +48,13 @@ class ConfigEditorDocument:
         return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).strip() + "\n"
 
     def validate(self, model: dict[str, Any] | None = None) -> list[ValidationMessage]:
-        return validate_editor_model(model or self.model, self.config_path, self.env_status, self.raw_config)
+        return validate_editor_model(
+            model or self.model,
+            self.config_path,
+            self.env_status,
+            self.raw_config,
+            require_project_identity=self.require_project_identity,
+        )
 
     def save(
         self,
@@ -85,6 +92,157 @@ def load_config_editor_document(config_path: str | Path) -> ConfigEditorDocument
         preserved_extra=extract_preserved_extra(raw_config),
         env_status=detect_connection_status(path, raw_config),
         notes=build_editor_notes(model, raw_config),
+    )
+
+
+def build_default_editor_model() -> dict[str, Any]:
+    return {
+        "project": {
+            "root_dir": ".",
+            "bidder_name": "",
+            "outline_file": "./outline.md",
+            "bid_requirements_mode": "file",
+            "bid_requirements_file": "./项目要求/项目采购需求.md",
+            "bid_requirements_text": "",
+            "scoring_criteria_mode": "file",
+            "scoring_criteria_file": "./项目要求/评分标准.md",
+            "scoring_criteria_text": "",
+            "output_dir": "./output",
+        },
+        "writing": {
+            "role_mode": "file",
+            "role_file": "./roles/example_role.md",
+            "role_text": "",
+            "target_words_default": 3000,
+            "target_words_min": 100,
+            "target_words_max": 15000,
+            "target_words_step": 100,
+            "target_words_upper_ratio": 1.15,
+            "output_format": "纯正文",
+            "first_line_template": "",
+            "allow_markdown_headings": False,
+            "allow_english_terms": False,
+            "max_tables_per_section": 2,
+            "max_mermaid_flowcharts_per_section": 0,
+            "summary_title": "",
+            "hard_constraints": [],
+            "extra_rules": [
+                "内容要专业、严谨，符合标书撰写规范",
+                "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。",
+            ],
+        },
+        "processing": {
+            "path": "auto",
+            "context_view": {
+                "include_ancestors": True,
+                "include_siblings": True,
+                "max_siblings": 8,
+            },
+            "project_background": {
+                "enabled": True,
+                "max_chars": 800,
+            },
+            "auto": {
+                "requirements_top_k": 8,
+                "scoring_parse_mode": "auto",
+                "scoring_max_rows": 4,
+                "retrieval": {
+                    "lexical_enabled": True,
+                    "vector_enabled": False,
+                    "top_k_lexical": 20,
+                    "top_k_fused": 30,
+                    "top_k_final": 8,
+                    "min_fused_score": 0.0,
+                },
+            },
+            "full_context": {
+                "chapter_writing_plan": {
+                    "enabled": False,
+                    "max_chars": 320,
+                },
+            },
+        },
+        "models": {
+            "generation": {
+                "model": "gpt-4o-mini",
+                "temperature": 0.7,
+                "max_tokens": 8000,
+                "timeout_seconds": 120,
+                "max_retries": 3,
+                "top_p": "",
+                "seed": "",
+            },
+            "pruning": {
+                "model": "gpt-4o-mini",
+                "temperature": 0.2,
+                "max_tokens": 1200,
+                "timeout_seconds": 60,
+                "max_retries": 2,
+                "top_p": "",
+                "seed": "",
+            },
+            "embedding": {
+                "model": "text-embedding-3-small",
+                "batch_size": 64,
+                "cache_dir": "./output/_embedding_cache",
+                "rebuild_on_source_change": True,
+                "query_prefix": "",
+                "document_prefix": "",
+            },
+        },
+        "runtime": {
+            "stream": {
+                "enabled": True,
+                "idle_timeout_seconds": 12,
+            },
+            "trace": {
+                "enabled": False,
+                "directory": "./log/generation_traces",
+                "mode": "full",
+                "write_prompt": True,
+                "write_output": True,
+                "write_context": True,
+                "write_summary": True,
+                "redact_sensitive": True,
+            },
+            "debug": {
+                "context_pruning_dump": False,
+            },
+            "output": {
+                "prefix": "",
+                "include_title_header": True,
+                "overwrite_existing": True,
+                "filename_max_length": 100,
+                "empty_filename_fallback": "untitled",
+            },
+            "merge": {
+                "normalize_soft_line_breaks": False,
+            },
+        },
+    }
+
+
+def create_new_config_editor_document(config_path: str | Path | None = None) -> ConfigEditorDocument:
+    path = Path(config_path or "config_新项目.yaml").expanduser().resolve()
+    model = build_default_editor_model()
+    raw_config = merge_with_preserved(
+        build_canonical_config(model),
+        {
+            "fact_cards": {
+                "enabled": True,
+                "cards": [],
+                "chapter_defaults": {},
+            }
+        },
+    )
+    return ConfigEditorDocument(
+        config_path=path,
+        raw_config=raw_config,
+        model=copy.deepcopy(model),
+        preserved_extra=extract_preserved_extra(raw_config),
+        env_status=detect_connection_status(path, raw_config),
+        notes=build_editor_notes(model, raw_config),
+        require_project_identity=True,
     )
 
 
@@ -594,6 +752,8 @@ def validate_editor_model(
     config_path: Path,
     env_status: dict[str, ConnectionStatus],
     raw_config: dict[str, Any] | None = None,
+    *,
+    require_project_identity: bool = False,
 ) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
     processing_path = model["processing"]["path"]
@@ -603,6 +763,9 @@ def validate_editor_model(
     root_dir = _resolve_path(model["project"]["root_dir"] or ".", config_path.parent)
     if not root_dir.exists():
         messages.append(ValidationMessage("error", f"project.root_dir 不存在：{root_dir}"))
+
+    if require_project_identity and not _coerce_str(model["project"]["bidder_name"]).strip():
+        messages.append(ValidationMessage("error", "投标主体名称不能为空。"))
 
     outline_path = _resolve_path(model["project"]["outline_file"] or "./outline.md", root_dir)
     if not outline_path.exists():
