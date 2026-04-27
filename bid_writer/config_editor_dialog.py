@@ -1162,7 +1162,7 @@ class ConfigEditorDialog(tk.Toplevel):
 
     def _save_current(self) -> None:
         target_path = self.document.config_path if self.document else self.active_config_path
-        if self.is_new_config and not target_path.exists():
+        if self.is_new_config:
             self._save_as()
             return
         self._save(target_path=target_path, ask_switch=False)

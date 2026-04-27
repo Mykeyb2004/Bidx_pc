@@ -51,8 +51,9 @@ def test_scrollable_section_mousewheel_catches_tclerror():
     assert calls == ["unbind"]
 
 
-def test_config_editor_new_mode_first_save_uses_save_as_for_missing_target(tmp_path):
+def test_config_editor_new_mode_first_save_uses_save_as_even_when_target_exists(tmp_path):
     target_path = tmp_path / "config_新项目.yaml"
+    target_path.write_text("existing: true\n", encoding="utf-8")
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     calls: list[str] = []
 
