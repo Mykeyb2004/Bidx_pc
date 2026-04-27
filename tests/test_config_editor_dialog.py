@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import tkinter as tk
 
 from bid_writer import config_editor_dialog
+from bid_writer.config_editor import create_new_config_editor_document
 from bid_writer.config_editor_dialog import ConfigEditorDialog, ScrollableSection
 
 
@@ -148,7 +149,7 @@ def test_config_editor_successful_save_exits_new_mode(tmp_path):
     saved_paths = []
     document = SimpleNamespace(
         config_path=target_path,
-        validate=lambda _model: [],
+        validate=lambda _model, **_kwargs: [],
         save=lambda _model, *, target_path, create_backup: saved_paths.append((target_path, create_backup)) or target_path,
         render_yaml=lambda: "saved\n",
     )
@@ -171,4 +172,49 @@ def test_config_editor_successful_save_exits_new_mode(tmp_path):
     assert dialog.current_file_var.get() == f"当前文件：{target_path}"
     assert dialog.result == {"saved_path": target_path, "apply_path": target_path}
     assert dialog.status_var.get() == "已保存，关闭窗口后会自动重载当前配置"
+    assert loaded_paths == [target_path]
+
+
+def test_config_editor_save_as_validates_against_selected_target_path(monkeypatch, tmp_path):
+    provisional_dir = tmp_path / "empty-template-dir"
+    target_dir = tmp_path / "real-project"
+    provisional_dir.mkdir()
+    target_dir.mkdir()
+    (target_dir / "outline.md").write_text("# 项目\n## 章节\n### 内容\n", encoding="utf-8")
+    (target_dir / "bid_requirements.md").write_text("采购需求正文", encoding="utf-8")
+    (target_dir / "scoring_criteria.md").write_text("评分标准正文", encoding="utf-8")
+
+    target_path = target_dir / "config_新项目.yaml"
+    document = create_new_config_editor_document(provisional_dir / "config_新项目.yaml")
+    model = document.model
+    model["project"]["bidder_name"] = "示例投标单位"
+    model["project"]["bid_requirements_file"] = "./bid_requirements.md"
+    model["project"]["scoring_criteria_file"] = "./scoring_criteria.md"
+    model["processing"]["path"] = "full_context"
+
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    loaded_paths = []
+    errors = []
+
+    dialog.is_new_config = True
+    dialog.document = document
+    dialog.active_config_path = provisional_dir / "config_新项目.yaml"
+    dialog.result = {"saved_path": None, "apply_path": None}
+    dialog.current_file_var = StubVar()
+    dialog.status_var = StubVar()
+    dialog._collect_model = lambda: model
+    dialog._load_document = lambda path: loaded_paths.append(path)
+    dialog.title = lambda _value: None
+    monkeypatch.setattr(
+        config_editor_dialog.messagebox,
+        "showerror",
+        lambda title, message, **_kwargs: errors.append((title, message)),
+    )
+    monkeypatch.setattr(config_editor_dialog.messagebox, "askyesno", lambda *_args, **_kwargs: False)
+
+    dialog._save(target_path=target_path, ask_switch=True)
+
+    assert errors == []
+    assert dialog.result["saved_path"] == target_path
+    assert target_path.exists()
     assert loaded_paths == [target_path]

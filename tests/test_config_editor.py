@@ -335,3 +335,22 @@ def test_new_config_editor_document_accepts_valid_required_project_fields(tmp_pa
     messages = document.validate(model)
 
     assert not [message for message in messages if message.level == "error"]
+
+
+def test_new_config_editor_document_validation_can_use_config_path_override(tmp_path: Path):
+    provisional_dir = tmp_path / "empty-template-dir"
+    target_dir = tmp_path / "real-project"
+    provisional_dir.mkdir()
+    target_dir.mkdir()
+    _write_project_files(target_dir)
+
+    document = create_new_config_editor_document(provisional_dir / "config_新项目.yaml")
+    model = copy.deepcopy(document.model)
+    model["project"]["bidder_name"] = "示例投标单位"
+    model["project"]["bid_requirements_file"] = "./bid_requirements.md"
+    model["project"]["scoring_criteria_file"] = "./scoring_criteria.md"
+    model["processing"]["path"] = "full_context"
+
+    messages = document.validate(model, config_path=target_dir / "config_新项目.yaml")
+
+    assert not [message for message in messages if message.level == "error"]

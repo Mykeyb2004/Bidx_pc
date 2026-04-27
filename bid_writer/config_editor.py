@@ -47,11 +47,22 @@ class ConfigEditorDocument:
         )
         return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).strip() + "\n"
 
-    def validate(self, model: dict[str, Any] | None = None) -> list[ValidationMessage]:
+    def validate(
+        self,
+        model: dict[str, Any] | None = None,
+        *,
+        config_path: str | Path | None = None,
+    ) -> list[ValidationMessage]:
+        validation_path = Path(config_path).expanduser().resolve() if config_path is not None else self.config_path
+        env_status = (
+            detect_connection_status(validation_path, self.raw_config)
+            if config_path is not None
+            else self.env_status
+        )
         return validate_editor_model(
             model or self.model,
-            self.config_path,
-            self.env_status,
+            validation_path,
+            env_status,
             self.raw_config,
             require_project_identity=self.require_project_identity,
         )

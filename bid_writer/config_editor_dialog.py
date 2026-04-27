@@ -1185,7 +1185,7 @@ class ConfigEditorDialog(tk.Toplevel):
             return
 
         model = self._collect_model()
-        messages = self.document.validate(model)
+        messages = self.document.validate(model, config_path=target_path)
         errors = [item for item in messages if item.level == "error"]
         if errors:
             messagebox.showerror("校验失败", self._format_validation(errors), parent=self)
