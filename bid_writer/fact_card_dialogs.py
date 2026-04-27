@@ -38,6 +38,9 @@ FACT_CARD_MANUAL_WIDTH = 920
 FACT_CARD_MANUAL_HEIGHT = 520
 FACT_CARD_MANUAL_MIN_SIZE = (820, 460)
 FACT_CARD_INSTRUCTION_PLACEHOLDER_COLOR = "#6b7280"
+FACT_CARD_STATUS_WRAP_MIN_WIDTH = 260
+FACT_CARD_STATUS_WRAP_RESERVED_WIDTH = 18
+FACT_CARD_DRAFT_DELETE_BUTTON_PADX = (16, 12)
 
 
 @dataclass(frozen=True)
@@ -293,7 +296,7 @@ class FactCardDraftEditor(ttk.Frame):
                 command=lambda data=row_data: self.remove_row(data),
                 width=8,
                 **_bootstyle_kwargs("secondary"),
-            ).grid(row=0, column=9, sticky=tk.E)
+            ).grid(**self._delete_button_grid_options())
 
         ttk.Label(container, text="内容").pack(anchor=tk.W, pady=(8, 4))
         content_text = tk.Text(container, height=4, width=72)
@@ -317,6 +320,15 @@ class FactCardDraftEditor(ttk.Frame):
         return {
             "fill": tk.BOTH if stretch_content else tk.X,
             "expand": bool(stretch_content),
+        }
+
+    @staticmethod
+    def _delete_button_grid_options() -> dict[str, object]:
+        return {
+            "row": 0,
+            "column": 9,
+            "sticky": tk.E,
+            "padx": FACT_CARD_DRAFT_DELETE_BUTTON_PADX,
         }
 
     def remove_row(self, row_data: dict[str, object]) -> None:
@@ -444,7 +456,18 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
             else "可直接使用默认提炼要求，也可输入自定义要求后点击“提炼草稿”。"
         )
         self.status_var = tk.StringVar(value=initial_status_text)
-        ttk.Label(action_row, textvariable=self.status_var).pack(side=tk.LEFT, padx=(10, 0))
+        self.status_label = ttk.Label(
+            action_row,
+            textvariable=self.status_var,
+            justify=tk.LEFT,
+            wraplength=self._status_label_wraplength(
+                row_width=window_size.width - 32,
+                button_width=self.extract_button.winfo_reqwidth(),
+            ),
+        )
+        self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+        action_row.bind("<Configure>", self._sync_status_wraplength, add="+")
+        self.after_idle(self._sync_status_wraplength)
 
         editor_frame = ttk.LabelFrame(container, text="提炼草稿", padding=(10, 8))
         editor_frame.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
@@ -553,6 +576,35 @@ class FactCardExtractionWorkspaceDialog(tk.Toplevel):
             "show_delete_button": True,
             "stretch_content": True,
         }
+
+    @staticmethod
+    def _status_label_wraplength(row_width: int, button_width: int) -> int:
+        available_width = row_width - max(button_width, 0) - FACT_CARD_STATUS_WRAP_RESERVED_WIDTH
+        return max(available_width, FACT_CARD_STATUS_WRAP_MIN_WIDTH)
+
+    def _sync_status_wraplength(self, event: Any = None) -> None:
+        if not hasattr(self, "status_label"):
+            return
+
+        row_width = int(getattr(event, "width", 0) or 0)
+        if row_width <= 1:
+            parent = getattr(self.status_label, "master", None)
+            if parent is not None:
+                try:
+                    row_width = int(parent.winfo_width())
+                except (tk.TclError, TypeError, ValueError):
+                    row_width = 0
+
+        button_width = 0
+        if hasattr(self, "extract_button"):
+            try:
+                button_width = int(self.extract_button.winfo_reqwidth())
+            except (tk.TclError, TypeError, ValueError):
+                button_width = 0
+
+        self.status_label.configure(
+            wraplength=self._status_label_wraplength(row_width=row_width, button_width=button_width)
+        )
 
     def _finish_extract(
         self,
@@ -934,6 +986,12 @@ class FactCardLibraryDialog(tk.Toplevel):
                 bootstyle="primary",
             ),
             FactCardLibraryActionButtonSpec(
+                text="删除当前卡片",
+                command_name="_on_delete",
+                width=14,
+                bootstyle="danger",
+            ),
+            FactCardLibraryActionButtonSpec(
                 text="关闭",
                 command_name="_on_cancel",
                 width=10,
@@ -960,6 +1018,16 @@ class FactCardLibraryDialog(tk.Toplevel):
             messagebox.showwarning("提示", "请先选择一张事实卡片。", parent=self)
             return
         self.result = FactCardLibraryDialogResult(action="edit", card=card)
+        self.destroy()
+
+    def _on_delete(self) -> None:
+        card = self._selected_card()
+        if card is None:
+            messagebox.showwarning("提示", "请先选择一张事实卡片。", parent=self)
+            return
+        if not messagebox.askyesno("确认删除", f"确定删除当前事实卡片“{card.name}”吗？", parent=self):
+            return
+        self.result = FactCardLibraryDialogResult(action="delete", card=card)
         self.destroy()
 
     def _on_cancel(self) -> None:

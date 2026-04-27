@@ -3216,7 +3216,25 @@ class MainWindow(tk.Tk):
             if result.action == "edit" and result.card is not None:
                 MainWindow._edit_fact_card_from_library(self, result.card)
                 continue
+            if result.action == "delete" and result.card is not None:
+                MainWindow._delete_fact_card_from_library(self, result.card)
+                continue
             return
+
+    def _delete_fact_card_from_library(self, card):
+        """从完整事实卡片库删除单张卡片。"""
+        existing_cards = self.bid_writer.fact_card_store.list_cards(active_only=False)
+        remaining_cards = [existing_card for existing_card in existing_cards if existing_card.id != card.id]
+        remaining_drafts = MainWindow._fact_card_library_drafts_from_cards(remaining_cards)
+        self.bid_writer.save_fact_card_library(remaining_drafts)
+        detail = f"- {card.name}：{card.content}"
+        self._show_workspace_message(
+            "事实卡片库",
+            "已删除事实卡片",
+            detail,
+            generated_char_count=_count_text_characters(detail),
+        )
+        self.status_text.set(f"已删除事实卡片：{card.name}")
 
     def _edit_fact_card_from_library(self, card):
         """打开单卡编辑弹窗，并把修改合并回完整事实卡片库。"""

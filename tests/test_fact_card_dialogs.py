@@ -227,6 +227,30 @@ def test_fact_card_extraction_workspace_dialog_uses_single_card_editor_options()
     }
 
 
+def test_fact_card_extraction_workspace_dialog_wraps_status_to_remaining_row_width():
+    status_label = _FakeWidget()
+    extract_button = SimpleNamespace(winfo_reqwidth=lambda: 120)
+    dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
+        fact_card_dialogs.FactCardExtractionWorkspaceDialog
+    )
+    dialog.status_label = status_label
+    dialog.extract_button = extract_button
+
+    dialog._sync_status_wraplength(SimpleNamespace(width=640))
+
+    assert status_label.configured[-1] == {"wraplength": 502}
+
+
+def test_fact_card_extraction_workspace_dialog_keeps_minimum_status_wraplength():
+    assert (
+        fact_card_dialogs.FactCardExtractionWorkspaceDialog._status_label_wraplength(
+            row_width=180,
+            button_width=120,
+        )
+        == 260
+    )
+
+
 def test_fact_card_draft_editor_stretches_content_in_single_card_mode():
     assert fact_card_dialogs.FactCardDraftEditor._container_pack_options(True) == {
         "fill": fact_card_dialogs.tk.BOTH,
@@ -236,6 +260,15 @@ def test_fact_card_draft_editor_stretches_content_in_single_card_mode():
     assert fact_card_dialogs.FactCardDraftEditor._content_pack_options(True) == {
         "fill": fact_card_dialogs.tk.BOTH,
         "expand": True,
+    }
+
+
+def test_fact_card_draft_editor_delete_button_keeps_outer_margin():
+    assert fact_card_dialogs.FactCardDraftEditor._delete_button_grid_options() == {
+        "row": 0,
+        "column": 9,
+        "sticky": fact_card_dialogs.tk.E,
+        "padx": (16, 12),
     }
 
 
@@ -287,7 +320,64 @@ def test_fact_card_library_dialog_builds_edit_action_from_selected_card():
 def test_fact_card_library_dialog_action_buttons_use_expected_labels():
     assert [
         spec.text for spec in fact_card_dialogs.FactCardLibraryDialog._action_button_specs()
-    ] == ["新建卡片", "编辑当前卡片", "关闭"]
+    ] == ["新建卡片", "编辑当前卡片", "删除当前卡片", "关闭"]
+
+
+def test_fact_card_library_dialog_delete_requires_confirmation(monkeypatch):
+    prompts: list[str] = []
+    card = FactCard(
+        id="card-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "askyesno",
+        lambda _title, message, parent=None: prompts.append(message) or False,
+    )
+
+    dialog = fact_card_dialogs.FactCardLibraryDialog.__new__(fact_card_dialogs.FactCardLibraryDialog)
+    dialog.result = None
+    dialog.cards = [card]
+    dialog.tree = SimpleNamespace(selection=lambda: ("card-a",))
+    dialog.destroy = lambda: prompts.append("destroy")
+
+    dialog._on_delete()
+
+    assert prompts == ["确定删除当前事实卡片“企业资质”吗？"]
+    assert dialog.result is None
+
+
+def test_fact_card_library_dialog_delete_returns_selected_card_after_confirmation(monkeypatch):
+    card = FactCard(
+        id="card-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    closed: list[str] = []
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "askyesno",
+        lambda _title, _message, parent=None: True,
+    )
+    dialog = fact_card_dialogs.FactCardLibraryDialog.__new__(fact_card_dialogs.FactCardLibraryDialog)
+    dialog.result = None
+    dialog.cards = [card]
+    dialog.tree = SimpleNamespace(selection=lambda: ("card-a",))
+    dialog.destroy = lambda: closed.append("destroy")
+
+    dialog._on_delete()
+
+    assert dialog.result == fact_card_dialogs.FactCardLibraryDialogResult(action="delete", card=card)
+    assert closed == ["destroy"]
 
 
 def test_fact_card_extraction_workspace_dialog_uses_default_instruction_as_placeholder():
@@ -745,6 +835,97 @@ def test_mainwindow_fact_card_library_new_appends_to_library(monkeypatch):
         )
     ]
     assert fake_window.status_text.get() == "已新增事实卡片：项目经理"
+
+
+def test_mainwindow_fact_card_library_delete_removes_selected_card(monkeypatch):
+    saved_drafts: list[FactCardDraft] = []
+    workspace_messages: list[tuple[str, str, str, int]] = []
+    manual_card = FactCard(
+        id="manual-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+    extracted_card = FactCard(
+        id="extract-a",
+        name="服务承诺",
+        content="7×24小时响应",
+        category="承诺",
+        scope="local",
+        enforcement="reference",
+        source=FactCardSource(type="chapter_extract", chapter_path="技术方案 > 质量保障措施"),
+    )
+
+    class _FakeLibraryDialog:
+        calls = 0
+
+        def __init__(self, _parent, *, cards):
+            self.cards = cards
+            type(self).calls += 1
+            self.result = (
+                fact_card_dialogs.FactCardLibraryDialogResult(action="delete", card=manual_card)
+                if type(self).calls == 1
+                else None
+            )
+
+    monkeypatch.setattr(fact_card_dialogs, "FactCardLibraryDialog", _FakeLibraryDialog)
+
+    class _FakeBidWriter:
+        def __init__(self):
+            self.cards = [manual_card, extracted_card]
+            self.fact_card_store = SimpleNamespace(list_cards=lambda active_only=False: self.cards)
+
+        def save_fact_card_library(self, drafts):
+            draft_list = list(drafts)
+            saved_drafts.extend(draft_list)
+            self.cards = [
+                FactCard(
+                    id=draft.card_id,
+                    name=draft.name,
+                    content=draft.content,
+                    category=draft.category,
+                    scope=draft.scope,
+                    enforcement=draft.enforcement,
+                    source=extracted_card.source,
+                )
+                for draft in draft_list
+            ]
+            return self.cards
+
+    fake_window = SimpleNamespace(
+        bid_writer=_FakeBidWriter(),
+        status_text=_FakeStatus(),
+        wait_window=lambda _dialog: None,
+        _show_workspace_message=lambda title, subtitle, detail, generated_char_count=0: workspace_messages.append(
+            (title, subtitle, detail, generated_char_count)
+        ),
+    )
+
+    MainWindow.open_fact_card_library_dialog(fake_window)
+
+    assert saved_drafts == [
+        FactCardDraft(
+            card_id="extract-a",
+            name="服务承诺",
+            content="7×24小时响应",
+            category="承诺",
+            scope="local",
+            enforcement="reference",
+        )
+    ]
+    assert workspace_messages == [
+        (
+            "事实卡片库",
+            "已删除事实卡片",
+            "- 企业资质：一级资质",
+            len("- 企业资质：一级资质"),
+        )
+    ]
+    assert fake_window.bid_writer.cards == [extracted_card]
+    assert fake_window.status_text.get() == "已删除事实卡片：企业资质"
 
 
 def test_mainwindow_manual_fact_card_dialog_appends_to_library(monkeypatch):
