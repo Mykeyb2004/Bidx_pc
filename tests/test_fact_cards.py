@@ -250,9 +250,9 @@ def test_fact_card_store_reads_tracked_statistics_config_cards():
 
     cards = store.list_cards(active_only=False)
 
-    assert [card.id for card in cards] == ["fact-card-1"]
+    assert [card.id for card in cards] == ["fact-card-2"]
     assert [(card.scope, card.enforcement) for card in cards] == [
-        ("local", "reference"),
+        ("local", "strong"),
     ]
 
 

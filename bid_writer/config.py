@@ -5,10 +5,13 @@
 
 import math
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 import yaml
+
+_EXTERNAL_ENV_KEYS = set(os.environ)
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,7 @@ class Config:
     def __init__(self, config_path: str = "config.yaml"):
         self.config_path = Path(config_path)
         self._config = {}
+        self._local_env: dict[str, str] = {}
         self.load()
 
     def _parse_dotenv_line(self, line: str) -> Optional[tuple[str, str]]:
@@ -65,7 +69,7 @@ class Config:
         return key, value
 
     def _load_dotenv_file(self, dotenv_path: Path, protected_keys: set[str]) -> None:
-        """从 `.env` 文件加载环境变量，不覆盖外部已显式设置的值。"""
+        """从 `.env` 文件加载环境变量到当前配置实例，不覆盖外部显式设置的值。"""
         if not dotenv_path.exists() or not dotenv_path.is_file():
             return
 
@@ -81,14 +85,14 @@ class Config:
             key, value = parsed
             if key in protected_keys:
                 continue
-            os.environ[key] = value
+            self._local_env[key] = value
 
     def _load_local_env(self) -> None:
         """按项目配置目录优先加载 `.env` / `.env.local`。"""
         env_dir = self.config_path.parent.resolve()
-        protected_keys = set(os.environ)
+        self._local_env = {}
         for name in (".env", ".env.local"):
-            self._load_dotenv_file(env_dir / name, protected_keys)
+            self._load_dotenv_file(env_dir / name, _EXTERNAL_ENV_KEYS)
 
     def load(self) -> None:
         """加载配置文件"""
@@ -174,6 +178,8 @@ class Config:
         """读取环境变量字符串，空串按未设置处理。"""
         value = os.environ.get(key)
         if value is None:
+            value = self._local_env.get(key)
+        if value is None:
             return None
         stripped = value.strip()
         return stripped if stripped else None
@@ -197,6 +203,25 @@ class Config:
             return float(value)
         except ValueError:
             return None
+
+    def _get_env_bool(self, key: str) -> Optional[bool]:
+        """读取环境变量布尔值，非法值按未设置处理。"""
+        value = self._get_env_str(key)
+        if value is None:
+            return None
+        lowered = value.lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+        return None
+
+    def _execution_file_dir(self) -> Path:
+        """返回当前执行入口所在目录，用于放置跨项目运行缓存。"""
+        argv0 = sys.argv[0] if sys.argv else ""
+        if argv0:
+            return Path(argv0).expanduser().resolve().parent
+        return Path.cwd().resolve()
 
     def _resolve_with_base(self, path_value: str, base_dir: Path) -> Path:
         """将相对路径解析为相对于给定基目录的路径。"""
@@ -408,121 +433,52 @@ class Config:
 
     @property
     def api_base_url(self) -> str:
-        """API基础URL"""
-        env_value = os.environ.get('BID_WRITER_API_BASE_URL')
-        if env_value:
-            return env_value
-        return self._get_first_defined(
-            ('models', 'generation', 'base_url'),
-            ('api', 'base_url'),
-            default='https://api.openai.com/v1',
-        )
+        """API基础URL。"""
+        return self._get_env_str('BID_WRITER_API_BASE_URL') or 'https://api.openai.com/v1'
 
     @property
     def api_key(self) -> str:
-        """API密钥"""
-        env_key = os.environ.get('BID_WRITER_API_KEY')
-        if env_key:
-            return env_key
-        return self._get_first_defined(
-            ('models', 'generation', 'api_key'),
-            ('api', 'api_key'),
-            default='',
-        )
+        """API密钥。"""
+        return self._get_env_str('BID_WRITER_API_KEY') or ''
 
     @property
     def model(self) -> str:
-        """模型名称"""
-        env_value = os.environ.get('BID_WRITER_MODEL')
-        if env_value:
-            return env_value
-        return self._get_first_defined(
-            ('models', 'generation', 'model'),
-            ('api', 'model'),
-            default='gpt-4',
-        )
+        """模型名称。"""
+        return self._get_env_str('BID_WRITER_MODEL') or 'gpt-5.4'
 
     @property
     def temperature(self) -> float:
-        """生成温度"""
-        env_value = os.environ.get('BID_WRITER_TEMPERATURE')
-        if env_value:
-            try:
-                return float(env_value)
-            except ValueError:
-                pass
-        return self._get_float(
-            ('models', 'generation', 'temperature'),
-            ('api', 'temperature'),
-            default=0.7,
-        )
+        """生成温度。"""
+        env_value = self._get_env_float('BID_WRITER_TEMPERATURE')
+        return env_value if env_value is not None else 0.7
 
     @property
     def max_tokens(self) -> int:
-        """最大token数"""
-        env_value = os.environ.get('BID_WRITER_MAX_TOKENS')
-        if env_value:
-            try:
-                return int(env_value)
-            except ValueError:
-                pass
-        return self._get_int(
-            ('models', 'generation', 'max_tokens'),
-            ('api', 'max_tokens'),
-            default=8000,
-        )
+        """最大 token 数。"""
+        env_value = self._get_env_int('BID_WRITER_MAX_TOKENS')
+        return env_value if env_value is not None else 10000
 
     @property
     def api_timeout_seconds(self) -> int:
-        """API超时时间（秒）"""
-        env_value = os.environ.get('BID_WRITER_TIMEOUT_SECONDS')
-        if env_value:
-            try:
-                return int(env_value)
-            except ValueError:
-                pass
-        return self._get_int(
-            ('models', 'generation', 'timeout_seconds'),
-            ('api', 'timeout_seconds'),
-            default=120,
-        )
+        """API超时时间（秒）。"""
+        env_value = self._get_env_int('BID_WRITER_TIMEOUT_SECONDS')
+        return env_value if env_value is not None else 120
 
     @property
     def api_max_retries(self) -> int:
-        """API最大重试次数"""
-        env_value = os.environ.get('BID_WRITER_MAX_RETRIES')
-        if env_value:
-            try:
-                return int(env_value)
-            except ValueError:
-                pass
-        return self._get_int(
-            ('models', 'generation', 'max_retries'),
-            ('api', 'max_retries'),
-            default=3,
-        )
+        """API最大重试次数。"""
+        env_value = self._get_env_int('BID_WRITER_MAX_RETRIES')
+        return env_value if env_value is not None else 3
 
     @property
     def api_top_p(self) -> Optional[float]:
-        """采样 top_p，可选"""
-        env_value = os.environ.get('BID_WRITER_TOP_P')
-        if env_value:
-            try:
-                return float(env_value)
-            except ValueError:
-                return None
-        return self._get_optional_float(('models', 'generation', 'top_p'), ('api', 'top_p'))
+        """采样 top_p，可选。"""
+        return self._get_env_float('BID_WRITER_TOP_P')
 
     @property
     def api_seed(self) -> Optional[int]:
-        """随机种子，可选"""
-        env_value = os.environ.get('BID_WRITER_SEED')
-        if env_value:
-            try:
-                return int(env_value)
-            except ValueError:
-                return None
-        return self._get_optional_int(('models', 'generation', 'seed'), ('api', 'seed'))
+        """随机种子，可选。"""
+        return self._get_env_int('BID_WRITER_SEED')
 
     @property
     def role(self) -> str:
@@ -1152,83 +1108,44 @@ class Config:
     @property
     def embedding_api_base_url(self) -> str:
         """embedding 服务地址，只从环境变量读取。"""
-        return (
-            self._get_env_str('BID_WRITER_EMBEDDING_API_BASE_URL')
-            or str(self._get_first_defined(('models', 'embedding', 'base_url'), default='')).strip()
-        )
+        return self._get_env_str('BID_WRITER_EMBEDDING_API_BASE_URL') or ''
 
     @property
     def embedding_api_key(self) -> str:
         """embedding 服务密钥，只从环境变量读取。"""
-        return (
-            self._get_env_str('BID_WRITER_EMBEDDING_API_KEY')
-            or str(self._get_first_defined(('models', 'embedding', 'api_key'), default='')).strip()
-        )
+        return self._get_env_str('BID_WRITER_EMBEDDING_API_KEY') or ''
 
     @property
     def embedding_model(self) -> str:
         """embedding 模型名称。"""
-        value = self._get_first_defined(
-            ('models', 'embedding', 'model'),
-            ('context_pruning', 'retrieval', 'embedding', 'model'),
-            default='text-embedding-3-small',
-        )
-        return str(value).strip() if value is not None else 'text-embedding-3-small'
+        return self._get_env_str('BID_WRITER_EMBEDDING_MODEL') or 'text-embedding-3-large'
 
     @property
     def embedding_batch_size(self) -> int:
         """embedding 批大小。"""
-        return self._get_int(
-            ('models', 'embedding', 'batch_size'),
-            ('context_pruning', 'retrieval', 'embedding', 'batch_size'),
-            default=64,
-        )
+        env_value = self._get_env_int('BID_WRITER_EMBEDDING_BATCH_SIZE')
+        return env_value if env_value is not None else 64
 
     @property
     def embedding_cache_dir(self) -> str:
         """embedding 本地缓存目录。"""
-        value = self._get_value('models', 'embedding', 'cache_dir', default=self._MISSING)
-        if value is not self._MISSING:
-            return self._resolve_declared_path(
-                value,
-                resolver=self._resolve_path,
-                default=str(self._resolve_path('./output/_embedding_cache')),
-            )
-        legacy_value = self._get_first_defined(('context_pruning', 'retrieval', 'embedding', 'cache_dir'), default='./output/_embedding_cache')
-        return self._resolve_declared_path(
-            legacy_value,
-            resolver=self._resolve_path,
-            default=str(self._resolve_path('./output/_embedding_cache')),
-        )
+        return str(self._execution_file_dir() / 'embedding_cache')
 
     @property
     def embedding_rebuild_on_source_change(self) -> bool:
         """源文变化时是否重建 embedding 缓存。"""
-        return self._get_bool(
-            ('models', 'embedding', 'rebuild_on_source_change'),
-            ('context_pruning', 'retrieval', 'embedding', 'rebuild_on_source_change'),
-            default=True,
-        )
+        env_value = self._get_env_bool('BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE')
+        return env_value if env_value is not None else True
 
     @property
     def embedding_query_prefix(self) -> str:
         """查询文本 embedding 前缀。"""
-        value = self._get_first_defined(
-            ('models', 'embedding', 'query_prefix'),
-            ('context_pruning', 'retrieval', 'embedding', 'query_prefix'),
-            default='',
-        )
-        return str(value).strip() if value is not None else ''
+        return self._get_env_str('BID_WRITER_EMBEDDING_QUERY_PREFIX') or ''
 
     @property
     def embedding_document_prefix(self) -> str:
         """文档文本 embedding 前缀。"""
-        value = self._get_first_defined(
-            ('models', 'embedding', 'document_prefix'),
-            ('context_pruning', 'retrieval', 'embedding', 'document_prefix'),
-            default='',
-        )
-        return str(value).strip() if value is not None else ''
+        return self._get_env_str('BID_WRITER_EMBEDDING_DOCUMENT_PREFIX') or ''
 
     @property
     def embedding_is_configured(self) -> bool:
@@ -1286,26 +1203,17 @@ class Config:
     @property
     def pruning_api_base_url(self) -> str:
         """章节裁剪辅助模型 API 地址，只从环境变量读取。"""
-        return (
-            self._get_env_str('BID_WRITER_PRUNING_API_BASE_URL')
-            or str(self._get_first_defined(('models', 'pruning', 'base_url'), default='')).strip()
-        )
+        return self._get_env_str('BID_WRITER_PRUNING_API_BASE_URL') or ''
 
     @property
     def pruning_api_key(self) -> str:
         """章节裁剪辅助模型 API Key，只从环境变量读取。"""
-        return (
-            self._get_env_str('BID_WRITER_PRUNING_API_KEY')
-            or str(self._get_first_defined(('models', 'pruning', 'api_key'), default='')).strip()
-        )
+        return self._get_env_str('BID_WRITER_PRUNING_API_KEY') or ''
 
     @property
     def pruning_model(self) -> str:
         """章节裁剪辅助模型名称。"""
-        return (
-            self._get_env_str('BID_WRITER_PRUNING_MODEL')
-            or str(self._get_first_defined(('models', 'pruning', 'model'), ('context_pruning', 'api', 'model'), default='')).strip()
-        )
+        return self._get_env_str('BID_WRITER_PRUNING_MODEL') or 'gpt-5.4'
 
     @property
     def pruning_temperature(self) -> float:
@@ -1313,7 +1221,7 @@ class Config:
         env_value = self._get_env_float('BID_WRITER_PRUNING_TEMPERATURE')
         if env_value is not None:
             return env_value
-        return self._get_float(('models', 'pruning', 'temperature'), ('context_pruning', 'api', 'temperature'), default=0.2)
+        return 0.2
 
     @property
     def pruning_max_tokens(self) -> int:
@@ -1321,7 +1229,7 @@ class Config:
         env_value = self._get_env_int('BID_WRITER_PRUNING_MAX_TOKENS')
         if env_value is not None:
             return env_value
-        return self._get_int(('models', 'pruning', 'max_tokens'), ('context_pruning', 'api', 'max_tokens'), default=1200)
+        return 1200
 
     @property
     def pruning_timeout_seconds(self) -> int:
@@ -1329,7 +1237,7 @@ class Config:
         env_value = self._get_env_int('BID_WRITER_PRUNING_TIMEOUT_SECONDS')
         if env_value is not None:
             return env_value
-        return self._get_int(('models', 'pruning', 'timeout_seconds'), ('context_pruning', 'api', 'timeout_seconds'), default=60)
+        return 60
 
     @property
     def pruning_max_retries(self) -> int:
@@ -1337,23 +1245,17 @@ class Config:
         env_value = self._get_env_int('BID_WRITER_PRUNING_MAX_RETRIES')
         if env_value is not None:
             return env_value
-        return self._get_int(('models', 'pruning', 'max_retries'), ('context_pruning', 'api', 'max_retries'), default=2)
+        return 2
 
     @property
     def pruning_top_p(self) -> Optional[float]:
         """章节裁剪辅助模型采样 top_p。"""
-        env_value = self._get_env_float('BID_WRITER_PRUNING_TOP_P')
-        if env_value is not None:
-            return env_value
-        return self._get_optional_float(('models', 'pruning', 'top_p'), ('context_pruning', 'api', 'top_p'))
+        return self._get_env_float('BID_WRITER_PRUNING_TOP_P')
 
     @property
     def pruning_seed(self) -> Optional[int]:
         """章节裁剪辅助模型随机种子。"""
-        env_value = self._get_env_int('BID_WRITER_PRUNING_SEED')
-        if env_value is not None:
-            return env_value
-        return self._get_optional_int(('models', 'pruning', 'seed'), ('context_pruning', 'api', 'seed'))
+        return self._get_env_int('BID_WRITER_PRUNING_SEED')
 
     @property
     def pruning_api_is_configured(self) -> bool:

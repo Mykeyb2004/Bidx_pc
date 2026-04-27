@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from bid_writer.config import Config
@@ -84,7 +85,7 @@ runtime:
     assert config.context_pruning_requirements_brief_enabled is True
     assert config.output_directory == str(project_root / "output")
     assert config.generation_trace_directory == str(tmp_path / "trace-output")
-    assert config.embedding_cache_dir == str(tmp_path / "embed-cache")
+    assert config.embedding_cache_dir == str(Path(sys.argv[0]).resolve().parent / "embedding_cache")
     assert config.bid_requirements == "项目采购需求正文"
     assert config.scoring_criteria == "评分标准正文"
     assert config.prompt_bidder_name == "测试投标主体"
@@ -93,6 +94,249 @@ runtime:
     assert config.generation_stream_idle_timeout_seconds == 15
     assert config.generation_default_target_words == 1500
     assert config.build_target_word_range(1500).to_dict() == {"baseline": 1500, "lower": 1500, "upper": 1800}
+
+
+def test_model_settings_are_loaded_from_env_local_and_not_yaml(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_API_BASE_URL",
+        "BID_WRITER_API_KEY",
+        "BID_WRITER_MODEL",
+        "BID_WRITER_TEMPERATURE",
+        "BID_WRITER_MAX_TOKENS",
+        "BID_WRITER_TIMEOUT_SECONDS",
+        "BID_WRITER_MAX_RETRIES",
+        "BID_WRITER_TOP_P",
+        "BID_WRITER_SEED",
+        "BID_WRITER_PRUNING_API_BASE_URL",
+        "BID_WRITER_PRUNING_API_KEY",
+        "BID_WRITER_PRUNING_MODEL",
+        "BID_WRITER_PRUNING_TEMPERATURE",
+        "BID_WRITER_PRUNING_MAX_TOKENS",
+        "BID_WRITER_PRUNING_TIMEOUT_SECONDS",
+        "BID_WRITER_PRUNING_MAX_RETRIES",
+        "BID_WRITER_PRUNING_TOP_P",
+        "BID_WRITER_PRUNING_SEED",
+        "BID_WRITER_EMBEDDING_API_BASE_URL",
+        "BID_WRITER_EMBEDDING_API_KEY",
+        "BID_WRITER_EMBEDDING_MODEL",
+        "BID_WRITER_EMBEDDING_BATCH_SIZE",
+        "BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE",
+        "BID_WRITER_EMBEDDING_QUERY_PREFIX",
+        "BID_WRITER_EMBEDDING_DOCUMENT_PREFIX",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+models:
+  generation:
+    base_url: "https://yaml.invalid/v1"
+    api_key: "yaml-key"
+    model: "yaml-generation"
+    temperature: 1.1
+    max_tokens: 111
+    timeout_seconds: 11
+    max_retries: 1
+    top_p: 0.11
+    seed: 11
+  pruning:
+    base_url: "https://yaml-pruning.invalid/v1"
+    api_key: "yaml-pruning-key"
+    model: "yaml-pruning"
+    temperature: 1.2
+    max_tokens: 222
+    timeout_seconds: 22
+    max_retries: 2
+    top_p: 0.22
+    seed: 22
+  embedding:
+    base_url: "https://yaml-embedding.invalid/v1"
+    api_key: "yaml-embedding-key"
+    model: "yaml-embedding"
+    batch_size: 22
+    rebuild_on_source_change: false
+    query_prefix: "yaml-query:"
+    document_prefix: "yaml-document:"
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.local").write_text(
+        """
+BID_WRITER_API_BASE_URL=https://env.example/v1
+BID_WRITER_API_KEY=env-key
+BID_WRITER_MODEL=env-generation
+BID_WRITER_TEMPERATURE=0.3
+BID_WRITER_MAX_TOKENS=333
+BID_WRITER_TIMEOUT_SECONDS=33
+BID_WRITER_MAX_RETRIES=4
+BID_WRITER_TOP_P=0.93
+BID_WRITER_SEED=333
+BID_WRITER_PRUNING_API_BASE_URL=https://env-pruning.example/v1
+BID_WRITER_PRUNING_API_KEY=env-pruning-key
+BID_WRITER_PRUNING_MODEL=env-pruning
+BID_WRITER_PRUNING_TEMPERATURE=0.2
+BID_WRITER_PRUNING_MAX_TOKENS=444
+BID_WRITER_PRUNING_TIMEOUT_SECONDS=44
+BID_WRITER_PRUNING_MAX_RETRIES=5
+BID_WRITER_PRUNING_TOP_P=0.82
+BID_WRITER_PRUNING_SEED=444
+BID_WRITER_EMBEDDING_API_BASE_URL=https://env-embedding.example/v1
+BID_WRITER_EMBEDDING_API_KEY=env-embedding-key
+BID_WRITER_EMBEDDING_MODEL=env-embedding
+BID_WRITER_EMBEDDING_BATCH_SIZE=32
+BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=false
+BID_WRITER_EMBEDDING_QUERY_PREFIX=query:
+BID_WRITER_EMBEDDING_DOCUMENT_PREFIX=document:
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.api_base_url == "https://env.example/v1"
+    assert config.api_key == "env-key"
+    assert config.model == "env-generation"
+    assert config.temperature == 0.3
+    assert config.max_tokens == 333
+    assert config.api_timeout_seconds == 33
+    assert config.api_max_retries == 4
+    assert config.api_top_p == 0.93
+    assert config.api_seed == 333
+    assert config.pruning_api_base_url == "https://env-pruning.example/v1"
+    assert config.pruning_api_key == "env-pruning-key"
+    assert config.pruning_model == "env-pruning"
+    assert config.pruning_temperature == 0.2
+    assert config.pruning_max_tokens == 444
+    assert config.pruning_timeout_seconds == 44
+    assert config.pruning_max_retries == 5
+    assert config.pruning_top_p == 0.82
+    assert config.pruning_seed == 444
+    assert config.embedding_api_base_url == "https://env-embedding.example/v1"
+    assert config.embedding_api_key == "env-embedding-key"
+    assert config.embedding_model == "env-embedding"
+    assert config.embedding_batch_size == 32
+    assert config.embedding_rebuild_on_source_change is False
+    assert config.embedding_query_prefix == "query:"
+    assert config.embedding_document_prefix == "document:"
+
+
+def test_model_settings_ignore_yaml_when_env_local_is_absent(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_API_BASE_URL",
+        "BID_WRITER_API_KEY",
+        "BID_WRITER_MODEL",
+        "BID_WRITER_TEMPERATURE",
+        "BID_WRITER_MAX_TOKENS",
+        "BID_WRITER_TIMEOUT_SECONDS",
+        "BID_WRITER_MAX_RETRIES",
+        "BID_WRITER_TOP_P",
+        "BID_WRITER_SEED",
+        "BID_WRITER_PRUNING_API_BASE_URL",
+        "BID_WRITER_PRUNING_API_KEY",
+        "BID_WRITER_PRUNING_MODEL",
+        "BID_WRITER_EMBEDDING_API_BASE_URL",
+        "BID_WRITER_EMBEDDING_API_KEY",
+        "BID_WRITER_EMBEDDING_MODEL",
+        "BID_WRITER_EMBEDDING_BATCH_SIZE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+models:
+  generation:
+    base_url: "https://yaml.invalid/v1"
+    api_key: "yaml-key"
+    model: "yaml-generation"
+    temperature: 1.1
+    max_tokens: 111
+    timeout_seconds: 11
+    max_retries: 1
+  pruning:
+    base_url: "https://yaml-pruning.invalid/v1"
+    api_key: "yaml-pruning-key"
+    model: "yaml-pruning"
+  embedding:
+    base_url: "https://yaml-embedding.invalid/v1"
+    api_key: "yaml-embedding-key"
+    model: "yaml-embedding"
+    batch_size: 22
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.api_base_url == "https://api.openai.com/v1"
+    assert config.api_key == ""
+    assert config.model == "gpt-5.4"
+    assert config.temperature == 0.7
+    assert config.max_tokens == 10000
+    assert config.api_timeout_seconds == 120
+    assert config.api_max_retries == 3
+    assert config.pruning_api_base_url == ""
+    assert config.pruning_api_key == ""
+    assert config.pruning_model == "gpt-5.4"
+    assert config.embedding_api_base_url == ""
+    assert config.embedding_api_key == ""
+    assert config.embedding_model == "text-embedding-3-large"
+    assert config.embedding_batch_size == 64
+
+
+def test_env_local_values_refresh_between_config_directories(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_API_KEY",
+        "BID_WRITER_MODEL",
+        "BID_WRITER_EMBEDDING_API_KEY",
+        "BID_WRITER_EMBEDDING_MODEL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    project_a = tmp_path / "project-a"
+    project_b = tmp_path / "project-b"
+    project_a.mkdir()
+    project_b.mkdir()
+    (project_a / "config.yaml").write_text("project: {}\n", encoding="utf-8")
+    (project_b / "config.yaml").write_text("project: {}\n", encoding="utf-8")
+    (project_a / ".env.local").write_text(
+        "BID_WRITER_API_KEY=key-a\nBID_WRITER_MODEL=model-a\n"
+        "BID_WRITER_EMBEDDING_API_KEY=embedding-key-a\nBID_WRITER_EMBEDDING_MODEL=embedding-a\n",
+        encoding="utf-8",
+    )
+    (project_b / ".env.local").write_text(
+        "BID_WRITER_API_KEY=key-b\nBID_WRITER_MODEL=model-b\n"
+        "BID_WRITER_EMBEDDING_API_KEY=embedding-key-b\nBID_WRITER_EMBEDDING_MODEL=embedding-b\n",
+        encoding="utf-8",
+    )
+
+    config_a = Config(str(project_a / "config.yaml"))
+    config_b = Config(str(project_b / "config.yaml"))
+
+    assert config_a.api_key == "key-a"
+    assert config_a.model == "model-a"
+    assert config_a.embedding_api_key == "embedding-key-a"
+    assert config_a.embedding_model == "embedding-a"
+    assert config_b.api_key == "key-b"
+    assert config_b.model == "model-b"
+    assert config_b.embedding_api_key == "embedding-key-b"
+    assert config_b.embedding_model == "embedding-b"
+
+
+def test_embedding_cache_defaults_next_to_execution_file(monkeypatch, tmp_path: Path):
+    execution_dir = tmp_path / "runner"
+    execution_dir.mkdir()
+    fake_runner = execution_dir / "run.py"
+    fake_runner.write_text("", encoding="utf-8")
+    config_path = tmp_path / "project" / "config.yaml"
+    config_path.parent.mkdir()
+    config_path.write_text("project: {}\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [str(fake_runner)])
+
+    config = Config(str(config_path))
+
+    assert config.embedding_cache_dir == str(execution_dir / "embedding_cache")
 
 
 def test_full_context_chapter_writing_plan_config_is_read(tmp_path: Path):

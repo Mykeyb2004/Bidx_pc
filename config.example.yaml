@@ -8,11 +8,11 @@ project:
   output_dir: "./output"
 
 writing:
-  role_file: "./roles/example_role.md"
+  role_file: "./roles/通用投标角色.md"
   target_words:
-    default: 3000
+    default: 1500
     min: 100
-    max: 15000
+    max: 12000
     step: 100
     upper_ratio: 1.15
   output_format: "纯正文"
@@ -20,16 +20,14 @@ writing:
   allow_markdown_headings: false
   allow_english_terms: false
   max_tables_per_section: 2
-  max_mermaid_flowcharts_per_section: 0
+  max_mermaid_flowcharts_per_section: 1
   summary_title: ""
-  extra_rules:
-    - "内容要专业、严谨，符合标书撰写规范"
-    - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"
+  extra_rules: []
 
 processing:
-  path: "legacy_rule"  # 可改为 "full_context"：直接把采购需求与评分标准全文送入提示词
+  path: "full_context"
   project_background:
-    enabled: true
+    enabled: false
     max_chars: 800
   chapter_facts:
     enabled: true
@@ -49,9 +47,9 @@ processing:
     requirements_max_quote_chars: 220
     requirement_brief_enabled: true
   hybrid_extract:
-    unavailable_policy: "fallback_legacy"
+    unavailable_policy: "fail_fast"
     scoring_parse_mode: "auto"
-    scoring_max_rows: 4
+    scoring_max_rows: 20
     requirements_max_quotes: 4
     requirements_max_quote_chars: 220
     requirement_brief_enabled: true
@@ -62,7 +60,7 @@ processing:
       top_k_lexical: 20
       top_k_vector: 20
       top_k_fused: 30
-      top_k_final: 6
+      top_k_final: 8
       min_fused_score: 0.0
     quote_only: true
     return_ids_only: true
@@ -73,33 +71,12 @@ fact_cards:
   cards: []
   chapter_defaults: {}
 
-models:
-  generation:
-    model: "gpt-4o-mini"
-    temperature: 0.7
-    max_tokens: 8000
-    timeout_seconds: 120
-    max_retries: 3
-  pruning:
-    model: "gpt-4o-mini"
-    temperature: 0.2
-    max_tokens: 1200
-    timeout_seconds: 60
-    max_retries: 2
-  embedding:
-    model: "text-embedding-3-small"
-    batch_size: 64
-    cache_dir: "./output/_embedding_cache"
-    rebuild_on_source_change: true
-    query_prefix: ""
-    document_prefix: ""
-
 runtime:
   stream:
     enabled: true
     idle_timeout_seconds: 12
   trace:
-    enabled: false
+    enabled: true
     directory: "./log/generation_traces"
     mode: "full"
     write_prompt: true
@@ -108,12 +85,12 @@ runtime:
     write_summary: true
     redact_sensitive: true
   debug:
-    context_pruning_dump: false
+    context_pruning_dump: true
   output:
     prefix: ""
     include_title_header: true
     overwrite_existing: true
     filename_max_length: 100
-    empty_filename_fallback: "untitled"
+    empty_filename_fallback: "未命名"
   merge:
-    normalize_soft_line_breaks: false
+    normalize_soft_line_breaks: true

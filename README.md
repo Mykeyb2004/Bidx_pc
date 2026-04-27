@@ -50,23 +50,24 @@ cp .env.example .env.local
 ```dotenv
 BID_WRITER_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_API_KEY=your-api-key
-BID_WRITER_MODEL=gpt-4o-mini
+BID_WRITER_MODEL=gpt-5.4
 ```
 
 常见可选参数：
 
 ```dotenv
 BID_WRITER_TEMPERATURE=0.7
-BID_WRITER_MAX_TOKENS=8000
+BID_WRITER_MAX_TOKENS=10000
 
 # hybrid_extract / auto 相关辅助模型
 BID_WRITER_PRUNING_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_PRUNING_API_KEY=your-api-key
-BID_WRITER_PRUNING_MODEL=gpt-4o-mini
+BID_WRITER_PRUNING_MODEL=gpt-5.4
 
 # 启用向量召回时需要
 BID_WRITER_EMBEDDING_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_EMBEDDING_API_KEY=your-api-key
+BID_WRITER_EMBEDDING_MODEL=text-embedding-3-large
 ```
 
 ### 3. 启动程序
@@ -131,8 +132,9 @@ uv run python run.py --config config_公共服务满意度_auto.yaml
 - `project`：项目资料、输入文件、输出目录
 - `writing`：角色设定、写作规则、篇幅和格式约束
 - `processing`：章节处理路径与提炼参数
-- `models`：主模型、辅助模型、embedding 的非敏感参数
 - `runtime`：流式输出、trace、调试和文件输出行为
+
+模型连接、模型名、token、temperature、timeout、retry 和 embedding 参数统一放在 `.env.local`，不再写入 YAML 配置文件。
 
 最小示例：
 
@@ -154,10 +156,6 @@ writing:
 processing:
   path: "full_context"
 
-models:
-  generation:
-    model: "gpt-4o-mini"
-
 runtime:
   stream:
     enabled: true
@@ -176,11 +174,13 @@ runtime:
 - `.env.local` 会覆盖 `.env`
 - 已在外部 shell 中显式设置的环境变量优先级最高，不会被 `.env` 文件覆盖
 - `project.inputs.*` 和 `project.output_dir` 默认相对 `project.root_dir` 解析
-- `runtime.trace.directory`、`models.embedding.cache_dir` 等运行产物路径默认相对配置文件目录解析
+- `runtime.trace.directory` 等运行产物路径默认相对配置文件目录解析
+- embedding 缓存目录固定为执行入口同级的 `embedding_cache`
 
 兼容性说明：
 
-- 旧字段仍兼容，包括根级 `outline_file` / `bid_requirements` / `scoring_criteria`、`prompt.*`、`context_pruning.*`、`generation_trace.*`、`api.*`
+- 旧业务字段仍兼容，包括根级 `outline_file` / `bid_requirements` / `scoring_criteria`、`prompt.*`、`context_pruning.*`、`generation_trace.*`
+- 旧模型字段如 `models.*`、`api.*`、`context_pruning.api.*` 会被配置编辑器清理，不再参与模型参数读取
 - 新项目建议优先参考 [config.example.yaml](./config.example.yaml) 和 [docs/config_schema.md](./docs/config_schema.md)
 
 ## 输出与调试产物

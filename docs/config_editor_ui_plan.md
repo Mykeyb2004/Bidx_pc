@@ -28,7 +28,7 @@
 - `models`
 - `runtime`
 
-这样用户看到的是“项目资料、写作规则、处理链路、模型参数、运行行为”，而不是实现细节。
+这样用户看到的是“项目资料、写作规则、处理链路、运行行为”，而不是实现细节。模型运行参数统一放在 `.env.local`，不再由 YAML 编辑器维护。
 
 ### 2.2 `processing.path` 是最重要的业务开关
 
@@ -223,41 +223,9 @@
 - 当 `vector_enabled=true` 但 embedding 未配置时，右侧立即报错
 - 当 `verify_enabled=true` 但 pruning 未配置时，右侧立即报错
 
-### 4.4 `模型`
+### 4.4 模型参数
 
-目标：只编辑非敏感模型参数。
-
-建议拆成三个子卡片：
-
-- 主生成模型 `models.generation`
-- 辅助模型 `models.pruning`
-- 向量模型 `models.embedding`
-
-可编辑字段：
-
-- `model`
-- `temperature`
-- `max_tokens`
-- `timeout_seconds`
-- `max_retries`
-- `top_p`
-- `seed`
-- `batch_size`
-- `cache_dir`
-- `rebuild_on_source_change`
-- `query_prefix`
-- `document_prefix`
-
-只读状态区：
-
-- 主模型连接状态：来自 `.env.local`
-- pruning 连接状态：来自 `.env.local`
-- embedding 连接状态：来自 `.env.local`
-
-说明文案建议：
-
-- “本界面不保存 API Key、Base URL 等敏感或环境级配置”
-- “如需修改连接信息，请更新 `.env.local`”
+配置编辑器不再提供模型参数页。主生成模型、辅助模型、embedding 的连接信息与运行参数统一在 `.env.local` 或外部环境变量中维护。右侧摘要只展示 generation / pruning / embedding 是否检测到连接配置。
 
 ### 4.5 `运行`
 
@@ -351,7 +319,7 @@
 - `hybrid_extract + vector_enabled` 时 embedding 是否已配置
 - `hybrid_extract + verify_enabled` 时 pruning 是否已配置
 - `return_ids_only` 在 verify 场景下是否为 `true`
-- `trace.directory`、`embedding.cache_dir` 路径是否可写
+- `trace.directory` 路径是否可写
 
 ## 7. 推荐交互细节
 
@@ -378,8 +346,8 @@
 | 项目             | 项目根目录   [ /path/to/project                         ][浏览] | 错误 0                    |
 | 写作             | 投标主体名称 [ 杭州菲尔德咨询                             ]      | 警告 2                    |
 | 处理路径         | 大纲文件     [ ./投标大纲.md                              ][浏览] |                           |
-| 模型             | 采购需求文件 [ ./采购需求.md                              ][浏览] | 当前摘要                  |
-| 运行             | 评分标准文件 [ ./评分标准.md                              ][浏览] | - processing=legacy_rule  |
+| 运行             | 采购需求文件 [ ./采购需求.md                              ][浏览] | 当前摘要                  |
+|                 | 评分标准文件 [ ./评分标准.md                              ][浏览] | - processing=legacy_rule  |
 |                 | 输出目录     [ ./output                                   ][浏览] | - trace=enabled           |
 |                 |                                                                | - debug_dump=true         |
 |                 |                                                                |                           |
@@ -412,18 +380,14 @@
 +------------------------------------------------------------------------------------------------------------------+
 ```
 
-### 8.3 `模型` 页面中的环境状态卡片
+### 8.3 环境状态卡片
 
 ```text
 +--------------------------------------------------------------------------------------------------------------+
-| 模型参数                                                                                                     |
-| 主模型 model [ gpt-5.4-mini ]  temperature [ 0.7 ]  max_tokens [ 8000 ]                                     |
-| 辅助模型 model [ gpt-5.4-mini ]  temperature [ 0.2 ]  max_tokens [ 1200 ]                                   |
-| 向量模型 model [ text-embedding-3-small ]  batch_size [ 64 ]                                                 |
-+--------------------------------------------------------------------------------------------------------------+
-| 环境状态                                                                                                     |
+| 连接状态                                                                                                     |
 | 主模型连接       已检测到 `.env.local` 配置                                                                   |
 | 辅助模型连接     未检测到 `.env.local` 配置                                                                   |
+| embedding 连接   未检测到 `.env.local` 配置                                                                   |
 | embedding 连接   已检测到 `.env.local` 配置                                                                   |
 | 说明：API Key / Base URL 不在此处编辑，避免把环境级配置写入项目 YAML。                                        |
 +--------------------------------------------------------------------------------------------------------------+
@@ -437,9 +401,6 @@
 - 完成 editor shell 和 canonical view model
 - 完成 `项目 / 写作 / 处理路径 / 运行` 基础表单
 
-### Phase 2
-
-- 完成 `模型` 页面
 - 接入右侧校验面板
 - 接入 YAML 预览和 `另存为`
 

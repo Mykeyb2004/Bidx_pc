@@ -1,17 +1,3 @@
-models:
-  generation:
-    base_url: "https://example.com/v1"
-    api_key: "test-key"
-    model: "test-model"
-    temperature: 0.3
-    max_tokens: 2400
-  pruning:
-    model: "test-model"
-    temperature: 0.2
-    max_tokens: 800
-    timeout_seconds: 30
-    max_retries: 1
-
 project:
   bidder_name: "测试投标主体"
   inputs:

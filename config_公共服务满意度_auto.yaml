@@ -65,26 +65,6 @@ processing:
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8
-models:
-  generation:
-    model: gpt-5.4
-    temperature: 0.7
-    max_tokens: 10000
-    timeout_seconds: 120
-    max_retries: 3
-  pruning:
-    model: gpt-5.4
-    temperature: 0.2
-    max_tokens: 1200
-    timeout_seconds: 60
-    max_retries: 2
-  embedding:
-    model: text-embedding-3-large
-    batch_size: 64
-    cache_dir: ./output/_embedding_cache
-    rebuild_on_source_change: true
-    query_prefix: ''
-    document_prefix: ''
 runtime:
   stream:
     enabled: true

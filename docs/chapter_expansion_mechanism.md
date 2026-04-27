@@ -571,7 +571,7 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 
 ### 10.1 裁剪是规则驱动，不是智能规划
 
-`context_pruner.py` 当前没有实际调用辅助模型，虽然配置里预留了 `context_pruning.api.*`。因此当前裁剪效果高度依赖：
+`context_pruner.py` 的基础裁剪仍然主要由规则和检索驱动；只有启用候选校验等辅助链路时，才会使用 `.env.local` 中的 `BID_WRITER_PRUNING_*`。因此当前裁剪效果高度依赖：
 
 - 标题命名质量
 - 评分标准结构

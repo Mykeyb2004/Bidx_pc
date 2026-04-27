@@ -15,7 +15,7 @@ def _write_project_files(base_dir: Path) -> None:
     (base_dir / "scoring_criteria.md").write_text("评分标准正文", encoding="utf-8")
 
 
-def test_config_editor_normalizes_legacy_schema_and_preserves_generation_connection_fields(tmp_path: Path):
+def test_config_editor_normalizes_legacy_schema_and_drops_model_fields(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "legacy.yaml"
     config_path.write_text(
@@ -52,12 +52,9 @@ output:
     assert document.model["processing"]["path"] == "legacy_rule"
     assert "api" not in payload
     assert "context_pruning" not in payload
+    assert "models" not in payload
     assert payload["project"]["root_dir"] == "."
     assert payload["project"]["inputs"]["outline_file"] == "./outline.md"
-    assert payload["models"]["generation"]["model"] == "legacy-model"
-    assert payload["models"]["generation"]["temperature"] == 0.6
-    assert payload["models"]["generation"]["base_url"] == "https://example.invalid/v1"
-    assert payload["models"]["generation"]["api_key"] == "secret-key"
     assert payload["writing"]["target_words"]["default"] == 500
     assert document.model["writing"]["max_mermaid_flowcharts_per_section"] == 5
     assert payload["writing"]["max_mermaid_flowcharts_per_section"] == 5
@@ -287,22 +284,25 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
         },
         "output_dir": "./output",
     }
-    assert payload["writing"]["role_file"] == "./roles/example_role.md"
+    assert payload["writing"]["role_file"] == "./roles/通用投标角色.md"
     assert payload["writing"]["target_words"] == {
-        "default": 3000,
+        "default": 1500,
         "min": 100,
-        "max": 15000,
+        "max": 12000,
         "step": 100,
         "upper_ratio": 1.15,
     }
     assert payload["writing"]["output_format"] == "纯正文"
     assert payload["writing"]["max_tables_per_section"] == 2
-    assert payload["processing"]["path"] == "auto"
-    assert payload["models"]["generation"]["model"] == "gpt-4o-mini"
-    assert payload["models"]["pruning"]["model"] == "gpt-4o-mini"
-    assert payload["models"]["embedding"]["model"] == "text-embedding-3-small"
+    assert payload["processing"]["path"] == "full_context"
+    assert payload["processing"]["project_background"]["enabled"] is False
+    assert payload["processing"]["hybrid_extract"]["retrieval"]["top_k_final"] == 8
+    assert "models" not in payload
     assert payload["runtime"]["stream"]["enabled"] is True
-    assert payload["runtime"]["trace"]["enabled"] is False
+    assert payload["runtime"]["trace"]["enabled"] is True
+    assert payload["runtime"]["debug"]["context_pruning_dump"] is True
+    assert payload["runtime"]["output"]["empty_filename_fallback"] == "未命名"
+    assert payload["runtime"]["merge"]["normalize_soft_line_breaks"] is True
     assert payload["fact_cards"] == {
         "enabled": True,
         "cards": [],

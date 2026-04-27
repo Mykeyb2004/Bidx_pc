@@ -644,7 +644,7 @@ messages = [
 | `context_pruning_extraction_llm_verify_enabled` | `context_pruning.extraction.llm_verify_enabled` | 是否启用候选校验 | 间接进入，决定路由 |
 | `embedding_api_base_url` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_API_BASE_URL` | embedding 服务根地址 | 间接进入，影响 vector retrieval |
 | `embedding_api_key` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_API_KEY` | embedding 服务密钥 | 间接进入，影响 vector retrieval |
-| `embedding_model` | `context_pruning.retrieval.embedding.model` | 向量模型名称 | 间接进入，决定 vector retrieval |
+| `embedding_model` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_MODEL` | 向量模型名称 | 间接进入，决定 vector retrieval |
 | `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
 | `prompt_output_format` | `prompt.output_format` | task card 中的输出方式描述 | 是 |
 | `prompt_first_line_template` | `prompt.first_line_template` | 是否追加首行要求，以及首行文本 | 是 |
@@ -669,13 +669,13 @@ messages = [
 | `requirement_brief` | 需求摘录结果 | 优先作为 `需求要点` 内容 | 是 |
 | `pruning_api_base_url` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_API_BASE_URL` | 候选校验辅助模型地址 | 间接进入，影响 verifier |
 | `pruning_api_key` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_API_KEY` | 候选校验辅助模型密钥 | 间接进入，影响 verifier |
-| `pruning_model` | `context_pruning.api.model` 或环境变量 | 候选校验辅助模型名称 | 间接进入，影响 verifier |
-| `pruning_temperature` | `context_pruning.api.temperature` 或环境变量 | 候选校验辅助模型温度 | 间接进入，影响 verifier |
-| `pruning_max_tokens` | `context_pruning.api.max_tokens` 或环境变量 | 候选校验辅助模型输出上限 | 间接进入，影响 verifier |
-| `pruning_timeout_seconds` | `context_pruning.api.timeout_seconds` 或环境变量 | 候选校验辅助模型超时 | 间接进入，影响 verifier |
-| `pruning_max_retries` | `context_pruning.api.max_retries` 或环境变量 | 候选校验辅助模型重试次数 | 间接进入，影响 verifier |
-| `pruning_top_p` | `context_pruning.api.top_p` 或环境变量 | 候选校验辅助模型采样 top_p | 间接进入，影响 verifier |
-| `pruning_seed` | `context_pruning.api.seed` 或环境变量 | 候选校验辅助模型随机种子 | 间接进入，影响 verifier |
+| `pruning_model` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_MODEL` | 候选校验辅助模型名称 | 间接进入，影响 verifier |
+| `pruning_temperature` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_TEMPERATURE` | 候选校验辅助模型温度 | 间接进入，影响 verifier |
+| `pruning_max_tokens` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_MAX_TOKENS` | 候选校验辅助模型输出上限 | 间接进入，影响 verifier |
+| `pruning_timeout_seconds` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_TIMEOUT_SECONDS` | 候选校验辅助模型超时 | 间接进入，影响 verifier |
+| `pruning_max_retries` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_MAX_RETRIES` | 候选校验辅助模型重试次数 | 间接进入，影响 verifier |
+| `pruning_top_p` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_TOP_P` | 候选校验辅助模型采样 top_p | 间接进入，影响 verifier |
+| `pruning_seed` | `.env.local` / 环境变量 `BID_WRITER_PRUNING_SEED` | 候选校验辅助模型随机种子 | 间接进入，影响 verifier |
 
 ### 7.2 当前容易误判为“生效”，但实际上不影响这条链路的变量
 

@@ -245,12 +245,12 @@ processing.path
 
 | 参数路径 | 代码默认值 | 示例配置当前值 | 当前是否接线 | 作用 |
 |---|---:|---:|---|---|
-| `context_pruning.retrieval.embedding.model` | `text-embedding-3-small` | `text-embedding-3-small` | 已接线 | embedding 模型名 |
-| `context_pruning.retrieval.embedding.batch_size` | `64` | `64` | 已接线 | embedding 批大小 |
-| `context_pruning.retrieval.embedding.cache_dir` | `./output/_embedding_cache` | `./output/_embedding_cache` | 已接线 | 本地缓存目录 |
-| `context_pruning.retrieval.embedding.rebuild_on_source_change` | `true` | `true` | 未单独接线 | 当前缓存是否重建主要由缓存键变化决定，这个布尔位未被单独消费 |
-| `context_pruning.retrieval.embedding.query_prefix` | `""` | `""` | 已接线 | query embedding 的前缀 |
-| `context_pruning.retrieval.embedding.document_prefix` | `""` | `""` | 已接线 | document embedding 的前缀 |
+| `BID_WRITER_EMBEDDING_MODEL` | `text-embedding-3-large` | `.env.local` | 已接线 | embedding 模型名 |
+| `BID_WRITER_EMBEDDING_BATCH_SIZE` | `64` | `.env.local` | 已接线 | embedding 批大小 |
+| 执行入口同级 `embedding_cache` | 执行入口同级 | 固定默认 | 已接线 | 本地缓存目录，不再通过 YAML 配置 |
+| `BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE` | `true` | `.env.local` | 已接线 | 源文变化时是否重建向量缓存 |
+| `BID_WRITER_EMBEDDING_QUERY_PREFIX` | `""` | `.env.local` | 已接线 | query embedding 的前缀 |
+| `BID_WRITER_EMBEDDING_DOCUMENT_PREFIX` | `""` | `.env.local` | 已接线 | document embedding 的前缀 |
 
 对应环境变量：
 
@@ -258,11 +258,13 @@ processing.path
 |---|---|---|
 | `BID_WRITER_EMBEDDING_API_BASE_URL` | `vector_enabled=true` 时必需 | embedding 服务根地址 |
 | `BID_WRITER_EMBEDDING_API_KEY` | `vector_enabled=true` 时必需 | embedding 服务密钥 |
+| `BID_WRITER_EMBEDDING_MODEL` | 可选 | embedding 模型名 |
+| `BID_WRITER_EMBEDDING_BATCH_SIZE` | 可选 | embedding 批大小 |
 
 说明：
 
 - embedding 客户端会自动把误写成 `.../embeddings` 的 base URL 归一化到服务根路径
-- 向量缓存 key 当前包含：`embedding.model`、`embedding.document_prefix`、文档内容本身
+- 向量缓存 key 当前包含：`embedding_model`、`embedding_document_prefix`、文档内容本身
 
 ### 5.7 候选校验参数
 
@@ -279,13 +281,13 @@ processing.path
 
 | 参数路径 | 代码默认值 | 示例配置当前值 | 当前是否接线 | 作用 |
 |---|---:|---:|---|---|
-| `context_pruning.api.model` | `""` | `gpt-5.4-mini` | 已接线 | verifier 模型名 |
-| `context_pruning.api.temperature` | `0.2` | `0.2` | 未按配置接线 | `LLMVerifier` 当前实际写死 `temperature=0` |
-| `context_pruning.api.max_tokens` | `1200` | `1200` | 未接线 | 当前调用 verifier 时未传 `max_tokens` |
-| `context_pruning.api.timeout_seconds` | `60` | `60` | 已接线 | OpenAI 客户端超时 |
-| `context_pruning.api.max_retries` | `2` | `2` | 已接线 | OpenAI 客户端重试次数 |
-| `context_pruning.api.top_p` | `None` | 未配置 | 未接线 | 当前 verifier 调用未传 `top_p` |
-| `context_pruning.api.seed` | `None` | 未配置 | 未接线 | 当前 verifier 调用未传 `seed` |
+| `BID_WRITER_PRUNING_MODEL` | `gpt-5.4` | `.env.local` | 已接线 | verifier 模型名 |
+| `BID_WRITER_PRUNING_TEMPERATURE` | `0.2` | `.env.local` | 未按配置接线 | `LLMVerifier` 当前实际写死 `temperature=0` |
+| `BID_WRITER_PRUNING_MAX_TOKENS` | `1200` | `.env.local` | 未接线 | 当前调用 verifier 时未传 `max_tokens` |
+| `BID_WRITER_PRUNING_TIMEOUT_SECONDS` | `60` | `.env.local` | 已接线 | OpenAI 客户端超时 |
+| `BID_WRITER_PRUNING_MAX_RETRIES` | `2` | `.env.local` | 已接线 | OpenAI 客户端重试次数 |
+| `BID_WRITER_PRUNING_TOP_P` | `None` | `.env.local` | 未接线 | 当前 verifier 调用未传 `top_p` |
+| `BID_WRITER_PRUNING_SEED` | `None` | `.env.local` | 未接线 | 当前 verifier 调用未传 `seed` |
 
 对应环境变量：
 
@@ -293,7 +295,7 @@ processing.path
 |---|---|---|
 | `BID_WRITER_PRUNING_API_BASE_URL` | verifier 开启时必需 | verifier 服务地址 |
 | `BID_WRITER_PRUNING_API_KEY` | verifier 开启时必需 | verifier 密钥 |
-| `BID_WRITER_PRUNING_MODEL` | 可选 | 优先级高于 `context_pruning.api.model` |
+| `BID_WRITER_PRUNING_MODEL` | 可选 | 辅助模型名称 |
 | `BID_WRITER_PRUNING_TEMPERATURE` | 可选 | 当前 Config 可读，但 verifier 调用未使用 |
 | `BID_WRITER_PRUNING_MAX_TOKENS` | 可选 | 当前 Config 可读，但 verifier 调用未使用 |
 | `BID_WRITER_PRUNING_TIMEOUT_SECONDS` | 可选 | 已接线 |
@@ -425,11 +427,10 @@ context_pruning:
 
 - `context_pruning.requirements_brief.fallback`
 - `context_pruning.extraction.quote_only`
-- `context_pruning.retrieval.embedding.rebuild_on_source_change`
-- `context_pruning.api.temperature`
-- `context_pruning.api.max_tokens`
-- `context_pruning.api.top_p`
-- `context_pruning.api.seed`
+- `BID_WRITER_PRUNING_TEMPERATURE`
+- `BID_WRITER_PRUNING_MAX_TOKENS`
+- `BID_WRITER_PRUNING_TOP_P`
+- `BID_WRITER_PRUNING_SEED`
 
 这些参数“可配置”不等于“当前实现已经消费它们”。
 
@@ -444,8 +445,8 @@ context_pruning:
 - `vector_enabled = false`
 - `rerank_enabled = false`
 - `llm_verify_enabled = false`
-- `embedding.model = text-embedding-3-small`
-- `context_pruning.api.model = gpt-5.4-mini`
+- embedding 模型默认来自 `.env.local` / `BID_WRITER_EMBEDDING_MODEL`，未设置时为 `text-embedding-3-large`
+- verifier 模型默认来自 `.env.local` / `BID_WRITER_PRUNING_MODEL`，未设置时为 `gpt-5.4`
 
 这意味着当前示例配置虽然已经把新链路参数都摆出来了，但实际运行仍以“规则模式 + 原文摘录 requirement_brief”为主。
 

@@ -122,11 +122,11 @@ def build_default_editor_model() -> dict[str, Any]:
         },
         "writing": {
             "role_mode": "file",
-            "role_file": "./roles/example_role.md",
+            "role_file": "./roles/通用投标角色.md",
             "role_text": "",
-            "target_words_default": 3000,
+            "target_words_default": 1500,
             "target_words_min": 100,
-            "target_words_max": 15000,
+            "target_words_max": 12000,
             "target_words_step": 100,
             "target_words_upper_ratio": 1.15,
             "output_format": "纯正文",
@@ -134,23 +134,20 @@ def build_default_editor_model() -> dict[str, Any]:
             "allow_markdown_headings": False,
             "allow_english_terms": False,
             "max_tables_per_section": 2,
-            "max_mermaid_flowcharts_per_section": 0,
+            "max_mermaid_flowcharts_per_section": 1,
             "summary_title": "",
             "hard_constraints": [],
-            "extra_rules": [
-                "内容要专业、严谨，符合标书撰写规范",
-                "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。",
-            ],
+            "extra_rules": [],
         },
         "processing": {
-            "path": "auto",
+            "path": "full_context",
             "context_view": {
                 "include_ancestors": True,
                 "include_siblings": True,
                 "max_siblings": 8,
             },
             "project_background": {
-                "enabled": True,
+                "enabled": False,
                 "max_chars": 800,
             },
             "auto": {
@@ -175,16 +172,16 @@ def build_default_editor_model() -> dict[str, Any]:
         },
         "models": {
             "generation": {
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.4",
                 "temperature": 0.7,
-                "max_tokens": 8000,
+                "max_tokens": 10000,
                 "timeout_seconds": 120,
                 "max_retries": 3,
                 "top_p": "",
                 "seed": "",
             },
             "pruning": {
-                "model": "gpt-4o-mini",
+                "model": "gpt-5.4",
                 "temperature": 0.2,
                 "max_tokens": 1200,
                 "timeout_seconds": 60,
@@ -193,9 +190,9 @@ def build_default_editor_model() -> dict[str, Any]:
                 "seed": "",
             },
             "embedding": {
-                "model": "text-embedding-3-small",
+                "model": "text-embedding-3-large",
                 "batch_size": 64,
-                "cache_dir": "./output/_embedding_cache",
+                "cache_dir": "",
                 "rebuild_on_source_change": True,
                 "query_prefix": "",
                 "document_prefix": "",
@@ -207,7 +204,7 @@ def build_default_editor_model() -> dict[str, Any]:
                 "idle_timeout_seconds": 12,
             },
             "trace": {
-                "enabled": False,
+                "enabled": True,
                 "directory": "./log/generation_traces",
                 "mode": "full",
                 "write_prompt": True,
@@ -217,17 +214,17 @@ def build_default_editor_model() -> dict[str, Any]:
                 "redact_sensitive": True,
             },
             "debug": {
-                "context_pruning_dump": False,
+                "context_pruning_dump": True,
             },
             "output": {
                 "prefix": "",
                 "include_title_header": True,
                 "overwrite_existing": True,
                 "filename_max_length": 100,
-                "empty_filename_fallback": "untitled",
+                "empty_filename_fallback": "未命名",
             },
             "merge": {
-                "normalize_soft_line_breaks": False,
+                "normalize_soft_line_breaks": True,
             },
         },
     }
@@ -529,9 +526,9 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
         },
         "models": {
             "generation": {
-                "model": _coerce_str(_first_defined(raw_config, ("models", "generation", "model"), ("api", "model"), default="gpt-4")),
+                "model": _coerce_str(_first_defined(raw_config, ("models", "generation", "model"), ("api", "model"), default="gpt-5.4")),
                 "temperature": _coerce_float(_first_defined(raw_config, ("models", "generation", "temperature"), ("api", "temperature"), default=0.7), default=0.7),
-                "max_tokens": _coerce_int(_first_defined(raw_config, ("models", "generation", "max_tokens"), ("api", "max_tokens"), default=8000), default=8000),
+                "max_tokens": _coerce_int(_first_defined(raw_config, ("models", "generation", "max_tokens"), ("api", "max_tokens"), default=10000), default=10000),
                 "timeout_seconds": _coerce_int(_first_defined(raw_config, ("models", "generation", "timeout_seconds"), ("api", "timeout_seconds"), default=120), default=120),
                 "max_retries": _coerce_int(_first_defined(raw_config, ("models", "generation", "max_retries"), ("api", "max_retries"), default=3), default=3),
                 "top_p": _coerce_optional(_first_defined(raw_config, ("models", "generation", "top_p"), ("api", "top_p"), default="")),
@@ -547,9 +544,9 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                 "seed": _coerce_optional(_first_defined(raw_config, ("models", "pruning", "seed"), ("context_pruning", "api", "seed"), default="")),
             },
             "embedding": {
-                "model": _coerce_str(_first_defined(raw_config, ("models", "embedding", "model"), ("context_pruning", "retrieval", "embedding", "model"), default="text-embedding-3-small")),
+                "model": _coerce_str(_first_defined(raw_config, ("models", "embedding", "model"), ("context_pruning", "retrieval", "embedding", "model"), default="text-embedding-3-large")),
                 "batch_size": _coerce_int(_first_defined(raw_config, ("models", "embedding", "batch_size"), ("context_pruning", "retrieval", "embedding", "batch_size"), default=64), default=64),
-                "cache_dir": _coerce_str(_first_defined(raw_config, ("models", "embedding", "cache_dir"), ("context_pruning", "retrieval", "embedding", "cache_dir"), default="./output/_embedding_cache")),
+                "cache_dir": _coerce_str(_first_defined(raw_config, ("models", "embedding", "cache_dir"), ("context_pruning", "retrieval", "embedding", "cache_dir"), default="")),
                 "rebuild_on_source_change": _coerce_bool(
                     _first_defined(raw_config, ("models", "embedding", "rebuild_on_source_change"), ("context_pruning", "retrieval", "embedding", "rebuild_on_source_change"), default=True),
                     default=True,
@@ -641,38 +638,7 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
     if model["writing"]["role_mode"] == "inline":
         writing_payload["role"] = model["writing"]["role_text"]
     else:
-        writing_payload["role_file"] = model["writing"]["role_file"].strip() or "./roles/example_role.md"
-
-    generation_payload = _strip_none_values(
-        {
-            "model": model["models"]["generation"]["model"],
-            "temperature": float(model["models"]["generation"]["temperature"]),
-            "max_tokens": int(model["models"]["generation"]["max_tokens"]),
-            "timeout_seconds": int(model["models"]["generation"]["timeout_seconds"]),
-            "max_retries": int(model["models"]["generation"]["max_retries"]),
-            "top_p": _maybe_float(model["models"]["generation"]["top_p"]),
-            "seed": _maybe_int(model["models"]["generation"]["seed"]),
-        }
-    )
-    pruning_payload = _strip_none_values(
-        {
-            "model": model["models"]["pruning"]["model"],
-            "temperature": float(model["models"]["pruning"]["temperature"]),
-            "max_tokens": int(model["models"]["pruning"]["max_tokens"]),
-            "timeout_seconds": int(model["models"]["pruning"]["timeout_seconds"]),
-            "max_retries": int(model["models"]["pruning"]["max_retries"]),
-            "top_p": _maybe_float(model["models"]["pruning"]["top_p"]),
-            "seed": _maybe_int(model["models"]["pruning"]["seed"]),
-        }
-    )
-    embedding_payload = {
-        "model": model["models"]["embedding"]["model"],
-        "batch_size": int(model["models"]["embedding"]["batch_size"]),
-        "cache_dir": model["models"]["embedding"]["cache_dir"],
-        "rebuild_on_source_change": bool(model["models"]["embedding"]["rebuild_on_source_change"]),
-        "query_prefix": model["models"]["embedding"]["query_prefix"],
-        "document_prefix": model["models"]["embedding"]["document_prefix"],
-    }
+        writing_payload["role_file"] = model["writing"]["role_file"].strip() or "./roles/通用投标角色.md"
 
     return {
         "project": {
@@ -720,11 +686,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
                 "return_ids_only": True,
                 "verify_max_candidates": 8,
             },
-        },
-        "models": {
-            "generation": generation_payload,
-            "pruning": pruning_payload,
-            "embedding": embedding_payload,
         },
         "runtime": {
             "stream": {
@@ -823,14 +784,10 @@ def validate_editor_model(
     if trace_dir.exists() and not trace_dir.is_dir():
         messages.append(ValidationMessage("error", f"trace.directory 不是目录：{trace_dir}"))
 
-    embedding_cache_dir = _resolve_path(model["models"]["embedding"]["cache_dir"] or "./output/_embedding_cache", config_path.parent)
-    if embedding_cache_dir.exists() and not embedding_cache_dir.is_dir():
-        messages.append(ValidationMessage("error", f"embedding.cache_dir 不是目录：{embedding_cache_dir}"))
-
     if processing_path in {"auto", "hybrid_extract"}:
         retrieval = model["processing"]["auto"]["retrieval"]
         if processing_path == "auto" and not env_status["pruning"].configured:
-            messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型（models.pruning），请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
+            messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型，请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
         if not retrieval["lexical_enabled"]:
             messages.append(ValidationMessage("error", f"{processing_path} 模式要求 lexical_enabled=true。"))
         if retrieval["vector_enabled"] and not env_status["embedding"].configured:
@@ -876,10 +833,7 @@ def summarize_model(model: dict[str, Any], env_status: dict[str, ConnectionStatu
 def detect_connection_status(config_path: Path, raw_config: dict[str, Any]) -> dict[str, ConnectionStatus]:
     file_env = _read_env_files(config_path.parent)
 
-    def detect(keys: list[tuple[str, ...]], env_keys: list[str]) -> ConnectionStatus:
-        has_raw = any(bool(_coerce_str(_get_value(raw_config, *path, default="")).strip()) for path in keys)
-        if has_raw:
-            return ConnectionStatus(True, "YAML")
+    def detect(env_keys: list[str]) -> ConnectionStatus:
         if any(bool(os.environ.get(key, "").strip()) for key in env_keys):
             return ConnectionStatus(True, "环境变量")
         if any(bool(file_env.get(key, "").strip()) for key in env_keys):
@@ -888,15 +842,12 @@ def detect_connection_status(config_path: Path, raw_config: dict[str, Any]) -> d
 
     return {
         "generation": detect(
-            keys=[("models", "generation", "base_url"), ("models", "generation", "api_key"), ("api", "base_url"), ("api", "api_key")],
             env_keys=["BID_WRITER_API_BASE_URL", "BID_WRITER_API_KEY"],
         ),
         "pruning": detect(
-            keys=[("models", "pruning", "base_url"), ("models", "pruning", "api_key"), ("context_pruning", "api", "base_url"), ("context_pruning", "api", "api_key")],
             env_keys=["BID_WRITER_PRUNING_API_BASE_URL", "BID_WRITER_PRUNING_API_KEY"],
         ),
         "embedding": detect(
-            keys=[("models", "embedding", "base_url"), ("models", "embedding", "api_key"), ("context_pruning", "retrieval", "embedding", "base_url"), ("context_pruning", "retrieval", "embedding", "api_key")],
             env_keys=["BID_WRITER_EMBEDDING_API_BASE_URL", "BID_WRITER_EMBEDDING_API_KEY"],
         ),
     }
@@ -1270,34 +1221,7 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
             "verify_max_candidates": True,
         },
     },
-    "models": {
-        "generation": {
-            "model": True,
-            "temperature": True,
-            "max_tokens": True,
-            "timeout_seconds": True,
-            "max_retries": True,
-            "top_p": True,
-            "seed": True,
-        },
-        "pruning": {
-            "model": True,
-            "temperature": True,
-            "max_tokens": True,
-            "timeout_seconds": True,
-            "max_retries": True,
-            "top_p": True,
-            "seed": True,
-        },
-        "embedding": {
-            "model": True,
-            "batch_size": True,
-            "cache_dir": True,
-            "rebuild_on_source_change": True,
-            "query_prefix": True,
-            "document_prefix": True,
-        },
-    },
+    "models": True,
     "runtime": {
         "stream": {
             "enabled": True,
@@ -1346,7 +1270,9 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
     "min_words": True,
 }
 
-_LEGACY_API_MANAGED_SCHEMA: dict[str, Any] = {
+_LEGACY_API_MANAGED_SCHEMA: Any = {
+    "base_url": True,
+    "api_key": True,
     "model": True,
     "temperature": True,
     "max_tokens": True,
@@ -1356,7 +1282,9 @@ _LEGACY_API_MANAGED_SCHEMA: dict[str, Any] = {
     "seed": True,
 }
 
-_LEGACY_PRUNING_API_MANAGED_SCHEMA: dict[str, Any] = {
+_LEGACY_PRUNING_API_MANAGED_SCHEMA: Any = {
+    "base_url": True,
+    "api_key": True,
     "model": True,
     "temperature": True,
     "max_tokens": True,
@@ -1366,7 +1294,9 @@ _LEGACY_PRUNING_API_MANAGED_SCHEMA: dict[str, Any] = {
     "seed": True,
 }
 
-_LEGACY_EMBEDDING_MANAGED_SCHEMA: dict[str, Any] = {
+_LEGACY_EMBEDDING_MANAGED_SCHEMA: Any = {
+    "base_url": True,
+    "api_key": True,
     "model": True,
     "batch_size": True,
     "cache_dir": True,

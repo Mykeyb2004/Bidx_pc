@@ -4,6 +4,7 @@ Tkinter 配置编辑器窗口。
 
 from __future__ import annotations
 
+import copy
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -176,7 +177,6 @@ class ConfigEditorDialog(tk.Toplevel):
         ("project", "项目"),
         ("writing", "写作"),
         ("processing", "处理路径"),
-        ("models", "模型"),
         ("runtime", "运行"),
     ]
 
@@ -272,27 +272,6 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("processing.auto.retrieval.top_k_final", tk.StringVar())
         add_var("processing.auto.retrieval.min_fused_score", tk.StringVar())
 
-        add_var("models.generation.model", tk.StringVar())
-        add_var("models.generation.temperature", tk.StringVar())
-        add_var("models.generation.max_tokens", tk.StringVar())
-        add_var("models.generation.timeout_seconds", tk.StringVar())
-        add_var("models.generation.max_retries", tk.StringVar())
-        add_var("models.generation.top_p", tk.StringVar())
-        add_var("models.generation.seed", tk.StringVar())
-        add_var("models.pruning.model", tk.StringVar())
-        add_var("models.pruning.temperature", tk.StringVar())
-        add_var("models.pruning.max_tokens", tk.StringVar())
-        add_var("models.pruning.timeout_seconds", tk.StringVar())
-        add_var("models.pruning.max_retries", tk.StringVar())
-        add_var("models.pruning.top_p", tk.StringVar())
-        add_var("models.pruning.seed", tk.StringVar())
-        add_var("models.embedding.model", tk.StringVar())
-        add_var("models.embedding.batch_size", tk.StringVar())
-        add_var("models.embedding.cache_dir", tk.StringVar())
-        add_var("models.embedding.rebuild_on_source_change", tk.BooleanVar())
-        add_var("models.embedding.query_prefix", tk.StringVar())
-        add_var("models.embedding.document_prefix", tk.StringVar())
-
         add_var("runtime.stream.enabled", tk.BooleanVar())
         add_var("runtime.stream.idle_timeout_seconds", tk.StringVar())
         add_var("runtime.trace.enabled", tk.BooleanVar())
@@ -360,7 +339,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self._build_project_section()
         self._build_writing_section()
         self._build_processing_section()
-        self._build_models_section()
         self._build_runtime_section()
         self._show_current_section()
 
@@ -597,50 +575,6 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self._update_processing_visibility()
 
-    def _build_models_section(self) -> None:
-        page = self._create_section_page("models")
-        content = page.content
-
-        generation = ttk.LabelFrame(content, text="主生成模型", padding=12)
-        generation.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(generation, 0, "model", "models.generation.model")
-        self._add_entry_row(generation, 1, "temperature", "models.generation.temperature")
-        self._add_entry_row(generation, 2, "max_tokens", "models.generation.max_tokens")
-        self._add_entry_row(generation, 3, "timeout_seconds", "models.generation.timeout_seconds")
-        self._add_entry_row(generation, 4, "max_retries", "models.generation.max_retries")
-        self._add_entry_row(generation, 5, "top_p（可选）", "models.generation.top_p")
-        self._add_entry_row(generation, 6, "seed（可选）", "models.generation.seed")
-        generation.columnconfigure(1, weight=1)
-
-        pruning = ttk.LabelFrame(content, text="辅助模型", padding=12)
-        pruning.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(pruning, 0, "model", "models.pruning.model")
-        self._add_entry_row(pruning, 1, "temperature", "models.pruning.temperature")
-        self._add_entry_row(pruning, 2, "max_tokens", "models.pruning.max_tokens")
-        self._add_entry_row(pruning, 3, "timeout_seconds", "models.pruning.timeout_seconds")
-        self._add_entry_row(pruning, 4, "max_retries", "models.pruning.max_retries")
-        self._add_entry_row(pruning, 5, "top_p（可选）", "models.pruning.top_p")
-        self._add_entry_row(pruning, 6, "seed（可选）", "models.pruning.seed")
-        pruning.columnconfigure(1, weight=1)
-
-        embedding = ttk.LabelFrame(content, text="向量模型", padding=12)
-        embedding.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(embedding, 0, "model", "models.embedding.model")
-        self._add_entry_row(embedding, 1, "batch_size", "models.embedding.batch_size")
-        self._add_path_row(embedding, 2, "cache_dir", "models.embedding.cache_dir", browse_kind="dir", relative_to="config")
-        self._add_check_row(embedding, 3, "源文变化时重建缓存", "models.embedding.rebuild_on_source_change")
-        self._add_entry_row(embedding, 4, "query_prefix", "models.embedding.query_prefix")
-        self._add_entry_row(embedding, 5, "document_prefix", "models.embedding.document_prefix")
-        embedding.columnconfigure(1, weight=1)
-
-        note = ttk.LabelFrame(content, text="说明", padding=12)
-        note.pack(fill=tk.X, pady=(0, 12))
-        ttk.Label(
-            note,
-            text="API Key / Base URL 等连接信息不在此处编辑；编辑器只展示当前是否已检测到连接配置。",
-            justify=tk.LEFT,
-        ).pack(anchor="w")
-
     def _build_runtime_section(self) -> None:
         page = self._create_section_page("runtime")
         content = page.content
@@ -847,26 +781,6 @@ class ConfigEditorDialog(tk.Toplevel):
             "processing.auto.retrieval.top_k_fused": str(model["processing"]["auto"]["retrieval"]["top_k_fused"]),
             "processing.auto.retrieval.top_k_final": str(model["processing"]["auto"]["retrieval"]["top_k_final"]),
             "processing.auto.retrieval.min_fused_score": str(model["processing"]["auto"]["retrieval"]["min_fused_score"]),
-            "models.generation.model": model["models"]["generation"]["model"],
-            "models.generation.temperature": str(model["models"]["generation"]["temperature"]),
-            "models.generation.max_tokens": str(model["models"]["generation"]["max_tokens"]),
-            "models.generation.timeout_seconds": str(model["models"]["generation"]["timeout_seconds"]),
-            "models.generation.max_retries": str(model["models"]["generation"]["max_retries"]),
-            "models.generation.top_p": str(model["models"]["generation"]["top_p"]),
-            "models.generation.seed": str(model["models"]["generation"]["seed"]),
-            "models.pruning.model": model["models"]["pruning"]["model"],
-            "models.pruning.temperature": str(model["models"]["pruning"]["temperature"]),
-            "models.pruning.max_tokens": str(model["models"]["pruning"]["max_tokens"]),
-            "models.pruning.timeout_seconds": str(model["models"]["pruning"]["timeout_seconds"]),
-            "models.pruning.max_retries": str(model["models"]["pruning"]["max_retries"]),
-            "models.pruning.top_p": str(model["models"]["pruning"]["top_p"]),
-            "models.pruning.seed": str(model["models"]["pruning"]["seed"]),
-            "models.embedding.model": model["models"]["embedding"]["model"],
-            "models.embedding.batch_size": str(model["models"]["embedding"]["batch_size"]),
-            "models.embedding.cache_dir": model["models"]["embedding"]["cache_dir"],
-            "models.embedding.rebuild_on_source_change": model["models"]["embedding"]["rebuild_on_source_change"],
-            "models.embedding.query_prefix": model["models"]["embedding"]["query_prefix"],
-            "models.embedding.document_prefix": model["models"]["embedding"]["document_prefix"],
             "runtime.stream.enabled": model["runtime"]["stream"]["enabled"],
             "runtime.stream.idle_timeout_seconds": str(model["runtime"]["stream"]["idle_timeout_seconds"]),
             "runtime.trace.enabled": model["runtime"]["trace"]["enabled"],
@@ -968,34 +882,7 @@ class ConfigEditorDialog(tk.Toplevel):
                     },
                 },
             },
-            "models": {
-                "generation": {
-                    "model": self.vars["models.generation.model"].get().strip(),
-                    "temperature": self.vars["models.generation.temperature"].get().strip(),
-                    "max_tokens": self.vars["models.generation.max_tokens"].get().strip(),
-                    "timeout_seconds": self.vars["models.generation.timeout_seconds"].get().strip(),
-                    "max_retries": self.vars["models.generation.max_retries"].get().strip(),
-                    "top_p": self.vars["models.generation.top_p"].get().strip(),
-                    "seed": self.vars["models.generation.seed"].get().strip(),
-                },
-                "pruning": {
-                    "model": self.vars["models.pruning.model"].get().strip(),
-                    "temperature": self.vars["models.pruning.temperature"].get().strip(),
-                    "max_tokens": self.vars["models.pruning.max_tokens"].get().strip(),
-                    "timeout_seconds": self.vars["models.pruning.timeout_seconds"].get().strip(),
-                    "max_retries": self.vars["models.pruning.max_retries"].get().strip(),
-                    "top_p": self.vars["models.pruning.top_p"].get().strip(),
-                    "seed": self.vars["models.pruning.seed"].get().strip(),
-                },
-                "embedding": {
-                    "model": self.vars["models.embedding.model"].get().strip(),
-                    "batch_size": self.vars["models.embedding.batch_size"].get().strip(),
-                    "cache_dir": self.vars["models.embedding.cache_dir"].get().strip(),
-                    "rebuild_on_source_change": bool(self.vars["models.embedding.rebuild_on_source_change"].get()),
-                    "query_prefix": self.vars["models.embedding.query_prefix"].get(),
-                    "document_prefix": self.vars["models.embedding.document_prefix"].get(),
-                },
-            },
+            "models": copy.deepcopy(self.document.model["models"]) if self.document else {},
             "runtime": {
                 "stream": {
                     "enabled": bool(self.vars["runtime.stream.enabled"].get()),

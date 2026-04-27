@@ -1,8 +1,3 @@
-api:
-  base_url: "https://example.com/v1"
-  api_key: "test-key"
-  model: "test-model"
-
 project:
   bidder_name: "测试投标主体"
 

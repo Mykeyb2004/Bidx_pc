@@ -12,10 +12,10 @@
   - 角色设定、写作规则、提示词约束、篇幅目标
 - `processing`
   - 章节处理路径与业务提炼参数
-- `models`
-  - 主模型、辅助模型、 embedding 的非敏感参数
 - `runtime`
   - stream、trace、debug、输出细节与合并行为
+
+模型连接、模型名和采样/超时/token 等运行参数统一放在 `.env.local` 或外部环境变量中，不再写入 YAML。
 
 ## 1.1 维护约定
 
@@ -206,35 +206,37 @@ fact_cards:
 - `chapter_defaults` 以**章节完整路径**为 key：局部卡片使用 `{card_id: "..."} ` 保存默认选中；全局卡片仅在该章节被用户取消时保存 `{card_id: "...", selected: false}`
 - 开启事实卡片模式后，本次章节扩写会默认纳入 active 全局卡片，排除当前章节已记住的全局取消项，并使用显式选择或章节默认方案中的局部卡片；若没有可用卡片，则不注入投标方事实上下文
 
-### 3.5 `models`
+### 3.5 模型环境变量
 
-```yaml
-models:
-  generation:
-    model: "gpt-4o-mini"
-    temperature: 0.7
-    max_tokens: 8000
-    timeout_seconds: 120
-    max_retries: 3
-  pruning:
-    model: "gpt-4o-mini"
-    temperature: 0.2
-    max_tokens: 1200
-    timeout_seconds: 60
-    max_retries: 2
-  embedding:
-    model: "text-embedding-3-small"
-    batch_size: 64
-    cache_dir: "./output/_embedding_cache"
-    rebuild_on_source_change: true
-    query_prefix: ""
-    document_prefix: ""
+```dotenv
+BID_WRITER_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_API_KEY=your-api-key
+BID_WRITER_MODEL=gpt-5.4
+BID_WRITER_TEMPERATURE=0.7
+BID_WRITER_MAX_TOKENS=10000
+BID_WRITER_TIMEOUT_SECONDS=120
+BID_WRITER_MAX_RETRIES=3
+
+BID_WRITER_PRUNING_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_PRUNING_API_KEY=your-api-key
+BID_WRITER_PRUNING_MODEL=gpt-5.4
+BID_WRITER_PRUNING_TEMPERATURE=0.2
+BID_WRITER_PRUNING_MAX_TOKENS=1200
+BID_WRITER_PRUNING_TIMEOUT_SECONDS=60
+BID_WRITER_PRUNING_MAX_RETRIES=2
+
+BID_WRITER_EMBEDDING_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_EMBEDDING_API_KEY=your-api-key
+BID_WRITER_EMBEDDING_MODEL=text-embedding-3-large
+BID_WRITER_EMBEDDING_BATCH_SIZE=64
+BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 ```
 
 说明：
 
-- 敏感值仍建议放 `.env.local`
-- 非敏感模型参数留在 YAML
+- `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
+- 外部 shell 中已设置的环境变量优先级最高，其次是配置文件同目录下的 `.env.local`，再其次是 `.env`
+- `embedding_cache` 默认创建在执行入口文件同级目录，不再通过 YAML 配置
 
 ### 3.6 `runtime`
 
@@ -266,7 +268,7 @@ runtime:
 
 说明：
 
-- `runtime.trace.directory`、`models.embedding.cache_dir` 这类运行产物路径默认相对配置文件目录解析
+- `runtime.trace.directory` 这类配置内运行产物路径默认相对配置文件目录解析
 - `project.output_dir` 这类项目输出路径默认相对 `project.root_dir` 解析
 
 ## 4. 兼容策略
@@ -280,12 +282,12 @@ runtime:
 - `prompt.*`
 - `context_pruning.*`
 - `generation_trace.*`
-- `api.*`
 
 兼容原则：
 
 - 新 schema 优先级高于旧 schema
-- 旧字段继续可读，但不再作为推荐写法
+- 旧业务字段继续可读，但不再作为推荐写法
+- 旧模型字段如 `models.*`、`api.*`、`context_pruning.api.*` 会被配置编辑器清理，不再参与模型参数读取
 - 新项目、示例配置和文档都应优先采用 canonical schema
 
 ## 5. 变更检查清单
