@@ -90,7 +90,7 @@ _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
 CHAPTER_MENU_FACT_CARD_INDEX = 1
-CONTEXT_MENU_FACT_CARD_INDEX = 0
+CONTEXT_MENU_FACT_CARD_INDEX = 1
 
 
 @dataclass
@@ -2134,6 +2134,10 @@ class MainWindow(tk.Tk):
         """创建章节树右键菜单。"""
         self.outline_context_menu = tk.Menu(self, tearoff=0)
         self.outline_context_menu.add_command(
+            label="生成所选",
+            command=self.generate_context_menu_selection,
+        )
+        self.outline_context_menu.add_command(
             label="提炼事实卡片",
             command=self.extract_context_menu_facts,
         )
@@ -2744,7 +2748,8 @@ class MainWindow(tk.Tk):
         if heading is None or heading.children:
             return "break"
 
-        self.outline_tree.selection_set(item_id)
+        if item_id not in self.outline_tree.selection():
+            self.outline_tree.selection_set(item_id)
         self.outline_tree.focus(item_id)
         self._context_menu_heading = heading
         self.outline_context_menu.entryconfigure(
@@ -3123,6 +3128,21 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("提示", "请先选中一个可扩写章节。", parent=self)
             return
         self._extract_facts_for_heading(heading)
+
+    def generate_context_menu_selection(self):
+        """从章节树右键菜单生成当前选中的章节。"""
+        if self.is_generating:
+            return "break"
+
+        if not self._get_selected_leaf_headings():
+            heading = self._get_context_menu_heading()
+            if heading is None:
+                messagebox.showwarning("提示", "请先在可扩写章节上右键，再执行该操作。", parent=self)
+                return "break"
+            self._set_single_heading_selection(heading)
+
+        self.batch_generate()
+        return "break"
 
     def extract_context_menu_facts(self):
         """为右键选中的章节提炼事实卡片。"""
