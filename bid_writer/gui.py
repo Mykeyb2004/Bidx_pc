@@ -3432,15 +3432,21 @@ class MainWindow(tk.Tk):
     def _build_generation_fact_card_dialog_state(
         all_active_cards: list[Any],
         initial_selections: list[Any],
+        should_reference_fact_cards: Optional[bool] = None,
     ) -> GenerationFactCardSelectionDialogState:
         global_cards = [card for card in all_active_cards if card.scope == "global"]
         local_cards = [card for card in all_active_cards if card.scope == "local"]
         available_cards = [*global_cards, *local_cards]
+        default_mode = (
+            should_reference_fact_cards
+            if should_reference_fact_cards is not None
+            else bool(global_cards or available_cards or initial_selections)
+        )
         return GenerationFactCardSelectionDialogState(
             global_cards=global_cards,
             available_cards=available_cards,
             initial_selections=initial_selections,
-            default_mode=bool(global_cards or available_cards or initial_selections),
+            default_mode=bool(default_mode),
             summary_text=(
                 "全局事实卡片默认勾选，可按当前章节需要取消；"
                 "局部卡片会读取本章节已保存引用关系。"
@@ -3749,10 +3755,12 @@ class MainWindow(tk.Tk):
 
                 heading = headings[0]
                 all_active_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
-                initial_selections = self.bid_writer.list_chapter_default_fact_cards(heading)
+                fact_card_state = self.bid_writer.get_chapter_default_fact_card_state(heading)
+                initial_selections = fact_card_state.selections
                 fact_card_dialog_state = self._build_generation_fact_card_dialog_state(
                     all_active_cards,
                     initial_selections,
+                    should_reference_fact_cards=fact_card_state.should_reference_fact_cards,
                 )
                 fact_card_mode_var.set(fact_card_dialog_state.default_mode)
 
@@ -3801,7 +3809,11 @@ class MainWindow(tk.Tk):
                 return False
             heading = headings[0]
             selections_to_save = collect_fact_card_selections() or []
-            self.bid_writer.save_chapter_default_fact_cards(heading.full_path, selections_to_save)
+            self.bid_writer.save_chapter_default_fact_cards(
+                heading.full_path,
+                selections_to_save,
+                should_reference_fact_cards=bool(fact_card_mode_var.get()),
+            )
             self.status_text.set(f"已保存事实卡片引用关系：{heading.title}")
             if show_message:
                 messagebox.showinfo(

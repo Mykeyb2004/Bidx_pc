@@ -69,7 +69,11 @@ processing:
 fact_cards:
   enabled: true
   cards: []
-  chapter_defaults: {}
+  chapter_defaults:
+    # "一级标题 > 二级标题 > 三级标题":
+    #   should_reference: true
+    #   selections:
+    #     - card_id: fact-card-1
 
 runtime:
   stream:

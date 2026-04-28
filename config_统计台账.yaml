@@ -74,7 +74,9 @@ fact_cards:
     category: 指标
     created_at: '2026-04-27T07:18:32+00:00'
     updated_at: '2026-04-27T07:18:32+00:00'
-  chapter_defaults: {}
+  chapter_defaults:
+    2026年浙江省文化广电和旅游统计名录库维护基层报表审核及数据处理项目 > 2. 项目理解与工作基础（响应：工作基础、服务方案） > 2.2 对浙江省文化广电和旅游调查统计工作的熟悉与理解 > 2.2.1 全省文化统计工作基础认知:
+    - card_id: fact-card-2
 runtime:
   stream:
     enabled: true

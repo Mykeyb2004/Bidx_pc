@@ -656,7 +656,8 @@ messages = [
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `fact_card_mode` | GUI 运行时入参 | 控制是否启用事实卡片模式 | 是 |
-| `selected_fact_cards` | GUI 运行时入参 / `FactCardStore.resolve_selected_cards()` | 解析后的事实卡片，携带卡片本体的 `scope` 与 `enforcement` | 条件性进入 |
+| `fact_cards.chapter_defaults.*.should_reference` | 配置 YAML | 章节级事实卡片引用状态；为 `false` 时该章节不注入事实卡片 | 间接进入 |
+| `selected_fact_cards` | GUI 运行时入参 / `FactCardStore.resolve_chapter_prompt_cards()` | 解析后的事实卡片，携带卡片本体的 `scope` 与 `enforcement` | 条件性进入 |
 | `target_words` | 运行时入参 | 目标篇幅基准值；会进一步推导成区间文案 | 是 |
 | `max_mermaid_flowcharts_per_section_override` | GUI 运行时入参 | 覆盖配置中的 Mermaid 图示上限；`0` 时不注入流程图控制提示 | 条件性进入 |
 | `HeadingNode.title` | 当前章节节点 | 当前章节标题 | 是 |

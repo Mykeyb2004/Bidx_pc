@@ -1238,6 +1238,32 @@ def test_generation_fact_card_dialog_state_keeps_saved_global_exclusion():
     ]
 
 
+def test_generation_fact_card_dialog_state_uses_saved_reference_state():
+    global_card = FactCard(
+        id="global-a",
+        name="企业资质",
+        content="一级资质",
+        category="资质",
+        scope="global",
+        enforcement="strong",
+        source=FactCardSource(type="manual"),
+    )
+
+    disabled_state = MainWindow._build_generation_fact_card_dialog_state(
+        [global_card],
+        initial_selections=[],
+        should_reference_fact_cards=False,
+    )
+    enabled_state = MainWindow._build_generation_fact_card_dialog_state(
+        [],
+        initial_selections=[],
+        should_reference_fact_cards=True,
+    )
+
+    assert disabled_state.default_mode is False
+    assert enabled_state.default_mode is True
+
+
 def test_mainwindow_extract_facts_for_heading_uses_workspace_dialog_result(monkeypatch, tmp_path: Path):
     output_path = tmp_path / "chapter.md"
     output_path.write_text("已有正文", encoding="utf-8")

@@ -246,10 +246,11 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 ### 3.6 事实卡片如何进入 prompt
 
-- 全局卡片：`active=true` 且 `scope=global` 时，在生成参数窗口中默认勾选并排在列表最前面；用户可按章节取消，取消状态可保存为该章节事实卡片引用关系
+- 全局卡片：`active=true` 且 `scope=global` 时，在生成参数窗口中默认勾选并排在列表最前面；用户可按章节取消，取消状态会保存到该章节事实卡片引用关系的 `selections`
 - 局部卡片：`scope=local` 时，只在单章节手动选择或章节已保存引用关系命中时进入 prompt
+- 章节引用状态：保存事实卡片引用关系时会同时保存 `should_reference`，用于区分“本章要引用但暂无可用卡片”和“本章不引用事实卡片”
 - 强制/参考：由卡片本体 `enforcement` 决定，生成参数弹窗不再为每个章节单独设置用途
-- 批量模式：默认加入全局卡片，排除各章节已保存的全局取消项，并读取各章节已保存的局部事实卡片引用关系
+- 批量模式：先读取各章节已保存的 `should_reference`；若本章明确为 `false` 则不注入事实卡片，否则默认加入全局卡片、排除各章节已保存的全局取消项，并读取各章节已保存的局部事实卡片引用关系
 - 事实卡片是投标方事实的唯一 prompt 注入口；若事实卡片模式开启但本章没有任何可用卡片，则不注入投标方事实上下文
 - 事实卡片提炼和 prompt 渲染都会去除“本章节”“本文”“上述内容”等来源章节元话语，避免旧卡片或模型输出把章节总结句式带入正文
 - 若同一次扩写中存在 `strong/strong` 冲突，生成会在调用模型前阻断
@@ -540,7 +541,7 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 - prompt contract 摘要层
 - raw `prompt_sections`
 - pruned context 或 full context 统计
-- `fact_card_mode` 与 `fact_card_selection`
+- `fact_card_mode` 与 `fact_card_selection`；章节级是否引用事实卡片由配置中的 `fact_cards.chapter_defaults.*.should_reference` 保存
 - 最终输出
 - 后处理 issue
 

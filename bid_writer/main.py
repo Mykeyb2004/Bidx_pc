@@ -107,9 +107,15 @@ class BidWriter:
         self,
         chapter_path: str,
         selections: list[FactCardSelection],
+        *,
+        should_reference_fact_cards: bool | None = None,
     ) -> list[FactCardSelection]:
         """保存章节默认选中的事实卡片。"""
-        return self.fact_card_store.save_chapter_defaults(chapter_path, selections)
+        return self.fact_card_store.save_chapter_defaults(
+            chapter_path,
+            selections,
+            should_reference_fact_cards=should_reference_fact_cards,
+        )
 
     def list_chapter_default_fact_cards(
         self,
@@ -117,6 +123,13 @@ class BidWriter:
     ) -> list[FactCardSelection]:
         """读取章节默认事实卡片方案。"""
         return self.fact_card_store.list_chapter_defaults(self._resolve_heading_path(heading))
+
+    def get_chapter_default_fact_card_state(
+        self,
+        heading: HeadingNode | str,
+    ):
+        """读取章节事实卡片引用状态与默认选择。"""
+        return self.fact_card_store.get_chapter_default_state(self._resolve_heading_path(heading))
 
     def save_manual_fact_cards(
         self,

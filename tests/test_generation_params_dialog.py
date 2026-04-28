@@ -137,7 +137,11 @@ def _fake_generation_window(wait_window, save_callback=None):
             ),
             fact_card_store=SimpleNamespace(list_cards=lambda active_only=True: []),
             list_chapter_default_fact_cards=lambda _heading: [],
-            save_chapter_default_fact_cards=save_callback or (lambda *_args: None),
+            get_chapter_default_fact_card_state=lambda _heading: SimpleNamespace(
+                should_reference_fact_cards=None,
+                selections=[],
+            ),
+            save_chapter_default_fact_cards=save_callback or (lambda *_args, **_kwargs: None),
         ),
         status_text=SimpleNamespace(set=lambda _value: None),
         wait_window=wait_window,
@@ -156,14 +160,18 @@ def test_generation_params_start_button_saves_fact_card_references(monkeypatch):
     result = MainWindow._get_generation_params(
         _fake_generation_window(
             wait_window,
-            save_callback=lambda chapter_path, selections: saved_calls.append((chapter_path, selections)),
+            save_callback=lambda chapter_path, selections, **kwargs: saved_calls.append(
+                (chapter_path, selections, kwargs)
+            ),
         ),
         [heading],
         initial_requirements="补充资质",
     )
 
     assert result == ("补充资质", 1200, 0, False, ["card-a"])
-    assert saved_calls == [("项目 > 质量控制", ["card-a"])]
+    assert saved_calls == [
+        ("项目 > 质量控制", ["card-a"], {"should_reference_fact_cards": False})
+    ]
 
 
 def test_save_fact_card_references_keeps_generation_params_dialog_open(monkeypatch):
@@ -177,10 +185,12 @@ def test_save_fact_card_references_keeps_generation_params_dialog_open(monkeypat
 
     window = _fake_generation_window(wait_window)
     window.bid_writer.save_chapter_default_fact_cards = (
-        lambda chapter_path, selections: saved_calls.append((chapter_path, selections))
+        lambda chapter_path, selections, **kwargs: saved_calls.append((chapter_path, selections, kwargs))
     )
 
     result = MainWindow._get_generation_params(window, [heading])
 
     assert result is None
-    assert saved_calls == [("项目 > 质量控制", ["card-a"])]
+    assert saved_calls == [
+        ("项目 > 质量控制", ["card-a"], {"should_reference_fact_cards": False})
+    ]

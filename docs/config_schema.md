@@ -211,9 +211,11 @@ fact_cards:
       updated_at: "2026-04-24T10:00:00+08:00"
   chapter_defaults:
     "综合服务项目投标方案 > 项目实施方案 > 质量保障措施":
-      - card_id: "fact-card-1"
-        selected: false
-      - card_id: "fact-card-2"
+      should_reference: true
+      selections:
+        - card_id: "fact-card-1"
+          selected: false
+        - card_id: "fact-card-2"
 ```
 
 说明：
@@ -224,8 +226,9 @@ fact_cards:
   - `chapter_extract`：从已生成章节正文手动提炼后，经草稿审阅确认保存，也可在卡片库窗口修订名称和内容
 - `scope` 只支持 `global` / `local`：全局卡片在事实卡片模式下默认进入每个章节，并可在生成参数窗口中按章节取消；局部卡片只通过章节显式选择或章节已保存引用关系进入 prompt
 - `enforcement` 只支持 `strong` / `reference`：强制卡片要求扩写结果保持一致，参考卡片仅作为可引用素材
-- `chapter_defaults` 以**章节完整路径**为 key：局部卡片使用 `{card_id: "..."} ` 保存默认选中；全局卡片仅在该章节被用户取消时保存 `{card_id: "...", selected: false}`
-- 开启事实卡片模式后，本次章节扩写会默认纳入 active 全局卡片，排除当前章节已保存引用关系中的全局取消项，并使用显式选择或章节已保存引用关系中的局部卡片；若没有可用卡片，则不注入投标方事实上下文
+- `chapter_defaults` 以**章节完整路径**为 key：`should_reference` 保存本章节是否要引用事实卡片；`selections` 保存局部卡片默认选中，以及全局卡片在该章节被用户取消时的 `{card_id: "...", selected: false}`
+- 旧版纯列表格式仍可读取；新保存会写入 `{should_reference, selections}` 结构，以区分“本章要引用但暂无命中卡片”和“本章不引用事实卡片”
+- 开启事实卡片模式后，本次章节扩写会先检查当前章节已保存的 `should_reference`；若为 `false`，本章不注入任何事实卡片；否则默认纳入 active 全局卡片，排除当前章节已保存引用关系中的全局取消项，并使用显式选择或章节已保存引用关系中的局部卡片；若没有可用卡片，则不注入投标方事实上下文
 
 ### 3.5 模型环境变量
 

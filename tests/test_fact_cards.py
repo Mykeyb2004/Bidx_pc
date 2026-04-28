@@ -304,10 +304,90 @@ fact_cards:
 
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert payload["fact_cards"]["chapter_defaults"] == {
-        "技术方案 > 质量保障措施": [
-            {"card_id": "card-a"},
-            {"card_id": "card-b"},
-        ]
+        "技术方案 > 质量保障措施": {
+            "should_reference": True,
+            "selections": [
+                {"card_id": "card-a"},
+                {"card_id": "card-b"},
+            ],
+        }
+    }
+
+
+def test_fact_card_store_saves_chapter_reference_state_without_cards(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards: []
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    saved = store.save_chapter_defaults(
+        "技术方案 > 质量保障措施",
+        [],
+        should_reference_fact_cards=True,
+    )
+
+    assert saved == []
+    state = store.get_chapter_default_state("技术方案 > 质量保障措施")
+    assert state.should_reference_fact_cards is True
+    assert state.selections == []
+
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["fact_cards"]["chapter_defaults"] == {
+        "技术方案 > 质量保障措施": {
+            "should_reference": True,
+            "selections": [],
+        }
+    }
+
+
+def test_resolve_chapter_prompt_cards_respects_saved_disabled_reference_state(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    saved = store.save_chapter_defaults(
+        "技术方案 > 质量保障措施",
+        [FactCardSelection(card_id="local-a")],
+        should_reference_fact_cards=False,
+    )
+
+    assert saved == [FactCardSelection(card_id="local-a")]
+    state = store.get_chapter_default_state("技术方案 > 质量保障措施")
+    assert state.should_reference_fact_cards is False
+    assert state.selections == [FactCardSelection(card_id="local-a")]
+    assert store.resolve_chapter_prompt_cards("技术方案 > 质量保障措施") == []
+
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == {
+        "should_reference": False,
+        "selections": [{"card_id": "local-a"}],
     }
 
 
@@ -1087,7 +1167,10 @@ fact_cards:
         FactCardSelection(card_id="local-a"),
     ]
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == [
-        {"card_id": "global-a", "selected": False},
-        {"card_id": "local-a"}
-    ]
+    assert payload["fact_cards"]["chapter_defaults"]["技术方案 > 质量保障措施"] == {
+        "should_reference": True,
+        "selections": [
+            {"card_id": "global-a", "selected": False},
+            {"card_id": "local-a"},
+        ],
+    }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -16,6 +17,14 @@ from .fact_cards import (
     SelectedFactCard,
     detect_strong_fact_card_conflicts,
 )
+
+
+@dataclass(frozen=True)
+class ChapterFactCardDefaultState:
+    """章节事实卡片引用默认状态。"""
+
+    should_reference_fact_cards: bool | None
+    selections: list[FactCardSelection]
 
 
 class FactCardStore:
@@ -39,19 +48,24 @@ class FactCardStore:
         ]
 
     def list_chapter_defaults(self, chapter_path: str) -> list[FactCardSelection]:
+        return self.get_chapter_default_state(chapter_path).selections
+
+    def get_chapter_default_state(self, chapter_path: str) -> ChapterFactCardDefaultState:
         payload = self._load_config_payload()
         block = self._normalize_fact_cards_block(payload)
         chapter_defaults = block.setdefault("chapter_defaults", {})
-        selections = self._coerce_selection_list(chapter_defaults.get(chapter_path))
-        filtered = self._filter_existing_selections(selections, self._cards_from_block(block))
-        if filtered != selections:
-            if filtered:
-                chapter_defaults[chapter_path] = [selection.to_dict() for selection in filtered]
-            else:
-                chapter_defaults.pop(chapter_path, None)
+        state = self._coerce_chapter_default_state(chapter_defaults.get(chapter_path))
+        filtered = self._filter_existing_selections(state.selections, self._cards_from_block(block))
+        if filtered != state.selections:
+            cleaned_state = ChapterFactCardDefaultState(
+                should_reference_fact_cards=state.should_reference_fact_cards,
+                selections=filtered,
+            )
+            self._set_chapter_default_state(chapter_defaults, chapter_path, cleaned_state)
             payload["fact_cards"] = block
             self._save_config_payload(payload)
-        return filtered
+            return cleaned_state
+        return state
 
     def resolve_selected_cards(
         self,
@@ -68,11 +82,13 @@ class FactCardStore:
         cards = self.list_cards(active_only=False)
         global_cards = self._active_global_cards(cards)
         local_cards_by_id = self._active_local_cards_by_id(cards)
-        normalized_selections = (
-            self.list_chapter_defaults(chapter_path)
-            if selections is None
-            else self._coerce_selection_iterable(selections)
-        )
+        if selections is None:
+            state = self.get_chapter_default_state(chapter_path)
+            if state.should_reference_fact_cards is False:
+                return []
+            normalized_selections = state.selections
+        else:
+            normalized_selections = self._coerce_selection_iterable(selections)
         excluded_global_ids = {
             selection.card_id
             for selection in normalized_selections
@@ -104,15 +120,23 @@ class FactCardStore:
         self,
         chapter_path: str,
         selections: Iterable[FactCardSelection | dict[str, Any]],
+        *,
+        should_reference_fact_cards: bool | None = None,
     ) -> list[FactCardSelection]:
         payload = self._load_config_payload()
         block = self._normalize_fact_cards_block(payload)
         cleaned = self._filter_existing_selections(self._coerce_selection_iterable(selections), self._cards_from_block(block))
         chapter_defaults = block.setdefault("chapter_defaults", {})
-        if cleaned:
-            chapter_defaults[chapter_path] = [selection.to_dict() for selection in cleaned]
-        else:
-            chapter_defaults.pop(chapter_path, None)
+        if should_reference_fact_cards is None and cleaned:
+            should_reference_fact_cards = True
+        self._set_chapter_default_state(
+            chapter_defaults,
+            chapter_path,
+            ChapterFactCardDefaultState(
+                should_reference_fact_cards=should_reference_fact_cards,
+                selections=cleaned,
+            ),
+        )
         payload["fact_cards"] = block
         self._save_config_payload(payload)
         return cleaned
@@ -442,12 +466,16 @@ class FactCardStore:
         chapter_defaults = block.setdefault("chapter_defaults", {})
         cards = self._cards_from_block(block)
         for chapter_path in list(chapter_defaults):
-            selections = self._coerce_selection_list(chapter_defaults.get(chapter_path))
-            filtered = self._filter_existing_selections(selections, cards)
-            if filtered:
-                chapter_defaults[chapter_path] = [selection.to_dict() for selection in filtered]
-            else:
-                chapter_defaults.pop(chapter_path, None)
+            state = self._coerce_chapter_default_state(chapter_defaults.get(chapter_path))
+            filtered = self._filter_existing_selections(state.selections, cards)
+            self._set_chapter_default_state(
+                chapter_defaults,
+                chapter_path,
+                ChapterFactCardDefaultState(
+                    should_reference_fact_cards=state.should_reference_fact_cards,
+                    selections=filtered,
+                ),
+            )
 
     @staticmethod
     def _coerce_selection_iterable(
@@ -465,17 +493,61 @@ class FactCardStore:
 
     @classmethod
     def _coerce_selection_list(cls, payload: Any) -> list[FactCardSelection]:
+        return cls._coerce_chapter_default_state(payload).selections
+
+    @classmethod
+    def _coerce_chapter_default_state(cls, payload: Any) -> ChapterFactCardDefaultState:
+        should_reference_fact_cards: bool | None = None
         if isinstance(payload, list):
-            return cls._coerce_selection_iterable(payload)
+            return ChapterFactCardDefaultState(
+                should_reference_fact_cards=should_reference_fact_cards,
+                selections=cls._coerce_selection_iterable(payload),
+            )
         if isinstance(payload, dict):
+            raw_should_reference = payload.get(
+                "should_reference",
+                payload.get("should_reference_fact_cards", payload.get("reference_enabled")),
+            )
+            if isinstance(raw_should_reference, bool):
+                should_reference_fact_cards = raw_should_reference
+            raw_selections = payload.get("selections")
+            if isinstance(raw_selections, list):
+                return ChapterFactCardDefaultState(
+                    should_reference_fact_cards=should_reference_fact_cards,
+                    selections=cls._coerce_selection_iterable(raw_selections),
+                )
             raw_ids = payload.get("card_ids")
             if isinstance(raw_ids, list):
-                return [
-                    FactCardSelection(card_id=str(card_id).strip())
-                    for card_id in raw_ids
-                    if str(card_id).strip()
-                ]
-        return []
+                return ChapterFactCardDefaultState(
+                    should_reference_fact_cards=should_reference_fact_cards,
+                    selections=[
+                        FactCardSelection(card_id=str(card_id).strip())
+                        for card_id in raw_ids
+                        if str(card_id).strip()
+                    ],
+                )
+        return ChapterFactCardDefaultState(
+            should_reference_fact_cards=should_reference_fact_cards,
+            selections=[],
+        )
+
+    @staticmethod
+    def _set_chapter_default_state(
+        chapter_defaults: dict[str, Any],
+        chapter_path: str,
+        state: ChapterFactCardDefaultState,
+    ) -> None:
+        selection_payload = [selection.to_dict() for selection in state.selections]
+        if state.should_reference_fact_cards is None:
+            if selection_payload:
+                chapter_defaults[chapter_path] = selection_payload
+            else:
+                chapter_defaults.pop(chapter_path, None)
+            return
+        chapter_defaults[chapter_path] = {
+            "should_reference": state.should_reference_fact_cards,
+            "selections": selection_payload,
+        }
 
     @staticmethod
     def _filter_existing_selections(

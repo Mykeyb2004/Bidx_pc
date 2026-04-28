@@ -110,4 +110,6 @@ fact_cards:
         extraction_instruction: 提取项目经理
   chapter_defaults:
     综合服务项目投标方案 > 项目实施方案 > 质量保障措施:
-      - card_id: card-service
+      should_reference: true
+      selections:
+        - card_id: card-service
