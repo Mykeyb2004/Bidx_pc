@@ -90,6 +90,7 @@ _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
 CHAPTER_MENU_FACT_CARD_INDEX = 1
+CONTEXT_MENU_GENERATE_INDEX = 0
 CONTEXT_MENU_FACT_CARD_INDEX = 1
 
 
@@ -2754,6 +2755,17 @@ class MainWindow(tk.Tk):
             self.outline_tree.selection_set(item_id)
         self.outline_tree.focus(item_id)
         self._context_menu_heading = heading
+        selected_paths = {
+            selected_heading.full_path
+            for selected_id in self.outline_tree.selection()
+            if (
+                selected_heading := self.tree_node_map.get(selected_id)
+            ) is not None and not selected_heading.children
+        }
+        self.outline_context_menu.entryconfigure(
+            CONTEXT_MENU_GENERATE_INDEX,
+            label=f"生成所选 {len(selected_paths)}",
+        )
         self.outline_context_menu.entryconfigure(
             CONTEXT_MENU_FACT_CARD_INDEX,
             label=self._fact_card_menu_label_for_heading(heading),

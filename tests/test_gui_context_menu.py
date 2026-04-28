@@ -84,6 +84,7 @@ def test_tree_context_menu_preserves_multi_selection_when_clicking_selected_leaf
     assert tree.selection_set_calls == []
     assert tree.selection() == ("item-a", "item-b")
     assert tree.focus_calls == ["item-a"]
+    assert menu.configured[0] == (0, {"label": "生成所选 2"})
     assert menu.posted_at == (100, 220)
 
 
