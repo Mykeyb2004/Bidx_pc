@@ -190,9 +190,10 @@ processing:
 说明：
 
 - `processing.path` 决定当前项目跑哪条链路
-- `processing.project_background.enabled` 控制是否注入项目背景摘要
-- `processing.project_background.scope` 默认是 `global`，兼容旧配置；显式设为 `h2_auto` 时，只有 `processing.path: auto` 会启用 H2 级背景，`full_context` 仍保持全局背景语义
-- `processing.project_background.max_chars` 是全局背景或 H2 背景摘要的目标长度上限
+- `processing.project_background.*` 只服务 `processing.path: auto` 链路；`full_context` 会直接注入完整采购需求和评分标准，不再额外提炼或注入项目背景摘要
+- `processing.project_background.enabled` 控制 auto 链路是否注入项目背景摘要
+- `processing.project_background.scope` 默认是 `global`，兼容旧配置；显式设为 `h2_auto` 时，只有 `processing.path: auto` 会启用 H2 级背景
+- `processing.project_background.max_chars` 是 auto 链路中项目背景摘要的目标长度上限
 - `processing.project_background.h2.precompute_on_batch` 控制批量生成前是否一次性预生成所有 H2 背景缓存
 - `processing.project_background.h2.generate_missing_on_single` 控制单章节生成时若当前 H2 背景缺失，是否补生成一次
 - `processing.project_background.h2.max_evidence_blocks` / `max_evidence_chars` 限制 H2 背景生成时使用的采购需求证据片段数量与总长度

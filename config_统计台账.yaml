@@ -24,9 +24,6 @@ writing:
   role_file: ./roles/通用投标角色.md
 processing:
   path: full_context
-  project_background:
-    enabled: false
-    max_chars: 800
   auto:
     requirements_top_k: 8
   full_context:

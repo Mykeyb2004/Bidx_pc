@@ -534,7 +534,7 @@ class ConfigEditorDialog(tk.Toplevel):
             self.processing_full_context_frame,
             text=(
                 "当前模式不会做章节级摘录或检索，而是把采购需求全文和评分标准全文直接拼入提示词。"
-                " 下方仅保留对 full_context 仍然生效的项目背景参数。"
+                " 因完整材料已进入提示词，项目背景提炼在此模式下不再生效。"
             ),
             justify=tk.LEFT,
             wraplength=760,

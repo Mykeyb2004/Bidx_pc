@@ -188,7 +188,7 @@ processing:
 
 - H2 背景只负责章级项目情境，不替代 `评分关注` 或 `需求要点`
 - 默认只把摘要注入 prompt，证据片段进入 trace 供审计
-- `full_context` 继续使用全局项目背景，不会被 `scope=h2_auto` 改成 H2 背景
+- `full_context` 已经完整注入采购需求和评分标准，不再提炼或注入项目背景；`processing.project_background.*` 在该模式下不生效
 - 证据不足或摘要失败时按 `processing.project_background.h2.fallback` 回退
 
 ## 4. 当前链路里的三个层次

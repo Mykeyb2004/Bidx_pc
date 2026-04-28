@@ -891,7 +891,7 @@ class AIWriter:
                         "cache_status": "fallback",
                         "fallback_reason": h2_background.fallback_reason,
                     }
-            elif self.project_background_generator is not None:
+            elif pruned_context is not None and self.project_background_generator is not None:
                 if status_callback is not None:
                     status_callback("整理项目背景", "正在整理项目背景...")
                 background = self.project_background_generator.get_or_generate()

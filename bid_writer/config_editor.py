@@ -270,7 +270,7 @@ def build_editor_notes(model: dict[str, Any], raw_config: dict[str, Any]) -> lis
             "编辑器当前仅支持 auto / full_context，若直接保存将按 auto 模式导出。"
         )
     elif processing_path == "full_context":
-        notes.append("full_context 模式会把采购需求和评分标准全文直接拼入提示词，不做章节级摘录。")
+        notes.append("full_context 模式会把采购需求和评分标准全文直接拼入提示词，不做章节级摘录或项目背景提炼。")
 
     if "context_pruning" in raw_config or "prompt" in raw_config or "api" in raw_config:
         notes.append("当前文件包含旧 schema 字段，保存后会按 canonical schema 标准化。")
@@ -668,31 +668,25 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
     else:
         writing_payload["role_file"] = model["writing"]["role_file"].strip() or "./roles/通用投标角色.md"
 
-    return {
-        "project": {
-            "root_dir": model["project"]["root_dir"].strip() or ".",
-            "bidder_name": model["project"]["bidder_name"],
-            "inputs": project_inputs,
-            "output_dir": model["project"]["output_dir"].strip() or "./output",
-        },
-        "writing": writing_payload,
-        "processing": {
-            "path": processing_path,
-            "project_background": {
-                "enabled": bool(model["processing"]["project_background"]["enabled"]),
-                "scope": model["processing"]["project_background"]["scope"],
-                "max_chars": int(model["processing"]["project_background"]["max_chars"]),
-                "h2": {
-                    "precompute_on_batch": bool(model["processing"]["project_background"]["h2"]["precompute_on_batch"]),
-                    "generate_missing_on_single": bool(model["processing"]["project_background"]["h2"]["generate_missing_on_single"]),
-                    "max_evidence_blocks": int(model["processing"]["project_background"]["h2"]["max_evidence_blocks"]),
-                    "max_evidence_chars": int(model["processing"]["project_background"]["h2"]["max_evidence_chars"]),
-                    "include_evidence_in_prompt": bool(model["processing"]["project_background"]["h2"]["include_evidence_in_prompt"]),
-                    "min_evidence_blocks": int(model["processing"]["project_background"]["h2"]["min_evidence_blocks"]),
-                    "fallback": model["processing"]["project_background"]["h2"]["fallback"],
-                    "cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"].strip() or "./caches/project_background_h2",
-                },
+    processing_payload: dict[str, Any] = {"path": processing_path}
+    if processing_path == "auto":
+        processing_payload["project_background"] = {
+            "enabled": bool(model["processing"]["project_background"]["enabled"]),
+            "scope": model["processing"]["project_background"]["scope"],
+            "max_chars": int(model["processing"]["project_background"]["max_chars"]),
+            "h2": {
+                "precompute_on_batch": bool(model["processing"]["project_background"]["h2"]["precompute_on_batch"]),
+                "generate_missing_on_single": bool(model["processing"]["project_background"]["h2"]["generate_missing_on_single"]),
+                "max_evidence_blocks": int(model["processing"]["project_background"]["h2"]["max_evidence_blocks"]),
+                "max_evidence_chars": int(model["processing"]["project_background"]["h2"]["max_evidence_chars"]),
+                "include_evidence_in_prompt": bool(model["processing"]["project_background"]["h2"]["include_evidence_in_prompt"]),
+                "min_evidence_blocks": int(model["processing"]["project_background"]["h2"]["min_evidence_blocks"]),
+                "fallback": model["processing"]["project_background"]["h2"]["fallback"],
+                "cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"].strip() or "./caches/project_background_h2",
             },
+        }
+    processing_payload.update(
+        {
             "auto": {
                 "requirements_top_k": int(model["processing"]["auto"]["requirements_top_k"]),
             },
@@ -720,7 +714,18 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
                 "return_ids_only": True,
                 "verify_max_candidates": 8,
             },
+        }
+    )
+
+    return {
+        "project": {
+            "root_dir": model["project"]["root_dir"].strip() or ".",
+            "bidder_name": model["project"]["bidder_name"],
+            "inputs": project_inputs,
+            "output_dir": model["project"]["output_dir"].strip() or "./output",
         },
+        "writing": writing_payload,
+        "processing": processing_payload,
         "runtime": {
             "stream": {
                 "enabled": bool(model["runtime"]["stream"]["enabled"]),

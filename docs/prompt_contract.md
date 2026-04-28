@@ -153,7 +153,7 @@
 
 - 当 `processing.path=auto`、`processing.project_background.enabled=true` 且 `processing.project_background.scope=h2_auto` 时，项目背景不再取全局摘要，而是通过 `H2ProjectBackgroundGenerator.get_for_heading()` 读取当前章节所属 H2 的背景缓存或按配置补生成
 - H2 背景只作为章级项目情境进入 `project_background` section，不替代当前章节的 `评分关注` 和 `需求要点`
-- `full_context` 即使配置了 `scope: h2_auto`，仍使用全局 `ProjectBackgroundGenerator.get_or_generate()`，保持完整参考语义
+- `full_context` 已经把完整采购需求和评分标准放入 prompt，不再调用 `ProjectBackgroundGenerator.get_or_generate()`，也不会生成 `project_background` section
 
 ### 4.2 `ChapterContext` 是什么
 
@@ -356,14 +356,13 @@ pruned 分支里，需求相关内容只会出现一个区块：
 #### full-context 分支
 
 1. `structure_contract`
-2. 可选 `project_background`
-3. 可选 `bid_requirements`
-4. 可选 `scoring_criteria`
-5. `task_card`
-6. 可选 `first_line_rule`
-7. `scope_reference`
-8. 若存在可用事实卡片，则注入 `fact_card_context`
-9. 可选 `additional_requirements`
+2. 可选 `bid_requirements`
+3. 可选 `scoring_criteria`
+4. `task_card`
+5. 可选 `first_line_rule`
+6. `scope_reference`
+7. 若存在可用事实卡片，则注入 `fact_card_context`
+8. 可选 `additional_requirements`
 
 `additional_requirements` 当前只承载操作员手工输入的附加要求。
 
@@ -377,7 +376,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `structure_contract` | 无独立标题；直接输出短提醒列表 | 总是出现 | 提醒“严格遵守 system 硬门禁”并补充 task 侧简短执行规则 |
 | `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
-| `project_background` | `## 项目背景` | 项目背景摘要非空时 | full-context 使用全局背景；auto + `scope=h2_auto` 使用当前 H2 背景 |
+| `project_background` | `## 项目背景` | pruned/auto 分支中项目背景摘要非空时 | auto + `scope=h2_auto` 使用当前 H2 背景；full-context 不生成该 section |
 | `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入默认勾选且未被本章排除的全局卡片，以及当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组；full-context 分支中位于章节任务卡和章节边界之后；渲染时会去除“本章节”等来源章节元话语 |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |

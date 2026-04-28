@@ -344,11 +344,6 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
             captured["scope_reference"] = scope_reference
             return "1. 先回应采购需求。\n2. 再逐条覆盖评分关注。"
 
-    writer.project_background_generator = type(
-        "DummyBackgroundGenerator",
-        (),
-        {"get_or_generate": staticmethod(lambda: "项目背景摘要。")},
-    )()
     writer.chapter_writing_plan_generator = DummyPlanGenerator()
 
     heading = _select_leaf_heading(config, "质量保障措施")
@@ -357,7 +352,7 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     assert captured["system_prompt"] == writer.build_system_prompt()
     assert captured["shared_prompt_prefix"].startswith("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。")
     assert "## 投标方知识库" not in captured["shared_prompt_prefix"]
-    assert "## 项目背景" in captured["shared_prompt_prefix"]
+    assert "## 项目背景" not in captured["shared_prompt_prefix"]
     assert "## 招标需求参考" in captured["shared_prompt_prefix"]
     assert "## 评分标准参考" in captured["shared_prompt_prefix"]
     assert "## 章节边界参考" not in captured["shared_prompt_prefix"]

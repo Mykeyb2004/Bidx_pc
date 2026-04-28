@@ -190,14 +190,15 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
 
 1. `structure_contract`
-2. `project_background`，若存在
-3. `bid_requirements`
-4. `scoring_criteria`
-5. `task_card`
-6. `first_line_rule`，若存在
-7. `scope_reference`
-8. 若存在可用事实卡片，则为 `fact_card_context`
-9. `additional_requirements`
+2. `bid_requirements`
+3. `scoring_criteria`
+4. `task_card`
+5. `first_line_rule`，若存在
+6. `scope_reference`
+7. 若存在可用事实卡片，则为 `fact_card_context`
+8. `additional_requirements`
+
+`full_context` 已经把完整采购需求和评分标准放入 prompt，因此不会再生成或注入 `project_background` 摘要。
 
 这里不会把 `scope_reference` 放进共享前缀，因为它包含当前标题、上级标题和同级标题，属于章节动态信息；若放在最前面，反而会降低跨 h3/h4 调用的前缀复用率。
 

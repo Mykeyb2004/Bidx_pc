@@ -91,8 +91,7 @@ processing:
 
     assert document.model["processing"]["path"] == "full_context"
     assert payload["processing"]["path"] == "full_context"
-    assert payload["processing"]["project_background"]["enabled"] is True
-    assert payload["processing"]["project_background"]["max_chars"] == 600
+    assert "project_background" not in payload["processing"]
     assert payload["processing"]["full_context"]["chapter_writing_plan"]["enabled"] is True
     assert payload["processing"]["full_context"]["chapter_writing_plan"]["max_chars"] == 280
 
@@ -346,7 +345,7 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     assert payload["writing"]["max_tables_per_section"] == 2
     assert payload["processing"]["path"] == "full_context"
     assert "context_view" not in payload["processing"]
-    assert payload["processing"]["project_background"]["enabled"] is False
+    assert "project_background" not in payload["processing"]
     assert payload["processing"]["hybrid_extract"]["retrieval"]["top_k_final"] == 8
     assert "models" not in payload
     assert payload["runtime"]["stream"]["enabled"] is True
