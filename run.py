@@ -6,6 +6,8 @@ GUI 启动脚本
 
 import argparse
 
+from bid_writer.macos_stderr_filter import suppress_native_macos_stderr_noise
+
 
 def main():
     """主函数"""
@@ -20,7 +22,8 @@ def main():
     args = parser.parse_args()
 
     from bid_writer.gui import run_gui
-    run_gui(args.config)
+    with suppress_native_macos_stderr_noise():
+        run_gui(args.config)
 
 
 if __name__ == "__main__":

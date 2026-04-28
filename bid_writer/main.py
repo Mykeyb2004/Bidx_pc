@@ -19,6 +19,7 @@ from .fact_card_store import FactCardStore
 from .fact_cards import FactCard, FactCardDraft, FactCardSelection, FactCardSource
 from .file_saver import FileSaver
 from .h2_project_background import H2ProjectBackgroundPrecomputeReport
+from .macos_stderr_filter import suppress_native_macos_stderr_noise
 from .outline_parser import HeadingNode, parse_outline
 
 
@@ -348,7 +349,8 @@ def main(config_path: Optional[str] = None):
 
     try:
         from .gui import run_gui
-        run_gui(config_path)
+        with suppress_native_macos_stderr_noise():
+            run_gui(config_path)
     except FileNotFoundError as e:
         print(f"错误: {e}")
         sys.exit(1)
