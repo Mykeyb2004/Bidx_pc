@@ -12,6 +12,7 @@
   - `full_context`
   - `legacy_rule`
   - `hybrid_extract`
+  - `auto`
 - 旧 `context_pruning.*` 写法仍兼容，但不再是新项目推荐写法
 
 本文重点回答四个问题：
@@ -49,6 +50,7 @@ processing.path
     -> full_context: 不进入章节级摘录提炼
     -> legacy_rule: 评分标准与采购需求都走规则链路
     -> hybrid_extract: 评分标准与采购需求都走检索摘录链路
+    -> auto: 评分项和采购需求走章节级检索；项目背景可按 H2 预生成并注入
     -> 可选 requirement_brief 原文摘录
     -> 输出 ChapterContext
 ```
@@ -61,6 +63,8 @@ processing.path
   - 命中的采购需求块经过程序压缩后的“需求要点”
 - `requirement_brief`
   - 命中的采购需求块进一步抽取出的“原文摘录版需求要点”
+- `project_background`
+  - 在 `auto + processing.project_background.scope=h2_auto` 时，由当前章节所属 H2 的采购需求证据片段生成章级背景摘要
 
 ## 3. 当前支持的模式
 
@@ -158,6 +162,34 @@ processing.path
 
 - 优点：召回能力更强，便于保留“原文摘录”约束
 - 限制：`requirement_seed` 仍是程序压缩结果，不是逐句原文直贴；若需要更强调原文，应优先看 `requirement_brief`
+
+### 3.4 `auto` 下的 H2 项目背景
+
+当配置满足以下条件时：
+
+```yaml
+processing:
+  path: auto
+  project_background:
+    enabled: true
+    scope: h2_auto
+```
+
+章节 prompt 中的 `## 项目背景` 会由 H2 级背景提供：
+
+1. 系统找到当前章节最近的 H2 祖先
+2. 使用 H2 标题、完整路径和子树标题构造检索 query
+3. 从采购需求中检索相关 `SourceUnit`
+4. 若证据片段数达到 `min_evidence_blocks`，调用辅助模型生成 H2 摘要
+5. 将摘要、证据 ID、原文片段和配置指纹写入 JSON 缓存
+6. 生成具体 H3/H4/H5 章节时，直接读取所属 H2 缓存并注入 `project_background`
+
+这条链路的边界是：
+
+- H2 背景只负责章级项目情境，不替代 `评分关注` 或 `需求要点`
+- 默认只把摘要注入 prompt，证据片段进入 trace 供审计
+- `full_context` 继续使用全局项目背景，不会被 `scope=h2_auto` 改成 H2 背景
+- 证据不足或摘要失败时按 `processing.project_background.h2.fallback` 回退
 
 ## 4. 当前链路里的三个层次
 

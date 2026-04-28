@@ -429,6 +429,79 @@ processing:
     assert config.chapter_facts_max_facts_per_chapter == 9
 
 
+def test_h2_project_background_config_defaults_to_global_for_old_shape(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  output_dir: "./output"
+
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    max_chars: 640
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.project_background_scope == "global"
+    assert config.h2_project_background_enabled is False
+    assert config.h2_project_background_precompute_on_batch is True
+    assert config.h2_project_background_generate_missing_on_single is True
+    assert config.h2_project_background_max_evidence_blocks == 6
+    assert config.h2_project_background_max_evidence_chars == 2400
+    assert config.h2_project_background_include_evidence_in_prompt is False
+    assert config.h2_project_background_min_evidence_blocks == 2
+    assert config.h2_project_background_fallback == "global"
+    assert config.h2_project_background_cache_dir == str(tmp_path / "caches" / "project_background_h2")
+
+
+def test_h2_project_background_config_reads_new_h2_auto_scope(tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "./project"
+
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    scope: "h2_auto"
+    max_chars: 720
+    h2:
+      precompute_on_batch: false
+      generate_missing_on_single: false
+      max_evidence_blocks: 4
+      max_evidence_chars: 1800
+      include_evidence_in_prompt: true
+      min_evidence_blocks: 1
+      fallback: "raw_evidence"
+      cache_dir: "./cache/h2-bg"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.project_background_scope == "h2_auto"
+    assert config.h2_project_background_enabled is True
+    assert config.project_background_max_chars == 720
+    assert config.h2_project_background_precompute_on_batch is False
+    assert config.h2_project_background_generate_missing_on_single is False
+    assert config.h2_project_background_max_evidence_blocks == 4
+    assert config.h2_project_background_max_evidence_chars == 1800
+    assert config.h2_project_background_include_evidence_in_prompt is True
+    assert config.h2_project_background_min_evidence_blocks == 1
+    assert config.h2_project_background_fallback == "raw_evidence"
+    assert config.h2_project_background_cache_dir == str(project_root / "cache" / "h2-bg")
+
+
 def test_legacy_schema_still_derives_full_context_and_reads_inputs(tmp_path: Path):
     (tmp_path / "outline.md").write_text("# 项目\n## 章节\n### 质量保障措施\n", encoding="utf-8")
     (tmp_path / "bid_requirements.md").write_text("旧配置采购需求", encoding="utf-8")

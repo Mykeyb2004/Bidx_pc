@@ -1273,6 +1273,25 @@ class Config:
         )
 
     @property
+    def project_background_scope(self) -> str:
+        """项目背景作用域：global 或 h2_auto。"""
+        value = self._get_first_defined(
+            ('processing', 'project_background', 'scope'),
+            default='global',
+        )
+        normalized = str(value).strip().lower() if value is not None else 'global'
+        return normalized if normalized in {'global', 'h2_auto'} else 'global'
+
+    @property
+    def h2_project_background_enabled(self) -> bool:
+        """auto 模式下是否启用 H2 级项目背景。"""
+        return bool(
+            self.project_background_enabled
+            and self.processing_path == 'auto'
+            and self.project_background_scope == 'h2_auto'
+        )
+
+    @property
     def project_background_cache_dir(self) -> str:
         """项目背景缓存目录。"""
         value = self._get_value('processing', 'project_background', 'cache_dir', default=self._MISSING)
@@ -1291,6 +1310,76 @@ class Config:
             ('processing', 'project_background', 'max_chars'),
             default=800,
         )
+
+    @property
+    def h2_project_background_precompute_on_batch(self) -> bool:
+        """批量生成前是否预生成全部 H2 项目背景。"""
+        return self._get_bool(
+            ('processing', 'project_background', 'h2', 'precompute_on_batch'),
+            default=True,
+        )
+
+    @property
+    def h2_project_background_generate_missing_on_single(self) -> bool:
+        """单章节生成时是否补生成缺失的 H2 项目背景。"""
+        return self._get_bool(
+            ('processing', 'project_background', 'h2', 'generate_missing_on_single'),
+            default=True,
+        )
+
+    @property
+    def h2_project_background_max_evidence_blocks(self) -> int:
+        """H2 背景最多使用的证据片段数。"""
+        return self._get_int(
+            ('processing', 'project_background', 'h2', 'max_evidence_blocks'),
+            default=6,
+        )
+
+    @property
+    def h2_project_background_max_evidence_chars(self) -> int:
+        """H2 背景证据片段总字符上限。"""
+        return self._get_int(
+            ('processing', 'project_background', 'h2', 'max_evidence_chars'),
+            default=2400,
+        )
+
+    @property
+    def h2_project_background_include_evidence_in_prompt(self) -> bool:
+        """是否把 H2 背景证据片段同时注入章节 prompt。"""
+        return self._get_bool(
+            ('processing', 'project_background', 'h2', 'include_evidence_in_prompt'),
+            default=False,
+        )
+
+    @property
+    def h2_project_background_min_evidence_blocks(self) -> int:
+        """生成 H2 背景所需的最少证据片段数。"""
+        return self._get_int(
+            ('processing', 'project_background', 'h2', 'min_evidence_blocks'),
+            default=2,
+        )
+
+    @property
+    def h2_project_background_fallback(self) -> str:
+        """H2 背景失败时的回退策略。"""
+        value = self._get_first_defined(
+            ('processing', 'project_background', 'h2', 'fallback'),
+            default='global',
+        )
+        normalized = str(value).strip().lower() if value is not None else 'global'
+        return normalized if normalized in {'global', 'raw_evidence', 'empty'} else 'global'
+
+    @property
+    def h2_project_background_cache_dir(self) -> str:
+        """H2 项目背景缓存目录。"""
+        value = self._get_value('processing', 'project_background', 'h2', 'cache_dir', default=self._MISSING)
+        if value is not self._MISSING:
+            return self._resolve_declared_path(
+                value,
+                resolver=self._resolve_project_path,
+                default=str(self._resolve_project_path('./caches/project_background_h2')),
+            )
+        return str(self._resolve_project_path('./caches/project_background_h2'))
 
     @property
     def scoring_classify_cache_dir(self) -> str:

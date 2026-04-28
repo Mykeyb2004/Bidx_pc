@@ -18,6 +18,7 @@ from .fact_card_extractor import FactCardExtractionResult, FactCardExtractor
 from .fact_card_store import FactCardStore
 from .fact_cards import FactCard, FactCardDraft, FactCardSelection, FactCardSource
 from .file_saver import FileSaver
+from .h2_project_background import H2ProjectBackgroundPrecomputeReport
 from .outline_parser import HeadingNode, parse_outline
 
 
@@ -86,6 +87,21 @@ class BidWriter:
         self.config.reload()
         self._rebuild_services()
         self.last_error_message = ""
+
+    def precompute_h2_project_backgrounds(self) -> H2ProjectBackgroundPrecomputeReport:
+        """批量生成前预计算 auto 模式 H2 项目背景。"""
+        generator = self.ai_writer.h2_project_background_generator
+        if (
+            generator is None
+            or not self.config.h2_project_background_enabled
+            or not self.config.h2_project_background_precompute_on_batch
+        ):
+            return H2ProjectBackgroundPrecomputeReport(total_h2=0, skipped=0)
+        if self.parser is None:
+            if not self.load_outline():
+                raise RuntimeError(self.last_error_message or "请先加载大纲")
+        assert self.parser is not None
+        return generator.precompute_all(self.parser)
 
     def get_output_fact_status(self, heading: HeadingNode) -> str:
         """返回正文 facts 缓存状态。"""

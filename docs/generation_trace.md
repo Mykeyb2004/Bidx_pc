@@ -7,6 +7,7 @@
 - 当前章节拿到了哪些局部大纲
 - 命中了哪些评分项
 - 采购需求哪些片段被选入上下文
+- 项目背景来自全局摘要还是 H2 背景，以及 H2 背景的证据片段
 - 最终发给模型的 `system prompt` / `user prompt` 是什么
 - 模型最终输出了什么内容
 
@@ -109,6 +110,7 @@ output/
 
 - `context_mode`
 - `context_pruning_enabled`
+- `project_background`
 - `prompt_contract`
 - `prompt_sections`
 - `prompt_lengths`
@@ -146,6 +148,16 @@ output/
 
 - `bid_requirements_chars`
 - `scoring_criteria_chars`
+
+当本次 prompt 注入了项目背景时，还会记录 `project_background`：
+
+- `scope`：`global` 或 `h2`
+- `summary_chars`
+- `cache_status`
+- `fallback_reason`
+- H2 背景专属字段：`h2_title`、`h2_full_path`、`evidence_unit_ids`、`evidence_blocks`、`evidence_count`、`precomputed`
+
+H2 背景的 `evidence_blocks` 是采购需求原文片段，用于人工审计摘要是否有依据；默认不会额外注入章节 prompt。
 
 ### `03_prompt_system.md`
 
@@ -193,6 +205,7 @@ output/
 - 处理模式（`full_context` / `legacy_rule` / `hybrid_extract`）
 - 上下文模式
 - business-block 顺序（`prompt_contract_blocks`）
+- 项目背景来源、H2 标题、摘要长度、证据片段数、缓存状态
 - prompt 长度
 - 命中评分项数量
 - 需求 seed / brief 长度
