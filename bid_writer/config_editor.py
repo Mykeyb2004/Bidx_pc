@@ -17,6 +17,8 @@ import yaml
 _MISSING = object()
 _SUPPORTED_PROCESSING_PATHS = {"auto", "full_context"}
 _KNOWN_PROCESSING_PATHS = _SUPPORTED_PROCESSING_PATHS | {"legacy_rule", "hybrid_extract", "mixed"}
+PROJECT_BACKGROUND_SCOPE_OPTIONS = ("global", "h2_auto")
+H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS = ("global", "raw_evidence", "empty")
 
 
 @dataclass(frozen=True)
@@ -771,6 +773,17 @@ def validate_editor_model(
     if processing_path not in _SUPPORTED_PROCESSING_PATHS:
         messages.append(ValidationMessage("error", "processing.path 当前仅支持 auto / full_context 两种模式。"))
 
+    project_background = model["processing"]["project_background"]
+    project_background_scope = _coerce_str(project_background["scope"]).strip()
+    h2_project_background_fallback = _coerce_str(project_background["h2"]["fallback"]).strip()
+    if processing_path == "auto":
+        if project_background_scope not in PROJECT_BACKGROUND_SCOPE_OPTIONS:
+            messages.append(ValidationMessage("error", "processing.project_background.scope 仅支持 global / h2_auto。"))
+        if h2_project_background_fallback not in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS:
+            messages.append(
+                ValidationMessage("error", "processing.project_background.h2.fallback 仅支持 global / raw_evidence / empty。")
+            )
+
     _add_cross_platform_path_warnings(messages, model)
 
     root_dir = _resolve_path(model["project"]["root_dir"] or ".", config_path.parent)
@@ -1183,12 +1196,12 @@ def _coerce_string_list(value: Any) -> list[str]:
 
 def _normalize_project_background_scope(value: Any) -> str:
     normalized = str(value).strip().lower() if value is not None else "global"
-    return normalized if normalized in {"global", "h2_auto"} else "global"
+    return normalized if normalized in PROJECT_BACKGROUND_SCOPE_OPTIONS else "global"
 
 
 def _normalize_h2_project_background_fallback(value: Any) -> str:
     normalized = str(value).strip().lower() if value is not None else "global"
-    return normalized if normalized in {"global", "raw_evidence", "empty"} else "global"
+    return normalized if normalized in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS else "global"
 
 
 def _maybe_int(value: Any) -> int | None:

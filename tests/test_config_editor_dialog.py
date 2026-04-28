@@ -5,7 +5,7 @@ import tkinter as tk
 
 from bid_writer import config_editor_dialog
 from bid_writer.config_editor import create_new_config_editor_document
-from bid_writer.config_editor_dialog import ConfigEditorDialog, ScrollableSection
+from bid_writer.config_editor_dialog import ConfigEditorDialog, ScrollableSection, _label_wraplength_for_width
 
 
 class StubVar:
@@ -68,6 +68,14 @@ def test_scrollable_section_canvas_leaves_gutter_before_scrollbar():
     assert calls == [(("content-window",), {"width": 212})]
 
 
+def test_label_wraplength_tracks_available_container_width():
+    assert _label_wraplength_for_width(560, horizontal_padding=48) == 512
+
+
+def test_label_wraplength_never_exceeds_narrow_container_width():
+    assert _label_wraplength_for_width(32, horizontal_padding=48) == 1
+
+
 def test_config_editor_path_browse_button_keeps_right_gutter(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     parent = SimpleNamespace(columnconfigure=lambda *_args, **_kwargs: None)
@@ -101,6 +109,7 @@ def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
             self.args = args
             self.kwargs = kwargs
             self.grid_kwargs = None
+            self.bind_calls = []
 
         def grid(self, **kwargs):
             self.grid_kwargs = kwargs
@@ -108,15 +117,25 @@ def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
         def pack(self, **_kwargs):
             return None
 
+        def pack_forget(self):
+            return None
+
         def columnconfigure(self, *_args, **_kwargs):
             return None
+
+        def bind(self, *args, **kwargs):
+            self.bind_calls.append((args, kwargs))
 
     class FakeCombobox(FakeWidget):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             created_comboboxes.append(self)
 
-    dialog.vars = {"processing.path": StubVar("full_context")}
+    dialog.vars = {
+        "processing.path": StubVar("full_context"),
+        "processing.project_background.scope": StubVar("global"),
+        "processing.project_background.h2.fallback": StubVar("global"),
+    }
     dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
     dialog._register_tooltip = lambda *_args, **_kwargs: None
     dialog._add_check_row = lambda *_args, **_kwargs: None
@@ -131,6 +150,74 @@ def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
     dialog._build_processing_section()
 
     assert created_comboboxes[0].kwargs["state"] == "readonly"
+    assert dialog.processing_full_context_frame.bind_calls[0][0][0] == "<Configure>"
+
+
+def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    created_comboboxes = []
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            self.grid_kwargs = None
+            self.bind_calls = []
+
+        def grid(self, **kwargs):
+            self.grid_kwargs = kwargs
+
+        def pack(self, **_kwargs):
+            return None
+
+        def pack_forget(self):
+            return None
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+        def bind(self, *args, **kwargs):
+            self.bind_calls.append((args, kwargs))
+
+    class FakeCombobox(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_comboboxes.append(self)
+
+    dialog.vars = {
+        "processing.path": StubVar("auto"),
+        "processing.project_background.enabled": StubVar(True),
+        "processing.project_background.scope": StubVar("h2_auto"),
+        "processing.project_background.max_chars": StubVar("800"),
+        "processing.project_background.h2.precompute_on_batch": StubVar(True),
+        "processing.project_background.h2.generate_missing_on_single": StubVar(True),
+        "processing.project_background.h2.max_evidence_blocks": StubVar("6"),
+        "processing.project_background.h2.max_evidence_chars": StubVar("2400"),
+        "processing.project_background.h2.include_evidence_in_prompt": StubVar(False),
+        "processing.project_background.h2.min_evidence_blocks": StubVar("2"),
+        "processing.project_background.h2.fallback": StubVar("global"),
+        "processing.project_background.h2.cache_dir": StubVar("./caches/project_background_h2"),
+    }
+    dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+    dialog._add_check_row = lambda *_args, **_kwargs: None
+    dialog._add_entry_row = lambda *_args, **_kwargs: FakeWidget()
+    dialog._add_path_row = lambda *_args, **_kwargs: None
+    dialog._schedule_refresh = lambda: None
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Combobox", FakeCombobox)
+
+    dialog._build_processing_section()
+
+    scope_box = created_comboboxes[1]
+    fallback_box = created_comboboxes[2]
+    assert scope_box.kwargs["state"] == "readonly"
+    assert scope_box.kwargs["values"] == ("global", "h2_auto")
+    assert fallback_box.kwargs["state"] == "readonly"
+    assert fallback_box.kwargs["values"] == ("global", "raw_evidence", "empty")
 
 
 def test_config_editor_full_context_hides_project_background_frame():
@@ -162,6 +249,45 @@ def test_config_editor_full_context_hides_project_background_frame():
     assert dialog.processing_chapter_plan_frame.actions == ["forget", "pack"]
     assert dialog.processing_req_frame.actions == ["forget"]
     assert dialog.processing_scoring_frame.actions == ["forget"]
+
+
+def test_config_editor_hides_h2_project_background_controls_for_global_scope():
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {
+        "processing.project_background.enabled": StubVar(True),
+        "processing.project_background.scope": StubVar("global"),
+    }
+
+    class FakeFrame:
+        def __init__(self):
+            self.actions: list[str] = []
+
+        def grid(self):
+            self.actions.append("grid")
+
+        def grid_remove(self):
+            self.actions.append("remove")
+
+    class FakeControl:
+        def __init__(self):
+            self.states: list[str] = []
+
+        def configure(self, **kwargs):
+            self.states.append(kwargs["state"])
+
+    scope_control = FakeControl()
+    max_chars_control = FakeControl()
+    dialog.processing_project_background_optional_controls = [
+        (scope_control, "readonly"),
+        (max_chars_control, "normal"),
+    ]
+    dialog.processing_project_background_h2_frame = FakeFrame()
+
+    dialog._update_project_background_visibility()
+
+    assert scope_control.states == ["readonly"]
+    assert max_chars_control.states == ["normal"]
+    assert dialog.processing_project_background_h2_frame.actions == ["remove"]
 
 
 def test_config_editor_new_mode_first_save_uses_save_as_even_when_target_exists(tmp_path):

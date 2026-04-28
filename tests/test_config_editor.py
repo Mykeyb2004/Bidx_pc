@@ -174,6 +174,41 @@ processing:
     assert not any("auto 模式需要配置辅助模型" in message.text for message in messages)
 
 
+def test_config_editor_validation_rejects_invalid_project_background_enums(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "auto.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    scope: "bad-scope"
+    h2:
+      fallback: "bad-fallback"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    model = copy.deepcopy(document.model)
+    model["processing"]["project_background"]["scope"] = "bad-scope"
+    model["processing"]["project_background"]["h2"]["fallback"] = "bad-fallback"
+
+    messages = document.validate(model)
+
+    errors = [message.text for message in messages if message.level == "error"]
+    assert any("project_background.scope" in text for text in errors)
+    assert any("project_background.h2.fallback" in text for text in errors)
+
+
 def test_config_editor_validation_requires_explicit_processing_path_for_legacy_mixed_mode(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "mixed.yaml"

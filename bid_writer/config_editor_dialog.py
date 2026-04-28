@@ -13,6 +13,8 @@ from typing import Any
 from .config_editor import (
     ConfigEditorDocument,
     ConnectionStatus,
+    H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS,
+    PROJECT_BACKGROUND_SCOPE_OPTIONS,
     ValidationMessage,
     create_new_config_editor_document,
     load_config_editor_document,
@@ -36,6 +38,35 @@ CONFIG_EDITOR_MIN_WIDTH = 1100
 CONFIG_EDITOR_MIN_HEIGHT = 760
 SCROLLABLE_SECTION_RIGHT_GUTTER = 28
 PATH_BROWSE_BUTTON_RIGHT_GUTTER = 12
+INFO_LABEL_WRAP_HORIZONTAL_PADDING = 48
+
+
+def _label_wraplength_for_width(
+    container_width: int,
+    *,
+    horizontal_padding: int = INFO_LABEL_WRAP_HORIZONTAL_PADDING,
+) -> int:
+    return max(1, int(container_width) - horizontal_padding)
+
+
+def _bind_label_wraplength_to_container(
+    label: tk.Misc,
+    container: tk.Misc,
+    *,
+    horizontal_padding: int = INFO_LABEL_WRAP_HORIZONTAL_PADDING,
+) -> None:
+    def sync_wraplength(event) -> None:
+        try:
+            label.configure(
+                wraplength=_label_wraplength_for_width(
+                    event.width,
+                    horizontal_padding=horizontal_padding,
+                )
+            )
+        except tk.TclError:
+            return
+
+    container.bind("<Configure>", sync_wraplength, add="+")
 
 
 class ScrollableSection(ttk.Frame):
@@ -299,6 +330,14 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self.section_var.trace_add("write", lambda *_: self._show_current_section())
         self.vars["processing.path"].trace_add("write", lambda *_: self._update_processing_visibility())
+        self.vars["processing.project_background.enabled"].trace_add(
+            "write",
+            lambda *_: self._update_project_background_visibility(),
+        )
+        self.vars["processing.project_background.scope"].trace_add(
+            "write",
+            lambda *_: self._update_project_background_visibility(),
+        )
 
     def _create_widgets(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -530,7 +569,7 @@ class ConfigEditorDialog(tk.Toplevel):
         self._register_tooltip(helper, "processing.path")
 
         self.processing_full_context_frame = ttk.LabelFrame(content, text="full_context 说明", padding=12)
-        ttk.Label(
+        full_context_label = ttk.Label(
             self.processing_full_context_frame,
             text=(
                 "当前模式不会做章节级摘录或检索，而是把采购需求全文和评分标准全文直接拼入提示词。"
@@ -538,20 +577,51 @@ class ConfigEditorDialog(tk.Toplevel):
             ),
             justify=tk.LEFT,
             wraplength=760,
-        ).pack(anchor="w")
+        )
+        full_context_label.pack(anchor="w", fill=tk.X)
+        _bind_label_wraplength_to_container(full_context_label, self.processing_full_context_frame)
 
         self.processing_project_background_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
         self._add_check_row(self.processing_project_background_frame, 0, "启用项目背景生成", "processing.project_background.enabled")
-        self._add_entry_row(self.processing_project_background_frame, 1, "作用域（global / h2_auto）", "processing.project_background.scope")
-        self._add_entry_row(self.processing_project_background_frame, 2, "背景最大字符数", "processing.project_background.max_chars")
-        self._add_check_row(self.processing_project_background_frame, 3, "批量前预生成 H2 背景", "processing.project_background.h2.precompute_on_batch")
-        self._add_check_row(self.processing_project_background_frame, 4, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
-        self._add_entry_row(self.processing_project_background_frame, 5, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
-        self._add_entry_row(self.processing_project_background_frame, 6, "H2 证据字符上限", "processing.project_background.h2.max_evidence_chars")
-        self._add_check_row(self.processing_project_background_frame, 7, "证据同时进入 prompt", "processing.project_background.h2.include_evidence_in_prompt")
-        self._add_entry_row(self.processing_project_background_frame, 8, "最少证据片段数", "processing.project_background.h2.min_evidence_blocks")
-        self._add_entry_row(self.processing_project_background_frame, 9, "失败回退（global / raw_evidence / empty）", "processing.project_background.h2.fallback")
-        self._add_path_row(self.processing_project_background_frame, 10, "H2 缓存目录", "processing.project_background.h2.cache_dir", browse_kind="dir", relative_to="project")
+        scope_box = self._add_combobox_row(
+            self.processing_project_background_frame,
+            1,
+            "作用域",
+            "processing.project_background.scope",
+            PROJECT_BACKGROUND_SCOPE_OPTIONS,
+        )
+        max_chars_entry = self._add_entry_row(
+            self.processing_project_background_frame,
+            2,
+            "背景最大字符数",
+            "processing.project_background.max_chars",
+        )
+        self.processing_project_background_optional_controls = [
+            (scope_box, "readonly"),
+            (max_chars_entry, "normal"),
+        ]
+
+        self.processing_project_background_h2_frame = ttk.LabelFrame(
+            self.processing_project_background_frame,
+            text="H2 背景参数",
+            padding=10,
+        )
+        self.processing_project_background_h2_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        self._add_check_row(self.processing_project_background_h2_frame, 0, "批量前预生成 H2 背景", "processing.project_background.h2.precompute_on_batch")
+        self._add_check_row(self.processing_project_background_h2_frame, 1, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
+        self._add_entry_row(self.processing_project_background_h2_frame, 2, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
+        self._add_entry_row(self.processing_project_background_h2_frame, 3, "H2 证据字符上限", "processing.project_background.h2.max_evidence_chars")
+        self._add_check_row(self.processing_project_background_h2_frame, 4, "证据同时进入 prompt", "processing.project_background.h2.include_evidence_in_prompt")
+        self._add_entry_row(self.processing_project_background_h2_frame, 5, "最少证据片段数", "processing.project_background.h2.min_evidence_blocks")
+        self._add_combobox_row(
+            self.processing_project_background_h2_frame,
+            6,
+            "失败回退",
+            "processing.project_background.h2.fallback",
+            H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS,
+        )
+        self._add_path_row(self.processing_project_background_h2_frame, 7, "H2 缓存目录", "processing.project_background.h2.cache_dir", browse_kind="dir", relative_to="project")
+        self.processing_project_background_h2_frame.columnconfigure(1, weight=1)
         self.processing_project_background_frame.columnconfigure(1, weight=1)
 
         self.processing_chapter_plan_frame = ttk.LabelFrame(content, text="章节写作计划", padding=12)
@@ -639,6 +709,27 @@ class ConfigEditorDialog(tk.Toplevel):
         self._register_tooltip(label_widget, key)
         self._register_tooltip(entry, key)
         return entry
+
+    def _add_combobox_row(
+        self,
+        parent: tk.Misc,
+        row: int,
+        label: str,
+        key: str,
+        values: tuple[str, ...],
+    ) -> ttk.Combobox:
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=(0, 10), pady=5)
+        combo = ttk.Combobox(
+            parent,
+            textvariable=self.vars[key],
+            values=values,
+            state="readonly",
+        )
+        combo.grid(row=row, column=1, sticky="ew", pady=5)
+        self._register_tooltip(label_widget, key)
+        self._register_tooltip(combo, key)
+        return combo
 
     def _add_path_row(
         self,
@@ -1026,6 +1117,28 @@ class ConfigEditorDialog(tk.Toplevel):
             text_frame.grid_remove()
             file_frame.grid()
 
+    def _update_project_background_visibility(self) -> None:
+        h2_frame = getattr(self, "processing_project_background_h2_frame", None)
+        if h2_frame is None:
+            return
+
+        enabled = bool(self.vars["processing.project_background.enabled"].get())
+        scope = self.vars["processing.project_background.scope"].get().strip().lower()
+
+        for widget, active_state in getattr(self, "processing_project_background_optional_controls", []):
+            try:
+                widget.configure(state=active_state if enabled else "disabled")
+            except (AttributeError, tk.TclError):
+                continue
+
+        try:
+            if enabled and scope == "h2_auto":
+                h2_frame.grid()
+            else:
+                h2_frame.grid_remove()
+        except tk.TclError:
+            return
+
     def _update_processing_visibility(self) -> None:
         path = self.vars["processing.path"].get().strip().lower()
 
@@ -1045,6 +1158,7 @@ class ConfigEditorDialog(tk.Toplevel):
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_req_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_scoring_frame.pack(fill=tk.X, pady=(0, 12))
+        self._update_project_background_visibility()
         self._schedule_refresh()
 
     def _show_current_section(self) -> None:
