@@ -64,7 +64,7 @@ processing.path
 - `requirement_brief`
   - 命中的采购需求块进一步抽取出的“原文摘录版需求要点”
 - `project_background`
-  - 在 `auto + processing.project_background.enabled=true` 时，由当前章节所属 H2 的采购需求证据片段生成章级背景摘要
+  - 在 `auto + processing.project_background.enabled=true` 时，由当前章节所属 H2 的采购需求证据片段形成章级背景材料；默认是原文摘录，`content_mode=summary` 时才是模型摘要
 
 ## 3. 当前支持的模式
 
@@ -179,16 +179,17 @@ processing:
 1. 系统找到当前章节最近的 H2 祖先
 2. 使用 H2 标题、完整路径和子树标题构造检索 query
 3. 从采购需求中检索相关 `SourceUnit`
-4. 若证据片段数达到 `min_evidence_blocks`，调用辅助模型生成 H2 摘要
-5. 将摘要、证据 ID、原文片段和配置指纹写入 JSON 缓存
-6. 生成具体 H3/H4/H5 章节时，直接读取所属 H2 缓存并注入 `project_background`
+4. 若证据片段数达到 `min_evidence_blocks`，默认把命中的采购需求原文片段格式化为 H2 背景摘录
+5. 当 `processing.project_background.h2.content_mode=summary` 时，才调用辅助模型基于这些片段生成 H2 摘要
+6. 将背景内容、证据 ID、原文片段和配置指纹写入 JSON 缓存
+7. 生成具体 H3/H4/H5 章节时，直接读取所属 H2 缓存并注入 `project_background`
 
 这条链路的边界是：
 
 - H2 背景只负责章级项目情境，不替代 `评分关注` 或 `需求要点`
-- 默认只把摘要注入 prompt，证据片段进入 trace 供审计
+- 默认注入采购需求原文摘录，证据片段也进入 trace 供审计
 - `full_context` 已经完整注入采购需求和评分标准，不再提炼或注入项目背景；`processing.project_background.*` 在该模式下不生效
-- 证据不足或摘要失败时按 `processing.project_background.h2.fallback` 回退
+- 证据不足或摘要失败时按 `processing.project_background.h2.fallback` 回退；若完全未命中当前 H2 相关片段，则不再用采购需求第一段兜底
 
 ## 4. 当前链路里的三个层次
 

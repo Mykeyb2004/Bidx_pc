@@ -289,7 +289,7 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("processing.project_background.h2.generate_missing_on_single", tk.BooleanVar())
         add_var("processing.project_background.h2.max_evidence_blocks", tk.StringVar())
         add_var("processing.project_background.h2.max_evidence_chars", tk.StringVar())
-        add_var("processing.project_background.h2.include_evidence_in_prompt", tk.BooleanVar())
+        add_var("processing.project_background.h2.content_mode", tk.StringVar())
         add_var("processing.project_background.h2.min_evidence_blocks", tk.StringVar())
         add_var("processing.project_background.h2.fallback", tk.StringVar())
         add_var("processing.project_background.h2.cache_dir", tk.StringVar())
@@ -577,7 +577,13 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_check_row(self.processing_project_background_h2_frame, 1, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
         self._add_entry_row(self.processing_project_background_h2_frame, 2, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
         self._add_entry_row(self.processing_project_background_h2_frame, 3, "H2 证据字符上限", "processing.project_background.h2.max_evidence_chars")
-        self._add_check_row(self.processing_project_background_h2_frame, 4, "证据同时进入 prompt", "processing.project_background.h2.include_evidence_in_prompt")
+        self._add_combobox_row(
+            self.processing_project_background_h2_frame,
+            4,
+            "背景内容模式",
+            "processing.project_background.h2.content_mode",
+            ("excerpts", "summary"),
+        )
         self._add_entry_row(self.processing_project_background_h2_frame, 5, "最少证据片段数", "processing.project_background.h2.min_evidence_blocks")
         self._add_combobox_row(
             self.processing_project_background_h2_frame,
@@ -884,7 +890,7 @@ class ConfigEditorDialog(tk.Toplevel):
             "processing.project_background.h2.generate_missing_on_single": model["processing"]["project_background"]["h2"]["generate_missing_on_single"],
             "processing.project_background.h2.max_evidence_blocks": str(model["processing"]["project_background"]["h2"]["max_evidence_blocks"]),
             "processing.project_background.h2.max_evidence_chars": str(model["processing"]["project_background"]["h2"]["max_evidence_chars"]),
-            "processing.project_background.h2.include_evidence_in_prompt": model["processing"]["project_background"]["h2"]["include_evidence_in_prompt"],
+            "processing.project_background.h2.content_mode": model["processing"]["project_background"]["h2"]["content_mode"],
             "processing.project_background.h2.min_evidence_blocks": str(model["processing"]["project_background"]["h2"]["min_evidence_blocks"]),
             "processing.project_background.h2.fallback": model["processing"]["project_background"]["h2"]["fallback"],
             "processing.project_background.h2.cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"],
@@ -972,7 +978,7 @@ class ConfigEditorDialog(tk.Toplevel):
                         "generate_missing_on_single": bool(self.vars["processing.project_background.h2.generate_missing_on_single"].get()),
                         "max_evidence_blocks": self.vars["processing.project_background.h2.max_evidence_blocks"].get().strip(),
                         "max_evidence_chars": self.vars["processing.project_background.h2.max_evidence_chars"].get().strip(),
-                        "include_evidence_in_prompt": bool(self.vars["processing.project_background.h2.include_evidence_in_prompt"].get()),
+                        "content_mode": self.vars["processing.project_background.h2.content_mode"].get().strip() or "excerpts",
                         "min_evidence_blocks": self.vars["processing.project_background.h2.min_evidence_blocks"].get().strip(),
                         "fallback": self.vars["processing.project_background.h2.fallback"].get().strip() or "raw_evidence",
                         "cache_dir": self.vars["processing.project_background.h2.cache_dir"].get().strip() or "./caches/project_background_h2",

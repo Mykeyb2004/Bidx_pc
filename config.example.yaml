@@ -29,7 +29,7 @@ processing:
       generate_missing_on_single: true
       max_evidence_blocks: 6
       max_evidence_chars: 2400
-      include_evidence_in_prompt: false
+      content_mode: "excerpts"
       min_evidence_blocks: 2
       fallback: "raw_evidence"
       cache_dir: "./caches/project_background_h2"

@@ -18,6 +18,7 @@ _MISSING = object()
 _SUPPORTED_PROCESSING_PATHS = {"auto", "full_context"}
 _KNOWN_PROCESSING_PATHS = _SUPPORTED_PROCESSING_PATHS | {"legacy_rule", "hybrid_extract", "mixed"}
 H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS = ("raw_evidence", "empty")
+H2_PROJECT_BACKGROUND_CONTENT_MODE_OPTIONS = ("excerpts", "summary")
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,7 @@ def build_default_editor_model() -> dict[str, Any]:
             "extra_rules": [],
         },
         "processing": {
-            "path": "full_context",
+            "path": "auto",
             "project_background": {
                 "enabled": False,
                 "max_chars": 800,
@@ -145,7 +146,7 @@ def build_default_editor_model() -> dict[str, Any]:
                     "generate_missing_on_single": True,
                     "max_evidence_blocks": 6,
                     "max_evidence_chars": 2400,
-                    "include_evidence_in_prompt": False,
+                    "content_mode": "excerpts",
                     "min_evidence_blocks": 2,
                     "fallback": "raw_evidence",
                     "cache_dir": "./caches/project_background_h2",
@@ -455,9 +456,8 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                         _first_defined(raw_config, ("processing", "project_background", "h2", "max_evidence_chars"), default=2400),
                         default=2400,
                     ),
-                    "include_evidence_in_prompt": _coerce_bool(
-                        _first_defined(raw_config, ("processing", "project_background", "h2", "include_evidence_in_prompt"), default=False),
-                        default=False,
+                    "content_mode": _normalize_h2_project_background_content_mode(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "content_mode"), default="excerpts")
                     ),
                     "min_evidence_blocks": _coerce_int(
                         _first_defined(raw_config, ("processing", "project_background", "h2", "min_evidence_blocks"), default=2),
@@ -643,7 +643,7 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
                 "generate_missing_on_single": bool(model["processing"]["project_background"]["h2"]["generate_missing_on_single"]),
                 "max_evidence_blocks": int(model["processing"]["project_background"]["h2"]["max_evidence_blocks"]),
                 "max_evidence_chars": int(model["processing"]["project_background"]["h2"]["max_evidence_chars"]),
-                "include_evidence_in_prompt": bool(model["processing"]["project_background"]["h2"]["include_evidence_in_prompt"]),
+                "content_mode": model["processing"]["project_background"]["h2"]["content_mode"],
                 "min_evidence_blocks": int(model["processing"]["project_background"]["h2"]["min_evidence_blocks"]),
                 "fallback": model["processing"]["project_background"]["h2"]["fallback"],
                 "cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"].strip() or "./caches/project_background_h2",
@@ -724,10 +724,15 @@ def validate_editor_model(
 
     project_background = model["processing"]["project_background"]
     h2_project_background_fallback = _coerce_str(project_background["h2"]["fallback"]).strip()
+    h2_project_background_content_mode = _coerce_str(project_background["h2"].get("content_mode", "excerpts")).strip()
     if processing_path == "auto":
         if h2_project_background_fallback not in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS:
             messages.append(
                 ValidationMessage("error", "processing.project_background.h2.fallback 仅支持 raw_evidence / empty。")
+            )
+        if h2_project_background_content_mode not in H2_PROJECT_BACKGROUND_CONTENT_MODE_OPTIONS:
+            messages.append(
+                ValidationMessage("error", "processing.project_background.h2.content_mode 仅支持 excerpts / summary。")
             )
 
     _add_cross_platform_path_warnings(messages, model)
@@ -1146,6 +1151,11 @@ def _normalize_h2_project_background_fallback(value: Any) -> str:
     return normalized if normalized in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS else "raw_evidence"
 
 
+def _normalize_h2_project_background_content_mode(value: Any) -> str:
+    normalized = str(value).strip().lower() if value is not None else "excerpts"
+    return normalized if normalized in H2_PROJECT_BACKGROUND_CONTENT_MODE_OPTIONS else "excerpts"
+
+
 def _maybe_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
@@ -1226,6 +1236,7 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
                 "generate_missing_on_single": True,
                 "max_evidence_blocks": True,
                 "max_evidence_chars": True,
+                "content_mode": True,
                 "include_evidence_in_prompt": True,
                 "min_evidence_blocks": True,
                 "fallback": True,

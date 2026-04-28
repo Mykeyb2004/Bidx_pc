@@ -508,6 +508,7 @@ processing:
     assert config.h2_project_background_max_evidence_blocks == 6
     assert config.h2_project_background_max_evidence_chars == 2400
     assert config.h2_project_background_include_evidence_in_prompt is False
+    assert config.h2_project_background_content_mode == "excerpts"
     assert config.h2_project_background_min_evidence_blocks == 2
     assert config.h2_project_background_fallback == "raw_evidence"
     assert config.h2_project_background_cache_dir == str(tmp_path / "caches" / "project_background_h2")
@@ -572,7 +573,7 @@ processing:
       generate_missing_on_single: false
       max_evidence_blocks: 4
       max_evidence_chars: 1800
-      include_evidence_in_prompt: true
+      content_mode: "summary"
       min_evidence_blocks: 1
       fallback: "raw_evidence"
       cache_dir: "./cache/h2-bg"
@@ -589,10 +590,30 @@ processing:
     assert config.h2_project_background_generate_missing_on_single is False
     assert config.h2_project_background_max_evidence_blocks == 4
     assert config.h2_project_background_max_evidence_chars == 1800
-    assert config.h2_project_background_include_evidence_in_prompt is True
+    assert config.h2_project_background_content_mode == "summary"
     assert config.h2_project_background_min_evidence_blocks == 1
     assert config.h2_project_background_fallback == "raw_evidence"
     assert config.h2_project_background_cache_dir == str(project_root / "cache" / "h2-bg")
+
+
+def test_h2_project_background_invalid_content_mode_is_rejected(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    h2:
+      content_mode: "model"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    with pytest.raises(ValueError, match="project_background.h2.content_mode"):
+        _ = config.h2_project_background_content_mode
 
 
 def test_legacy_schema_still_derives_full_context_and_reads_inputs(tmp_path: Path):

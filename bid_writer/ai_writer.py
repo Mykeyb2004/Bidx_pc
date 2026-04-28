@@ -267,7 +267,7 @@ class AIWriter:
     def _build_project_background_section(background: str) -> str:
         return "\n".join([
             "## 项目背景",
-            "以下为本项目背景摘要，供理解整体目标和范围，不直接作为正文内容：",
+            "以下为当前 H2 相关项目背景材料，供理解整体目标和范围，不直接作为正文内容：",
             background.strip(),
         ])
 

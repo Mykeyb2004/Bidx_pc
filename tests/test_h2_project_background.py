@@ -30,6 +30,7 @@ processing:
       max_evidence_blocks: 3
       max_evidence_chars: 1200
       min_evidence_blocks: 1
+      content_mode: excerpts
 """.strip(),
         encoding="utf-8",
     )
@@ -102,7 +103,7 @@ def test_h2_generator_writes_and_reads_json_cache(tmp_path: Path):
     assert payload["h2_full_path"] == "项目 > 项目理解"
 
 
-def test_h2_background_uses_requirement_evidence_only_and_precomputes_all_h2(tmp_path: Path, monkeypatch):
+def test_h2_background_uses_requirement_excerpts_by_default_and_precomputes_all_h2(tmp_path: Path, monkeypatch):
     requirements = (
         "# 采购需求\n"
         "项目理解要求说明政策背景、建设目标和现状问题。\n\n"
@@ -120,13 +121,11 @@ def test_h2_background_uses_requirement_evidence_only_and_precomputes_all_h2(tmp
         "### 实施流程\n"
     )
     generator = H2ProjectBackgroundGenerator(config)
-    prompts: list[str] = []
-
-    def fake_compute(h2, evidence_blocks):
-        prompts.append("\n".join(evidence_blocks))
-        return f"{h2.title}摘要：{evidence_blocks[0][:12]}"
-
-    monkeypatch.setattr(generator, "_compute_summary", fake_compute)
+    monkeypatch.setattr(
+        generator,
+        "_compute_summary",
+        lambda h2, evidence_blocks: (_ for _ in ()).throw(AssertionError("默认摘录模式不应调用摘要模型")),
+    )
 
     report = generator.precompute_all(parser)
 
@@ -136,26 +135,54 @@ def test_h2_background_uses_requirement_evidence_only_and_precomputes_all_h2(tmp
     assert report.failed == 0
     assert [result.h2_title for result in report.results] == ["项目理解", "服务方案"]
     assert all(result.evidence_blocks for result in report.results)
-    assert any("项目理解要求" in prompt for prompt in prompts)
-    assert any("服务方案要求" in prompt for prompt in prompts)
+    assert "【摘录1】" in report.results[0].summary
+    assert "项目理解要求" in report.results[0].summary
+    assert "服务方案要求" in report.results[1].summary
 
 
-def test_h2_background_falls_back_when_evidence_is_insufficient(tmp_path: Path, monkeypatch):
+def test_h2_background_summary_mode_uses_requirement_evidence_and_model(tmp_path: Path, monkeypatch):
+    requirements = (
+        "项目理解要求说明政策背景、建设目标和现状问题。\n\n"
+        "项目理解还应覆盖需求边界、服务对象和项目痛点。\n"
+    )
+    config = _write_config(tmp_path, requirements=requirements)
+    config._config["processing"]["project_background"]["h2"]["content_mode"] = "summary"
+    parser = parse_outline("# 项目\n## 项目理解\n### 现状分析\n")
+    h2 = parser.find_heading_by_title("项目理解")
+    assert h2 is not None
+    generator = H2ProjectBackgroundGenerator(config)
+    prompts: list[str] = []
+
+    def fake_compute(h2, evidence_blocks):
+        prompts.append("\n".join(evidence_blocks))
+        return f"{h2.title}摘要：{evidence_blocks[0][:12]}"
+
+    monkeypatch.setattr(generator, "_compute_summary", fake_compute)
+
+    result = generator.get_or_generate(h2)
+
+    assert result.cache_status == "generated"
+    assert result.summary.startswith("项目理解摘要：")
+    assert prompts and "项目理解要求" in prompts[0]
+
+
+def test_h2_background_does_not_inject_unrelated_first_requirement_when_no_hits(tmp_path: Path, monkeypatch):
     config = _write_config(tmp_path, requirements="完全无关的采购需求。")
-    config._config["processing"]["project_background"]["h2"]["min_evidence_blocks"] = 2
+    config._config["processing"]["project_background"]["h2"]["min_evidence_blocks"] = 1
     config._config["processing"]["project_background"]["h2"]["fallback"] = "raw_evidence"
     parser = parse_outline("# 项目\n## 项目理解\n### 现状分析\n")
     h2 = parser.find_heading_by_title("项目理解")
     assert h2 is not None
     generator = H2ProjectBackgroundGenerator(config)
+    monkeypatch.setattr(generator.hybrid_retriever, "select_final", lambda *args, **kwargs: [])
     monkeypatch.setattr(generator, "_compute_summary", lambda h2, evidence_blocks: "不应调用")
 
     result = generator.get_or_generate(h2)
 
     assert result.cache_status == "fallback"
-    assert "证据片段不足" in result.fallback_reason
-    assert result.summary == "完全无关的采购需求。"
-    assert result.evidence_blocks == ["完全无关的采购需求。"]
+    assert "未命中" in result.fallback_reason
+    assert result.summary == ""
+    assert result.evidence_blocks == []
 
 
 def test_h2_background_generate_missing_false_returns_empty_fallback(tmp_path: Path):
@@ -188,7 +215,7 @@ def test_bid_writer_precompute_h2_project_backgrounds_uses_loaded_outline(tmp_pa
     monkeypatch.setattr(
         writer.ai_writer.h2_project_background_generator,
         "_compute_summary",
-        lambda h2, evidence_blocks: f"{h2.title}摘要",
+        lambda h2, evidence_blocks: (_ for _ in ()).throw(AssertionError("默认摘录模式不应调用摘要模型")),
     )
 
     report = writer.precompute_h2_project_backgrounds()

@@ -128,7 +128,7 @@ processing:
       generate_missing_on_single: false
       max_evidence_blocks: 4
       max_evidence_chars: 1600
-      include_evidence_in_prompt: true
+      content_mode: "summary"
       min_evidence_blocks: 1
       fallback: "raw_evidence"
       cache_dir: "./cache/h2-bg"
@@ -148,7 +148,7 @@ processing:
             "generate_missing_on_single": False,
             "max_evidence_blocks": 4,
             "max_evidence_chars": 1600,
-            "include_evidence_in_prompt": True,
+            "content_mode": "summary",
             "min_evidence_blocks": 1,
             "fallback": "raw_evidence",
             "cache_dir": "./cache/h2-bg",
@@ -425,9 +425,22 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     assert "allow_markdown_headings" not in payload["writing"]
     assert "allow_english_terms" not in payload["writing"]
     assert "summary_title" not in payload["writing"]
-    assert payload["processing"]["path"] == "full_context"
+    assert payload["processing"]["path"] == "auto"
     assert "context_view" not in payload["processing"]
-    assert "project_background" not in payload["processing"]
+    assert payload["processing"]["project_background"] == {
+        "enabled": False,
+        "max_chars": 800,
+        "h2": {
+            "precompute_on_batch": True,
+            "generate_missing_on_single": True,
+            "max_evidence_blocks": 6,
+            "max_evidence_chars": 2400,
+            "content_mode": "excerpts",
+            "min_evidence_blocks": 2,
+            "fallback": "raw_evidence",
+            "cache_dir": "./caches/project_background_h2",
+        },
+    }
     assert "auto" not in payload["processing"]
     assert "retrieval" not in payload["processing"]["hybrid_extract"]
     assert "models" not in payload

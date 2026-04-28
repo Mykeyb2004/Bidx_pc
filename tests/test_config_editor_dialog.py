@@ -219,6 +219,7 @@ def test_config_editor_processing_path_uses_radio_buttons(monkeypatch):
 
     dialog.vars = {
         "processing.path": StubVar("full_context"),
+        "processing.project_background.h2.content_mode": StubVar("excerpts"),
         "processing.project_background.h2.fallback": StubVar("raw_evidence"),
     }
     dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
@@ -404,7 +405,7 @@ def test_config_editor_project_background_omits_scope_and_global_fallback(monkey
         "processing.project_background.h2.generate_missing_on_single": StubVar(True),
         "processing.project_background.h2.max_evidence_blocks": StubVar("6"),
         "processing.project_background.h2.max_evidence_chars": StubVar("2400"),
-        "processing.project_background.h2.include_evidence_in_prompt": StubVar(False),
+        "processing.project_background.h2.content_mode": StubVar("excerpts"),
         "processing.project_background.h2.min_evidence_blocks": StubVar("2"),
         "processing.project_background.h2.fallback": StubVar("raw_evidence"),
         "processing.project_background.h2.cache_dir": StubVar("./caches/project_background_h2"),

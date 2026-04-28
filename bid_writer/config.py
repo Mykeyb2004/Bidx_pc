@@ -1315,11 +1315,23 @@ class Config:
 
     @property
     def h2_project_background_include_evidence_in_prompt(self) -> bool:
-        """是否把 H2 背景证据片段同时注入章节 prompt。"""
+        """已废弃：H2 背景默认即为原文摘录，不再单独控制证据注入。"""
         return self._get_bool(
             ('processing', 'project_background', 'h2', 'include_evidence_in_prompt'),
             default=False,
         )
+
+    @property
+    def h2_project_background_content_mode(self) -> str:
+        """H2 背景内容模式：excerpts 原文摘录，summary 辅助模型摘要。"""
+        value = self._get_first_defined(
+            ('processing', 'project_background', 'h2', 'content_mode'),
+            default='excerpts',
+        )
+        normalized = str(value).strip().lower() if value is not None else 'excerpts'
+        if normalized not in {'excerpts', 'summary'}:
+            raise ValueError('processing.project_background.h2.content_mode 仅支持 excerpts / summary')
+        return normalized
 
     @property
     def h2_project_background_min_evidence_blocks(self) -> int:

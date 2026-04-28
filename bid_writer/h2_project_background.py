@@ -28,7 +28,7 @@ PROMPT_VERSION = "h2-project-background-v1"
 
 @dataclass
 class H2ProjectBackgroundResult:
-    """单个 H2 背景摘要及其证据元数据。"""
+    """单个 H2 背景材料及其证据元数据。"""
 
     h2_title: str
     h2_full_path: str
@@ -150,6 +150,7 @@ class H2ProjectBackgroundGenerator:
                 str(self.config.project_background_max_chars),
                 str(self.config.h2_project_background_max_evidence_blocks),
                 str(self.config.h2_project_background_max_evidence_chars),
+                self.config.h2_project_background_content_mode,
                 self.retrieval_fingerprint(),
                 PROMPT_VERSION,
                 model,
@@ -169,6 +170,7 @@ class H2ProjectBackgroundGenerator:
                 str(self.config.project_background_max_chars),
                 str(self.config.h2_project_background_max_evidence_blocks),
                 str(self.config.h2_project_background_max_evidence_chars),
+                self.config.h2_project_background_content_mode,
                 self.retrieval_fingerprint(),
                 result.prompt_version,
                 result.model,
@@ -290,6 +292,13 @@ class H2ProjectBackgroundGenerator:
                 evidence_blocks = self._trim_evidence_blocks(
                     [hit.unit.source_text_exact or hit.unit.source_text for hit in evidence_hits]
                 )
+                if not evidence_blocks:
+                    return self._fallback_result(
+                        h2,
+                        "未命中当前 H2 相关采购需求片段",
+                        evidence_unit_ids=evidence_unit_ids,
+                        evidence_blocks=evidence_blocks,
+                    )
                 if len(evidence_blocks) < self.config.h2_project_background_min_evidence_blocks:
                     return self._fallback_result(
                         h2,
@@ -298,11 +307,11 @@ class H2ProjectBackgroundGenerator:
                         evidence_blocks=evidence_blocks,
                     )
 
-                summary = self._compute_summary(h2, evidence_blocks)
+                summary = self._build_background_content(h2, evidence_blocks)
                 if not summary.strip():
                     return self._fallback_result(
                         h2,
-                        "摘要生成为空",
+                        "项目背景内容为空",
                         evidence_unit_ids=evidence_unit_ids,
                         evidence_blocks=evidence_blocks,
                     )
@@ -347,13 +356,7 @@ class H2ProjectBackgroundGenerator:
             top_k_final=self.config.h2_project_background_max_evidence_blocks,
             min_score=self.config.context_pruning_retrieval_min_fused_score,
         )
-        selected_hits = self._verify_hits_if_needed(h2, hits, selected_hits)
-        if not selected_hits and units:
-            selected_hits = [
-                RetrievedUnit(unit=unit, lexical_score=0.0, fused_score=0.0)
-                for unit in units[:1]
-            ]
-        return selected_hits
+        return self._verify_hits_if_needed(h2, hits, selected_hits)
 
     def _verify_hits_if_needed(
         self,
@@ -398,6 +401,24 @@ class H2ProjectBackgroundGenerator:
             f"重点词：{'；'.join(self._collect_h2_titles(h2))}",
         ]
         return "\n".join(part for part in parts if part.strip())
+
+    def _build_background_content(self, h2: HeadingNode, evidence_blocks: list[str]) -> str:
+        if self.config.h2_project_background_content_mode == "summary":
+            return self._compute_summary(h2, evidence_blocks)
+        return self._format_evidence_excerpts(evidence_blocks)
+
+    @staticmethod
+    def _format_evidence_excerpts(evidence_blocks: list[str]) -> str:
+        lines: list[str] = []
+        for index, block in enumerate(evidence_blocks, 1):
+            text = block.strip()
+            if not text:
+                continue
+            if lines:
+                lines.append("")
+            lines.append(f"【摘录{index}】")
+            lines.append(text)
+        return "\n".join(lines).strip()
 
     def _collect_h2_titles(self, h2: HeadingNode, *, include_self: bool = True, limit: int = 20) -> list[str]:
         titles: list[str] = []
@@ -448,9 +469,6 @@ class H2ProjectBackgroundGenerator:
         summary = ""
         if fallback == "raw_evidence" and blocks:
             summary = "\n\n".join(blocks[:3])
-        elif fallback == "raw_evidence" and self.config.bid_requirements.strip():
-            summary = self.config.bid_requirements.strip()[: self.config.project_background_max_chars]
-            blocks = [summary]
         return self.build_result(
             h2=h2,
             summary=summary,
