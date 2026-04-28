@@ -39,10 +39,6 @@ writing:
   role_file: ./docs/roles/公共服务满意度_role.md
 processing:
   path: full_context
-  context_view:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 8
   project_background:
     enabled: false
     max_chars: 800

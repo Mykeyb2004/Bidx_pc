@@ -161,10 +161,6 @@ processing:
     chapter_writing_plan:
       enabled: false
       max_chars: 320
-  context_view:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 8
   legacy_rule:
     scoring_max_rows: 4
     requirements_max_quotes: 4

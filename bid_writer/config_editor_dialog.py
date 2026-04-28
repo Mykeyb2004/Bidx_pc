@@ -255,9 +255,6 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.summary_title", tk.StringVar())
 
         add_var("processing.path", tk.StringVar())
-        add_var("processing.context_view.include_ancestors", tk.BooleanVar())
-        add_var("processing.context_view.include_siblings", tk.BooleanVar())
-        add_var("processing.context_view.max_siblings", tk.StringVar())
         add_var("processing.project_background.enabled", tk.BooleanVar())
         add_var("processing.project_background.scope", tk.StringVar())
         add_var("processing.project_background.max_chars", tk.StringVar())
@@ -541,12 +538,6 @@ class ConfigEditorDialog(tk.Toplevel):
             wraplength=760,
         ).pack(anchor="w")
 
-        self.processing_context_view_frame = ttk.LabelFrame(content, text="上下文视图", padding=12)
-        self._add_check_row(self.processing_context_view_frame, 0, "包含祖先标题", "processing.context_view.include_ancestors")
-        self._add_check_row(self.processing_context_view_frame, 1, "包含同级标题", "processing.context_view.include_siblings")
-        self._add_entry_row(self.processing_context_view_frame, 2, "同级标题上限", "processing.context_view.max_siblings")
-        self.processing_context_view_frame.columnconfigure(1, weight=1)
-
         self.processing_project_background_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
         self._add_check_row(self.processing_project_background_frame, 0, "启用项目背景生成", "processing.project_background.enabled")
         self._add_entry_row(self.processing_project_background_frame, 1, "作用域（global / h2_auto）", "processing.project_background.scope")
@@ -783,9 +774,6 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.max_mermaid_flowcharts_per_section": str(model["writing"]["max_mermaid_flowcharts_per_section"]),
             "writing.summary_title": model["writing"]["summary_title"],
             "processing.path": model["processing"]["path"],
-            "processing.context_view.include_ancestors": model["processing"]["context_view"]["include_ancestors"],
-            "processing.context_view.include_siblings": model["processing"]["context_view"]["include_siblings"],
-            "processing.context_view.max_siblings": str(model["processing"]["context_view"]["max_siblings"]),
             "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
             "processing.project_background.scope": model["processing"]["project_background"]["scope"],
             "processing.project_background.max_chars": str(model["processing"]["project_background"]["max_chars"]),
@@ -880,11 +868,6 @@ class ConfigEditorDialog(tk.Toplevel):
             },
             "processing": {
                 "path": self.vars["processing.path"].get().strip() or "auto",
-                "context_view": {
-                    "include_ancestors": bool(self.vars["processing.context_view.include_ancestors"].get()),
-                    "include_siblings": bool(self.vars["processing.context_view.include_siblings"].get()),
-                    "max_siblings": self.vars["processing.context_view.max_siblings"].get().strip(),
-                },
                 "project_background": {
                     "enabled": bool(self.vars["processing.project_background.enabled"].get()),
                     "scope": self.vars["processing.project_background.scope"].get().strip() or "global",
@@ -1046,7 +1029,6 @@ class ConfigEditorDialog(tk.Toplevel):
 
         for frame in (
             self.processing_full_context_frame,
-            self.processing_context_view_frame,
             self.processing_project_background_frame,
             self.processing_chapter_plan_frame,
             self.processing_req_frame,
@@ -1059,7 +1041,6 @@ class ConfigEditorDialog(tk.Toplevel):
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_chapter_plan_frame.pack(fill=tk.X, pady=(0, 12))
         else:
-            self.processing_context_view_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_req_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_scoring_frame.pack(fill=tk.X, pady=(0, 12))

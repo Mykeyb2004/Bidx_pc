@@ -52,6 +52,7 @@ output:
     assert document.model["processing"]["path"] == "legacy_rule"
     assert "api" not in payload
     assert "context_pruning" not in payload
+    assert "context_view" not in payload["processing"]
     assert "models" not in payload
     assert payload["project"]["root_dir"] == "."
     assert payload["project"]["inputs"]["outline_file"] == "./outline.md"
@@ -279,10 +280,6 @@ project:
 
 processing:
   path: "hybrid_extract"
-  context_view:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 8
   legacy_rule:
     scoring_max_rows: 4
     requirements_max_quotes: 4
@@ -348,6 +345,7 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     assert payload["writing"]["output_format"] == "纯正文"
     assert payload["writing"]["max_tables_per_section"] == 2
     assert payload["processing"]["path"] == "full_context"
+    assert "context_view" not in payload["processing"]
     assert payload["processing"]["project_background"]["enabled"] is False
     assert payload["processing"]["hybrid_extract"]["retrieval"]["top_k_final"] == 8
     assert "models" not in payload

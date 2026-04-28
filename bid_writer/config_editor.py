@@ -142,11 +142,6 @@ def build_default_editor_model() -> dict[str, Any]:
         },
         "processing": {
             "path": "full_context",
-            "context_view": {
-                "include_ancestors": True,
-                "include_siblings": True,
-                "max_siblings": 8,
-            },
             "project_background": {
                 "enabled": False,
                 "scope": "global",
@@ -460,20 +455,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
         },
         "processing": {
             "path": processing_path,
-            "context_view": {
-                "include_ancestors": _coerce_bool(
-                    _first_defined(raw_config, ("processing", "context_view", "include_ancestors"), ("context_pruning", "local_outline", "include_ancestors"), default=True),
-                    default=True,
-                ),
-                "include_siblings": _coerce_bool(
-                    _first_defined(raw_config, ("processing", "context_view", "include_siblings"), ("context_pruning", "local_outline", "include_siblings"), default=True),
-                    default=True,
-                ),
-                "max_siblings": _coerce_int(
-                    _first_defined(raw_config, ("processing", "context_view", "max_siblings"), ("context_pruning", "local_outline", "max_siblings"), default=8),
-                    default=8,
-                ),
-            },
             "project_background": {
                 "enabled": _coerce_bool(
                     _first_defined(raw_config, ("processing", "project_background", "enabled"), default=True),
@@ -697,11 +678,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         "writing": writing_payload,
         "processing": {
             "path": processing_path,
-            "context_view": {
-                "include_ancestors": bool(model["processing"]["context_view"]["include_ancestors"]),
-                "include_siblings": bool(model["processing"]["context_view"]["include_siblings"]),
-                "max_siblings": int(model["processing"]["context_view"]["max_siblings"]),
-            },
             "project_background": {
                 "enabled": bool(model["processing"]["project_background"]["enabled"]),
                 "scope": model["processing"]["project_background"]["scope"],
@@ -1278,11 +1254,6 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
     },
     "processing": {
         "path": True,
-        "context_view": {
-            "include_ancestors": True,
-            "include_siblings": True,
-            "max_siblings": True,
-        },
         "project_background": {
             "enabled": True,
             "scope": True,

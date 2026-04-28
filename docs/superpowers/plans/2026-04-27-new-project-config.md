@@ -223,11 +223,6 @@ def build_default_editor_model() -> dict[str, Any]:
         },
         "processing": {
             "path": "auto",
-            "context_view": {
-                "include_ancestors": True,
-                "include_siblings": True,
-                "max_siblings": 8,
-            },
             "project_background": {
                 "enabled": True,
                 "max_chars": 800,

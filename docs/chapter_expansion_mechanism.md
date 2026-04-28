@@ -290,7 +290,6 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 裁剪结果封装在 `ChapterContext` 中，主要字段包括：
 
-- `local_outline`
 - `response_labels`
 - `chapter_focus_terms`
 - `match_keywords`
@@ -300,16 +299,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - `requirement_blocks`
 - `requirement_brief`
 
-### 4.3 局部大纲
-
-`_build_local_outline()` 会根据配置保留：
-
-- 当前节点的祖先链
-- 当前节点的同级标题
-
-同级标题数量可通过 `context_pruning.local_outline.max_siblings` 限制。这样做的目标不是给模型完整大纲，而是帮助模型理解“本章边界”和“哪些内容属于兄弟章节而不应提前展开”。
-
-### 4.4 响应标签与关键词
+### 4.3 响应标签与关键词
 
 `_extract_response_labels()` 会从标题链中提取形如：
 

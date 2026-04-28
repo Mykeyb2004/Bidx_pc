@@ -89,7 +89,6 @@ class RequirementBlockMatch:
 class ChapterContext:
     """章节级裁剪后的上下文。"""
 
-    local_outline: str = ""
     response_labels: list[str] = field(default_factory=list)
     chapter_focus_terms: list[str] = field(default_factory=list)
     match_keywords: list[str] = field(default_factory=list)
@@ -512,7 +511,6 @@ class ChapterContextPruner:
         match_keywords = self._build_match_keywords(heading, response_labels)
 
         return ChapterContext(
-            local_outline=self._build_local_outline(heading),
             response_labels=response_labels,
             chapter_focus_terms=chapter_focus_terms,
             match_keywords=match_keywords,
@@ -786,32 +784,6 @@ class ChapterContextPruner:
 
         return labels
 
-    def _build_local_outline(self, heading: HeadingNode) -> str:
-        chain = self._heading_chain(heading)
-        lines: list[str] = []
-        seen_paths: set[str] = set()
-
-        def add_node(node: HeadingNode) -> None:
-            if node.full_path in seen_paths:
-                return
-            seen_paths.add(node.full_path)
-            lines.append(f"{'#' * node.level} {node.title}")
-
-        if self.config.context_pruning_local_outline_include_ancestors:
-            for node in chain[:-1]:
-                add_node(node)
-
-        if self.config.context_pruning_local_outline_include_siblings:
-            parent = heading.parent
-            siblings = list(parent.children) if parent else [heading]
-            siblings = self._trim_siblings(siblings, heading, self.config.context_pruning_local_outline_max_siblings)
-            for node in siblings:
-                add_node(node)
-        else:
-            add_node(heading)
-
-        return "\n".join(lines).strip()
-
     def _build_focus_terms(self, heading: HeadingNode) -> list[str]:
         """提取当前章节自身的焦点词，优先用于需求聚焦。"""
         focus_terms: list[str] = []
@@ -844,32 +816,6 @@ class ChapterContextPruner:
                         add(variant)
 
         return expanded
-
-    @staticmethod
-    def _trim_siblings(siblings: list[HeadingNode], current: HeadingNode, max_siblings: int) -> list[HeadingNode]:
-        if max_siblings <= 0 or len(siblings) <= max_siblings:
-            return siblings
-
-        try:
-            current_index = siblings.index(current)
-        except ValueError:
-            return siblings[:max_siblings]
-
-        selected = [current]
-        left = current_index - 1
-        right = current_index + 1
-
-        while len(selected) < max_siblings and (left >= 0 or right < len(siblings)):
-            if left >= 0:
-                selected.insert(0, siblings[left])
-                left -= 1
-                if len(selected) >= max_siblings:
-                    break
-            if right < len(siblings):
-                selected.append(siblings[right])
-                right += 1
-
-        return selected
 
     @staticmethod
     def _split_markdown_row(line: str) -> list[str]:
@@ -1308,7 +1254,6 @@ class ChapterContextPruner:
             f"- fallback_reason: {context.fallback_reason or '（无）'}",
             f"- response_labels: {', '.join(context.response_labels) if context.response_labels else '（无）'}",
             f"- match_keywords: {', '.join(context.match_keywords) if context.match_keywords else '（无）'}",
-            f"- local_outline_chars: {len(context.local_outline)}",
             f"- scoring_items: {len(context.scoring_items)}",
             f"- scoring_must_respond: {len(context.scoring_must_respond)}",
             f"- scoring_reference: {len(context.scoring_reference)}",
@@ -1320,9 +1265,6 @@ class ChapterContextPruner:
             f"- selected_scoring_unit_ids: {', '.join(context.selected_scoring_unit_ids) if context.selected_scoring_unit_ids else '（无）'}",
             f"- selected_requirement_unit_ids: {', '.join(context.selected_requirement_unit_ids) if context.selected_requirement_unit_ids else '（无）'}",
             f"- prompt_chars: {len(prompt)}",
-            "",
-            "## 局部大纲",
-            context.local_outline or "（无）",
             "",
             "## 命中评分项",
             "\n".join(scoring_lines) or "（无）",

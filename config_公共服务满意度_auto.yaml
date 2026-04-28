@@ -29,10 +29,6 @@ writing:
   role_file: ./roles/公共服务满意度_role.md
 processing:
   path: auto
-  context_view:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 8
   project_background:
     enabled: true
     scope: h2_auto

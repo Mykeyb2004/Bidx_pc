@@ -133,7 +133,6 @@ output/
 
 当 `context_mode = "pruned"` 时，还会记录 `pruned_context`，主要包括：
 
-- `local_outline`
 - `response_labels`
 - `match_keywords`
 - `scoring_items`

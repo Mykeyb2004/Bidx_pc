@@ -159,7 +159,6 @@
 
 `ChapterContext` 是章节级裁剪结果，包含：
 
-- `local_outline`
 - `response_labels`
 - `chapter_focus_terms`
 - `match_keywords`
@@ -181,7 +180,6 @@
 需要单独指出：
 
 - `response_labels` 不直接单独成段，但会影响 `## 评分关注` 的引导语句
-- `local_outline` 当前不会直接拼进 user prompt，只写入 debug/trace 侧产物
 
 ### 4.3 局部章节信号是怎么提取的
 
@@ -691,9 +689,6 @@ messages = [
 |--------|----------|------|
 | `prompt_summary_title` | 不参与 prompt 拼接 | 当前只在生成后问题检测里用来判断是否允许“小结/总结”标题 |
 | `context_pruning_requirements_brief_fallback` | 当前未接入主流程 | 配置存在，但 `build_context()` / `build_prompt_result()` 没有使用它决定回退行为 |
-| `context_pruning_local_outline_include_ancestors` | 当前不影响 user prompt 拼接 | 只影响 `ChapterContext.local_outline`，而 `local_outline` 目前只写入 debug/trace |
-| `context_pruning_local_outline_include_siblings` | 当前不影响 user prompt 拼接 | 同上 |
-| `context_pruning_local_outline_max_siblings` | 当前不影响 user prompt 拼接 | 同上 |
 | `prompt_contract_blocks` | trace 专用 | 只给维护者看，不发给大模型 |
 
 ## 8. 优化 prompt 时的几个直接结论

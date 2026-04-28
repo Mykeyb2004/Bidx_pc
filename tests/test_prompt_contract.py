@@ -437,7 +437,6 @@ def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, t
         writer.context_pruner,
         "build_context",
         lambda _: ChapterContext(
-            local_outline="# 综合服务项目投标方案\n## 项目实施方案\n### 质量保障措施",
             chapter_focus_terms=["质量保障措施"],
             requirement_brief="1. 建立质量检查机制。\n2. 强化过程留痕。",
             requirement_brief_status="extracted",

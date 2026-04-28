@@ -869,33 +869,6 @@ class Config:
         return normalized if normalized in {'fallback_legacy', 'fail_fast'} else 'fallback_legacy'
 
     @property
-    def context_pruning_local_outline_include_ancestors(self) -> bool:
-        """局部大纲是否保留祖先链。"""
-        return self._get_bool(
-            ('processing', 'context_view', 'include_ancestors'),
-            ('context_pruning', 'local_outline', 'include_ancestors'),
-            default=True,
-        )
-
-    @property
-    def context_pruning_local_outline_include_siblings(self) -> bool:
-        """局部大纲是否保留同级标题。"""
-        return self._get_bool(
-            ('processing', 'context_view', 'include_siblings'),
-            ('context_pruning', 'local_outline', 'include_siblings'),
-            default=True,
-        )
-
-    @property
-    def context_pruning_local_outline_max_siblings(self) -> int:
-        """局部大纲最多保留的同级标题数。"""
-        return self._get_int(
-            ('processing', 'context_view', 'max_siblings'),
-            ('context_pruning', 'local_outline', 'max_siblings'),
-            default=8,
-        )
-
-    @property
     def context_pruning_scoring_enabled(self) -> bool:
         """是否启用评分项路由。"""
         if self._using_new_processing_schema():

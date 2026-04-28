@@ -38,10 +38,6 @@ writing:
 
 processing:
   path: "legacy_rule"
-  context_view:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 6
   legacy_rule:
     scoring_max_rows: 3
     requirements_max_quotes: 2

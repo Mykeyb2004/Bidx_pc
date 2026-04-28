@@ -31,10 +31,6 @@ processing:
   knowledge:
     enabled: true
     max_chars: 400
-  context_view:
-    include_ancestors: true
-    include_siblings: true
-    max_siblings: 8
   legacy_rule:
     scoring_max_rows: 4
     requirement_brief_enabled: false

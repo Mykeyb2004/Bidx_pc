@@ -25,7 +25,7 @@
 - `Config._resolve_path()` 统一按“配置文件所在目录”解析相对路径；由于仓库内配置要引用仓库外项目资料，真实项目配置被迫写成长绝对路径。
 - 四份公共服务满意度配置本质上是同一项目的不同运行剖面；对 69 个叶子配置项做扁平比较后，`full_context` 版只比基准版少改 2 项，`hybrid_extract` 版只改 4 项，`hybrid_extract_full` 版只改 7 项，重复度很高。
 - `context_pruning.requirements_brief.fallback` 当前仍未接入主流程；用户可配置，但运行时不会按它决定回退行为。
-- `context_pruning.local_outline.*` 当前只影响 `ChapterContext.local_outline`，主要进入 debug/trace，不直接影响 user prompt 主链路。
+- 旧局部大纲视图配置已废弃并从当前配置链路移除。
 - `context_pruning.retrieval.rerank_enabled` 与 `context_pruning.extraction.llm_verify_enabled` 会共同决定是否进入同一条候选校验链路，概念上容易让人误以为是两个独立能力。
 - `Config` 通过大量逐字段 property + 默认回退支撑兼容层，非法枚举和值大多会静默回退到默认值，缺少“显式 schema 校验 + 未知字段告警”。
 - README、YAML 内联注释和代码默认值共同承担“配置说明”职责，已经出现“文档说明”和“实际默认行为”分散的问题。
@@ -198,10 +198,10 @@
 - 在 verifier 打开的情况下，最终进入 prompt 的仍然是源文原文，因为 verifier 只允许返回候选 `unit_id`。
 
 ## 收尾核对补充发现
-- `ChapterContext.local_outline` 当前只用于 debug dump 和 trace 侧上下文记录，没有被 `AIWriter.build_prompt_result()` 直接拼进 user prompt。
-- `prompt_contract.md` 中若把 `local_outline` 视为 prompt 输入、或把 `BID_WRITER_PRUNING_*` 视为“当前不参与章节提炼”，都会与现状不符。
+- 旧局部大纲字段已废弃并从 debug dump / trace 侧上下文记录中移除。
+- `prompt_contract.md` 中若把旧局部大纲字段视为 prompt 输入、或把 `BID_WRITER_PRUNING_*` 视为“当前不参与章节提炼”，都会与现状不符。
 - 当前 `BID_WRITER_EMBEDDING_*` 在 `vector_enabled=true` 时已经会参与章节检索；`BID_WRITER_PRUNING_*` 在 `llm_verify_enabled=true` 或 `rerank_enabled=true` 时已经会参与候选校验。
-- `AIWriter._build_prompt_contract_blocks()` 的 `chapter_scope.source_context` 原先把 `pruned_context.local_outline` 记成了 prompt 来源；现已改成真实来源 `HeadingNode.parent/title/siblings`，避免 trace 解释偏差。
+- `AIWriter._build_prompt_contract_blocks()` 的 `chapter_scope.source_context` 原先把旧局部大纲字段记成了 prompt 来源；现已改成真实来源 `HeadingNode.parent/title/siblings`，避免 trace 解释偏差。
 
 ## 配置编辑器设计相关发现
 - 当前 GUI 只有“切换配置文件”，还没有“编辑配置内容”的入口；现有配置对话框更适合保留为快速切换器，而不是继续扩展成复杂表单。
@@ -227,7 +227,7 @@
 ## 章节依存关系评估的初步发现
 - `docs/chapter_expansion_mechanism.md` 和 `docs/prompt_contract.md` 都表明，当前 user prompt 只注入“当前章节任务 + 裁剪后的招标需求/评分标准 + 当前章节边界信息”，没有“已写章节结论摘要”区块。
 - 现有 `context_pruning` 主要负责“源文材料到当前章节”的路由，不负责“已生成章节到当前章节”的跨章节一致性传递。
-- 当前 `local_outline` 只帮助界定当前章节与兄弟章节边界，并不会把兄弟章节已写结果回灌到 prompt。
+- 旧局部大纲字段已废弃；当前章节边界仍由 `scope_reference` 和章节路径信息表达，不会把兄弟章节已写结果回灌到 prompt。
 - 当前 full-context 分支虽然能注入完整需求和评分标准，但这只能缓解“对原始要求理解不一致”，不能解决“前文已做出的具体承诺/口径在后文不一致”。
 - 文档中已有 `chapter_writing_plan` 能在 full-context 模式下先生成“章节写作计划”，说明现有架构允许在正文扩写前插入额外的前置推理/摘要步骤。
 - 从机制上看，“章节依存关系”更适合落在 `AIWriter.build_prompt_result()` 之前或之中，作为与 `scoring_focus` / `requirement_brief` 同级的新 prompt 区块，而不是混进 system prompt。

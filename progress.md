@@ -198,7 +198,7 @@
 - 当前 `hybrid_extract` 功能链路已完整落地；后续只剩效果调优，不再是功能缺口。
 - 已清理 `bid_writer/__pycache__` 的编译缓存噪音，确保工作区只保留源码、文档和 planning 变更。
 - 已复核 `docs/prompt_contract.md` 与真实代码链路，修正两处关键偏差：
-  - `local_outline` 当前不直接进入 user prompt
+  - 旧局部大纲字段已废弃，不再进入 prompt、debug dump 或 trace
   - `BID_WRITER_EMBEDDING_*` / `BID_WRITER_PRUNING_*` 在启用对应能力时已实际参与章节提炼
 - 已修正 `bid_writer/ai_writer.py` 中 `prompt_contract_blocks` 的 `chapter_scope.source_context`，使 trace 元数据与真实 prompt 来源一致。
 - 已同步修正 `config_公共服务满意度.yaml` 中与 Phase 注释相关的过时表述，避免示例配置误导后续调试。

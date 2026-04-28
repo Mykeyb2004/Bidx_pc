@@ -12,6 +12,9 @@ class StubVar:
     def __init__(self, value=""):
         self.value = value
 
+    def trace_add(self, *_args, **_kwargs):
+        return None
+
     def set(self, value):
         self.value = value
 
@@ -231,6 +234,20 @@ def test_config_editor_save_as_validates_against_selected_target_path(monkeypatc
     assert dialog.result["saved_path"] == target_path
     assert target_path.exists()
     assert loaded_paths == [target_path]
+
+
+def test_config_editor_dialog_does_not_register_deprecated_context_view_vars(monkeypatch):
+    monkeypatch.setattr(config_editor_dialog.tk, "StringVar", StubVar)
+    monkeypatch.setattr(config_editor_dialog.tk, "BooleanVar", StubVar)
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {}
+    dialog.section_var = StubVar()
+    dialog._schedule_refresh = lambda: None
+    dialog._update_processing_visibility = lambda: None
+
+    ConfigEditorDialog._create_variables(dialog)
+
+    assert not any(key.startswith("processing.context_view.") for key in dialog.vars)
 
 
 def test_config_editor_display_relative_path_uses_posix_separators_for_yaml():
