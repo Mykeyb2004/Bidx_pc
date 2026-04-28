@@ -68,6 +68,102 @@ def test_scrollable_section_canvas_leaves_gutter_before_scrollbar():
     assert calls == [(("content-window",), {"width": 212})]
 
 
+def test_config_editor_path_browse_button_keeps_right_gutter(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    parent = SimpleNamespace(columnconfigure=lambda *_args, **_kwargs: None)
+    created_buttons = []
+
+    class FakeButton:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            self.grid_kwargs = None
+            created_buttons.append(self)
+
+        def grid(self, **kwargs):
+            self.grid_kwargs = kwargs
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "Button", FakeButton)
+    monkeypatch.setattr(ConfigEditorDialog, "_add_entry_row", lambda *_args, **_kwargs: None)
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+
+    dialog._add_path_row(parent, 3, "H2 缓存目录", "processing.project_background.h2.cache_dir", browse_kind="dir", relative_to="project")
+
+    assert created_buttons[0].grid_kwargs["padx"] == (8, 12)
+
+
+def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    created_comboboxes = []
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            self.grid_kwargs = None
+
+        def grid(self, **kwargs):
+            self.grid_kwargs = kwargs
+
+        def pack(self, **_kwargs):
+            return None
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+    class FakeCombobox(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_comboboxes.append(self)
+
+    dialog.vars = {"processing.path": StubVar("full_context")}
+    dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+    dialog._add_check_row = lambda *_args, **_kwargs: None
+    dialog._add_entry_row = lambda *_args, **_kwargs: None
+    dialog._add_path_row = lambda *_args, **_kwargs: None
+    dialog._update_processing_visibility = lambda: None
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Combobox", FakeCombobox)
+
+    dialog._build_processing_section()
+
+    assert created_comboboxes[0].kwargs["state"] == "readonly"
+
+
+def test_config_editor_full_context_hides_project_background_frame():
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {"processing.path": StubVar("full_context")}
+    dialog._schedule_refresh = lambda: None
+
+    class FakeFrame:
+        def __init__(self, name):
+            self.name = name
+            self.actions: list[str] = []
+
+        def pack_forget(self):
+            self.actions.append("forget")
+
+        def pack(self, **_kwargs):
+            self.actions.append("pack")
+
+    dialog.processing_full_context_frame = FakeFrame("full_context")
+    dialog.processing_project_background_frame = FakeFrame("project_background")
+    dialog.processing_chapter_plan_frame = FakeFrame("chapter_plan")
+    dialog.processing_req_frame = FakeFrame("requirements")
+    dialog.processing_scoring_frame = FakeFrame("scoring")
+
+    dialog._update_processing_visibility()
+
+    assert dialog.processing_full_context_frame.actions == ["forget", "pack"]
+    assert dialog.processing_project_background_frame.actions == ["forget"]
+    assert dialog.processing_chapter_plan_frame.actions == ["forget", "pack"]
+    assert dialog.processing_req_frame.actions == ["forget"]
+    assert dialog.processing_scoring_frame.actions == ["forget"]
+
+
 def test_config_editor_new_mode_first_save_uses_save_as_even_when_target_exists(tmp_path):
     target_path = tmp_path / "config_新项目.yaml"
     target_path.write_text("existing: true\n", encoding="utf-8")

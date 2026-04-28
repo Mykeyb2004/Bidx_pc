@@ -505,25 +505,30 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
     assert result.project_background_trace["cache_status"] == "hit"
 
 
-def test_full_context_prompt_keeps_global_project_background_when_h2_scope_configured(monkeypatch, tmp_path):
+def test_full_context_prompt_skips_project_background_even_when_configured(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     config._config.setdefault("processing", {})["path"] = "full_context"
     config._config.setdefault("processing", {}).setdefault("project_background", {})["enabled"] = True
     config._config["processing"]["project_background"]["scope"] = "h2_auto"
     writer = _build_writer(monkeypatch, config)
+
+    calls: list[str] = []
+
     writer.project_background_generator = type(
         "DummyGlobalBackground",
         (),
-        {"get_or_generate": staticmethod(lambda: "全局项目背景摘要。")},
+        {"get_or_generate": staticmethod(lambda: calls.append("called") or "全局项目背景摘要。")},
     )()
     heading = _select_leaf_heading(config, "质量保障措施")
 
     result = writer.build_prompt_result(heading, target_words=1200)
 
-    assert "全局项目背景摘要。" in result.prompt
+    assert calls == []
+    assert "## 项目背景" not in result.prompt
+    assert "全局项目背景摘要。" not in result.prompt
     block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
-    assert "ProjectBackgroundGenerator.get_or_generate" in block["source_context"]
-    assert result.project_background_trace["scope"] == "global"
+    assert block["section_names"] == []
+    assert result.project_background_trace == {}
 
 
 def test_trace_records_h2_project_background_evidence(monkeypatch, tmp_path):

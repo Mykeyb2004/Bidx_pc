@@ -107,7 +107,7 @@ class AIWriter:
         self.trace_logger = GenerationTraceLogger(config)
         self.project_background_generator = (
             ProjectBackgroundGenerator(config)
-            if config.project_background_enabled
+            if config.project_background_enabled and config.processing_path != "full_context"
             else None
         )
         self.h2_project_background_generator = (
@@ -599,17 +599,11 @@ class AIWriter:
 
     def _build_full_context_stable_prefix_sections(
         self,
-        background: str,
         full_context_stats: dict[str, Any],
     ) -> list[tuple[str, str]]:
         sections: list[tuple[str, str]] = [
             ("structure_contract", self._build_structure_contract_section())
         ]
-
-        if background:
-            sections.append(
-                ("project_background", self._build_project_background_section(background))
-            )
 
         bid_requirements = self.config.bid_requirements.strip()
         full_context_stats["bid_requirements_chars"] = len(bid_requirements)
@@ -917,7 +911,6 @@ class AIWriter:
         full_context_has_scoring_criteria = False
         if pruned_context is None:
             full_context_sections = self._build_full_context_stable_prefix_sections(
-                background,
                 full_context_stats,
             )
             full_context_has_bid_requirements = any(

@@ -35,6 +35,7 @@ CONFIG_EDITOR_DEFAULT_HEIGHT = 860
 CONFIG_EDITOR_MIN_WIDTH = 1100
 CONFIG_EDITOR_MIN_HEIGHT = 760
 SCROLLABLE_SECTION_RIGHT_GUTTER = 28
+PATH_BROWSE_BUTTON_RIGHT_GUTTER = 12
 
 
 class ScrollableSection(ttk.Frame):
@@ -513,6 +514,7 @@ class ConfigEditorDialog(tk.Toplevel):
             self.processing_path_frame,
             textvariable=self.vars["processing.path"],
             values=("auto", "full_context"),
+            state="readonly",
         )
         path_box.grid(row=0, column=1, sticky="ew", pady=5)
         helper = ttk.Label(
@@ -656,7 +658,7 @@ class ConfigEditorDialog(tk.Toplevel):
             command=lambda current_key=key, kind=browse_kind, rel=relative_to: self._browse_path(current_key, kind, rel),
             **_bootstyle_kwargs("secondary"),
         )
-        browse_button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=5)
+        browse_button.grid(row=row, column=2, sticky="e", padx=(8, PATH_BROWSE_BUTTON_RIGHT_GUTTER), pady=5)
         self._register_tooltip(browse_button, key)
 
     def _add_check_row(self, parent: tk.Misc, row: int, label: str, key: str) -> None:
@@ -1038,7 +1040,6 @@ class ConfigEditorDialog(tk.Toplevel):
 
         if path == "full_context":
             self.processing_full_context_frame.pack(fill=tk.X, pady=(0, 12))
-            self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_chapter_plan_frame.pack(fill=tk.X, pady=(0, 12))
         else:
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
