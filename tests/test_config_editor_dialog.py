@@ -8,6 +8,22 @@ from bid_writer.config_editor import create_new_config_editor_document
 from bid_writer.config_editor_dialog import ConfigEditorDialog, ScrollableSection, _label_wraplength_for_width
 
 
+def test_config_editor_dialog_uses_compact_default_width():
+    size = config_editor_dialog._compute_screen_limited_dialog_size(
+        desired_width=config_editor_dialog.CONFIG_EDITOR_DEFAULT_WIDTH,
+        desired_height=config_editor_dialog.CONFIG_EDITOR_DEFAULT_HEIGHT,
+        min_width=config_editor_dialog.CONFIG_EDITOR_MIN_WIDTH,
+        min_height=config_editor_dialog.CONFIG_EDITOR_MIN_HEIGHT,
+        screen_width=1600,
+        screen_height=1000,
+    )
+
+    assert config_editor_dialog.CONFIG_EDITOR_DEFAULT_WIDTH == 1120
+    assert config_editor_dialog.CONFIG_EDITOR_MIN_WIDTH == 960
+    assert size.width == 1120
+    assert size.min_width == 960
+
+
 class StubVar:
     def __init__(self, value=""):
         self.value = value
@@ -212,6 +228,43 @@ def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
 
     assert created_comboboxes[0].kwargs["state"] == "readonly"
     assert dialog.processing_full_context_frame.bind_calls[0][0][0] == "<Configure>"
+
+
+def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    entry_keys = []
+    check_keys = []
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        def pack(self, **_kwargs):
+            return None
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+        def bind(self, *_args, **_kwargs):
+            return None
+
+    dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+    dialog._add_mode_selector = lambda *_args, **_kwargs: None
+    dialog._add_path_row = lambda *_args, **_kwargs: None
+    dialog._add_text_block = lambda *_args, **_kwargs: None
+    dialog._add_entry_row = lambda _parent, _row, _label, key, **_kwargs: entry_keys.append(key)
+    dialog._add_check_row = lambda _parent, _row, _label, key: check_keys.append(key)
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
+
+    dialog._build_writing_section()
+
+    assert "writing.allow_markdown_headings" not in check_keys
+    assert "writing.allow_english_terms" not in check_keys
+    assert "writing.summary_title" not in entry_keys
 
 
 def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypatch):

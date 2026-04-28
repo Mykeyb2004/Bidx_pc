@@ -260,6 +260,19 @@ def test_finalize_generation_still_replaces_standalone_bidder_alias(monkeypatch,
     assert result.postprocess["bidder_reference_replacements"] == 1
 
 
+def test_finalize_generation_ignores_deprecated_format_switches(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("writing", {})["allow_markdown_headings"] = False
+    config._config.setdefault("writing", {})["summary_title"] = ""
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.finalize_generation(heading, "## 标题\n\n一、总结\n正文内容。")
+
+    assert "markdown_headings" not in result.postprocess["format_repair_issues"]
+    assert "forbidden_summary" not in result.postprocess["format_repair_issues"]
+
+
 def test_task_card_omits_mermaid_control_when_limit_is_zero(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)

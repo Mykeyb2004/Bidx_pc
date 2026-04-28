@@ -33,7 +33,6 @@ writing:
     step: 100
     upper_ratio: 1.15
   output_format: "纯正文"
-  allow_markdown_headings: false
   max_mermaid_flowcharts_per_section: 3
 
 processing:

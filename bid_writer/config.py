@@ -751,16 +751,6 @@ class Config:
         return str(value).strip() if value is not None else ''
 
     @property
-    def prompt_allow_markdown_headings(self) -> bool:
-        """是否允许输出 Markdown 标题符号"""
-        return self._get_bool(('writing', 'allow_markdown_headings'), ('prompt', 'allow_markdown_headings'), default=False)
-
-    @property
-    def prompt_allow_english_terms(self) -> bool:
-        """是否允许必要的英文术语"""
-        return self._get_bool(('writing', 'allow_english_terms'), ('prompt', 'allow_english_terms'), default=False)
-
-    @property
     def prompt_max_tables_per_section(self) -> int:
         """单节最大表格数"""
         return self._get_int(('writing', 'max_tables_per_section'), ('prompt', 'max_tables_per_section'), default=4)
@@ -773,11 +763,6 @@ class Config:
             ('prompt', 'max_mermaid_flowcharts_per_section'),
             default=0,
         )
-
-    @property
-    def prompt_summary_title(self) -> str:
-        """章节总结标题名称"""
-        return self._get_first_defined(('writing', 'summary_title'), ('prompt', 'summary_title'), default='章节小结')
 
     @property
     def prompt_bidder_name(self) -> str:

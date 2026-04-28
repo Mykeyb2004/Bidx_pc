@@ -10,8 +10,6 @@ project:
 
 writing:
   role_file: "./roles/example_role.md"
-  allow_markdown_headings: true
-  allow_english_terms: true
   hard_constraints:
     - "旧字段不应再进入 system prompt"
   extra_rules:
@@ -24,7 +22,6 @@ writing:
   first_line_template: ""
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 0
-  summary_title: "章节小结"
 
 processing:
   path: "full_context"

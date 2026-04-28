@@ -59,6 +59,12 @@ output:
     assert payload["writing"]["target_words"]["default"] == 500
     assert document.model["writing"]["max_mermaid_flowcharts_per_section"] == 5
     assert payload["writing"]["max_mermaid_flowcharts_per_section"] == 5
+    assert "allow_markdown_headings" not in document.model["writing"]
+    assert "allow_english_terms" not in document.model["writing"]
+    assert "summary_title" not in document.model["writing"]
+    assert "allow_markdown_headings" not in payload["writing"]
+    assert "allow_english_terms" not in payload["writing"]
+    assert "summary_title" not in payload["writing"]
 
 
 def test_config_editor_preserves_full_context_processing_path(tmp_path: Path):
@@ -417,6 +423,9 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     }
     assert payload["writing"]["output_format"] == "纯正文"
     assert payload["writing"]["max_tables_per_section"] == 2
+    assert "allow_markdown_headings" not in payload["writing"]
+    assert "allow_english_terms" not in payload["writing"]
+    assert "summary_title" not in payload["writing"]
     assert payload["processing"]["path"] == "full_context"
     assert "context_view" not in payload["processing"]
     assert "project_background" not in payload["processing"]

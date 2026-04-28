@@ -102,8 +102,6 @@
 - `prompt_output_format`
 - `prompt_first_line_template`
 - `additional_requirements`
-- `prompt_allow_markdown_headings`
-- `prompt_allow_english_terms`
 - `prompt_hard_constraints`
 
 这些内容都在 `user prompt`。
@@ -652,8 +650,6 @@ messages = [
 | `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
 | `prompt_output_format` | `prompt.output_format` | task card 中的输出方式描述 | 是 |
 | `prompt_first_line_template` | `prompt.first_line_template` | 是否追加首行要求，以及首行文本 | 是 |
-| `prompt_allow_markdown_headings` | `prompt.allow_markdown_headings` | 兼容旧字段，当前不再生成 system prompt 门禁文案 | 否 |
-| `prompt_allow_english_terms` | `prompt.allow_english_terms` | 兼容旧字段，当前不再生成 system prompt 门禁文案 | 否 |
 | `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
 | `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
 | `prompt_hard_constraints` | `prompt.hard_constraints` | 兼容旧字段，当前不再作为 system prompt 附加强约束来源 | 否 |
@@ -686,7 +682,7 @@ messages = [
 
 | 变量名 | 当前状态 | 说明 |
 |--------|----------|------|
-| `prompt_summary_title` | 不参与 prompt 拼接 | 当前只在生成后问题检测里用来判断是否允许“小结/总结”标题 |
+| `prompt.allow_markdown_headings` / `prompt.allow_english_terms` / `prompt.summary_title` | 已废弃 | 旧配置可被读取为普通 YAML，但编辑器规范化保存会丢弃，运行时不再使用 |
 | `context_pruning_requirements_brief_fallback` | 当前未接入主流程 | 配置存在，但 `build_context()` / `build_prompt_result()` 没有使用它决定回退行为 |
 | `prompt_contract_blocks` | trace 专用 | 只给维护者看，不发给大模型 |
 

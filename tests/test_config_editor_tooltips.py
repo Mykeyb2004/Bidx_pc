@@ -20,3 +20,9 @@ def test_config_editor_tooltips_cover_key_sections_and_fields():
 
     for key in keys:
         assert get_tooltip_text(key).strip(), f"missing tooltip: {key}"
+
+
+def test_config_editor_tooltips_omit_deprecated_writing_fields():
+    assert get_tooltip_text("writing.allow_markdown_headings") == ""
+    assert get_tooltip_text("writing.allow_english_terms") == ""
+    assert get_tooltip_text("writing.summary_title") == ""

@@ -118,11 +118,8 @@ writing:
     upper_ratio: 1.15
   output_format: "纯正文"
   first_line_template: ""
-  allow_markdown_headings: false
-  allow_english_terms: false
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 0
-  summary_title: ""
   extra_rules: []
 ```
 
@@ -133,7 +130,8 @@ writing:
 - `writing.target_words.default` 是运行时输入框的基准值，系统会自动推导目标区间并写入 prompt
 - `writing.target_words.upper_ratio` 用于控制区间上沿的自动放宽幅度，默认 `1.15`
 - `writing.extra_rules` 当前不会单独生成 `## 其他写作要求` 区块，而是直接追加到 `## 结构输出硬要求` 的末尾
-- `writing.hard_constraints`、`writing.allow_markdown_headings`、`writing.allow_english_terms` 不再生成 system gate prompt 文案；旧字段仅用于兼容或局部巡检
+- `writing.hard_constraints` 不再生成 system gate prompt 文案；请改 `roles/system_gate_rules.md`
+- `writing.allow_markdown_headings`、`writing.allow_english_terms`、`writing.summary_title` 已废弃；配置编辑器规范化保存时会丢弃这些旧字段
 
 ### 3.3 `processing`
 

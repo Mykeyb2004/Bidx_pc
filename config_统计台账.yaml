@@ -15,11 +15,8 @@ writing:
     upper_ratio: 1.15
   output_format: 纯正文
   first_line_template: ''
-  allow_markdown_headings: false
-  allow_english_terms: false
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 1
-  summary_title: ''
   extra_rules: null
   role_file: ./roles/通用投标角色.md
 processing:

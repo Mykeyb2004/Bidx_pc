@@ -32,9 +32,9 @@ from .gui import (
 )
 
 
-CONFIG_EDITOR_DEFAULT_WIDTH = 1280
+CONFIG_EDITOR_DEFAULT_WIDTH = 1120
 CONFIG_EDITOR_DEFAULT_HEIGHT = 860
-CONFIG_EDITOR_MIN_WIDTH = 1100
+CONFIG_EDITOR_MIN_WIDTH = 960
 CONFIG_EDITOR_MIN_HEIGHT = 760
 SCROLLABLE_SECTION_RIGHT_GUTTER = 28
 PATH_BROWSE_BUTTON_RIGHT_GUTTER = 12
@@ -280,11 +280,8 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.target_words.upper_ratio", tk.StringVar())
         add_var("writing.output_format", tk.StringVar())
         add_var("writing.first_line_template", tk.StringVar())
-        add_var("writing.allow_markdown_headings", tk.BooleanVar())
-        add_var("writing.allow_english_terms", tk.BooleanVar())
         add_var("writing.max_tables_per_section", tk.StringVar())
         add_var("writing.max_mermaid_flowcharts_per_section", tk.StringVar())
-        add_var("writing.summary_title", tk.StringVar())
 
         add_var("processing.path", tk.StringVar())
         add_var("processing.project_background.enabled", tk.BooleanVar())
@@ -515,9 +512,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_entry_row(rules, 1, "首行模板", "writing.first_line_template")
         self._add_entry_row(rules, 2, "单节最大表格数", "writing.max_tables_per_section")
         self._add_entry_row(rules, 3, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section")
-        self._add_entry_row(rules, 4, "总结标题", "writing.summary_title")
-        self._add_check_row(rules, 5, "允许 Markdown 标题", "writing.allow_markdown_headings")
-        self._add_check_row(rules, 6, "允许英文术语", "writing.allow_english_terms")
         rules.columnconfigure(1, weight=1)
 
         hard_constraints = ttk.LabelFrame(content, text="兼容旧字段（暂不参与 system 门禁）", padding=12)
@@ -846,11 +840,8 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.target_words.upper_ratio": str(model["writing"]["target_words_upper_ratio"]),
             "writing.output_format": model["writing"]["output_format"],
             "writing.first_line_template": model["writing"]["first_line_template"],
-            "writing.allow_markdown_headings": model["writing"]["allow_markdown_headings"],
-            "writing.allow_english_terms": model["writing"]["allow_english_terms"],
             "writing.max_tables_per_section": str(model["writing"]["max_tables_per_section"]),
             "writing.max_mermaid_flowcharts_per_section": str(model["writing"]["max_mermaid_flowcharts_per_section"]),
-            "writing.summary_title": model["writing"]["summary_title"],
             "processing.path": model["processing"]["path"],
             "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
             "processing.project_background.scope": model["processing"]["project_background"]["scope"],
@@ -936,11 +927,8 @@ class ConfigEditorDialog(tk.Toplevel):
                 "target_words_upper_ratio": self.vars["writing.target_words.upper_ratio"].get().strip(),
                 "output_format": self.vars["writing.output_format"].get(),
                 "first_line_template": self.vars["writing.first_line_template"].get(),
-                "allow_markdown_headings": bool(self.vars["writing.allow_markdown_headings"].get()),
-                "allow_english_terms": bool(self.vars["writing.allow_english_terms"].get()),
                 "max_tables_per_section": self.vars["writing.max_tables_per_section"].get().strip(),
                 "max_mermaid_flowcharts_per_section": self.vars["writing.max_mermaid_flowcharts_per_section"].get().strip(),
-                "summary_title": self.vars["writing.summary_title"].get(),
                 "hard_constraints": self._split_lines(self._get_text_value("writing.hard_constraints_text")),
                 "extra_rules": self._split_lines(self._get_text_value("writing.extra_rules_text")),
             },

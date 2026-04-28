@@ -82,12 +82,8 @@ class AIWriter:
     _DISALLOWED_PARAGRAPH_TRANSITION_RE = re.compile(
         r'(?m)(?:^|(?<=\n)\s*|(?<=\n\n)\s*)(首先|其次|再次|最后)[，、,.：:]?'
     )
-    _MARKDOWN_HEADING_RE = re.compile(r'(?m)^\s*#{1,6}\s+')
     _MARKDOWN_TABLE_LINE_RE = re.compile(r'^\s*\|?.+\|.+\|?\s*$')
     _MARKDOWN_TABLE_ALIGN_RE = re.compile(r'^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$')
-    _SUMMARY_HEADING_RE = re.compile(
-        r'(?m)^\s*(?:[一二三四五六七八九十]+、|[（(][一二三四五六七八九十]+[)）]|\d+\.|[（(]\d+[)）])?\s*(章节小结|小结|总结)\s*$'
-    )
     _BIDDER_REFERENCE_ALIASES = ("我方", "我司", "本公司", "本单位")
     _BIDDER_ALIAS_PATTERN = re.compile("|".join(re.escape(alias) for alias in _BIDDER_REFERENCE_ALIASES))
     _PROTECTED_BIDDER_ALIAS_TERMS = {
@@ -356,10 +352,6 @@ class AIWriter:
         return len(cls._DISALLOWED_PARAGRAPH_TRANSITION_RE.findall(text))
 
     @classmethod
-    def _markdown_heading_count(cls, text: str) -> int:
-        return len(cls._MARKDOWN_HEADING_RE.findall(text))
-
-    @classmethod
     def _markdown_table_count(cls, text: str) -> int:
         lines = text.splitlines()
         count = 0
@@ -376,10 +368,6 @@ class AIWriter:
             while index < len(lines) and cls._MARKDOWN_TABLE_LINE_RE.match(lines[index]):
                 index += 1
         return count
-
-    @classmethod
-    def _contains_summary_heading(cls, text: str) -> bool:
-        return bool(cls._SUMMARY_HEADING_RE.search(text))
 
     def _required_min_table_count(self) -> int:
         max_tables = self.config.prompt_max_tables_per_section
@@ -405,12 +393,6 @@ class AIWriter:
         if len(stripped) >= 1200 and paragraph_count >= 3 and table_count >= 1:
             return True
         return len(stripped) >= 2500 and line_count >= 8
-
-    def _build_summary_rule_text(self) -> str:
-        summary_title = self.config.prompt_summary_title.strip()
-        if summary_title:
-            return f"如需章节收束，文末总结标题统一使用“{summary_title}”，并与前文编号衔接。"
-        return "不另设总结或小结。"
 
     def _build_table_rule_text(self) -> str:
         max_tables = self.config.prompt_max_tables_per_section
@@ -444,11 +426,6 @@ class AIWriter:
             f"生成的文档中适当绘制不超过{max_flowcharts}个Mermaid图示，用于呈现关键流程、步骤衔接、角色协作或机制闭环；"
             "必须使用```mermaid代码块，可按内容需要选择合适的 Mermaid 图类型，图内文案保持简洁。"
         )
-
-    def _build_english_rule_text(self) -> str:
-        if self.config.prompt_allow_english_terms:
-            return "可保留必要英文术语或专有名词，但不要堆砌中英混杂表达。"
-        return "除专有名词或用户明确要求外，不要输出不必要的英文、英文缩写或中英对照。"
 
     def _build_structure_contract_section(self) -> str:
         rules = self.config.prompt_extra_rules
@@ -500,11 +477,6 @@ class AIWriter:
             issues.append("numbering_transitions")
         if self._requires_formal_hierarchy(text) and self._formal_heading_count(text) == 0:
             issues.append("missing_formal_hierarchy")
-        if not self.config.prompt_allow_markdown_headings and self._markdown_heading_count(text) >= 1:
-            issues.append("markdown_headings")
-
-        if not self.config.prompt_summary_title.strip() and self._contains_summary_heading(text):
-            issues.append("forbidden_summary")
         return issues
 
     def _finalize_generated_content(self, heading: HeadingNode, content: str) -> FinalizeResult:

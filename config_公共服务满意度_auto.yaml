@@ -17,11 +17,8 @@ writing:
     upper_ratio: 1.15
   output_format: 纯正文
   first_line_template: ''
-  allow_markdown_headings: false
-  allow_english_terms: false
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 1
-  summary_title: ''
   extra_rules:
   - 根据以上任务卡，结合采购需求、评分标准撰写投标正文；
   - 内容要求专业、严谨，满足对评分标准高响应、高得分的要求；

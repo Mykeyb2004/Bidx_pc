@@ -123,12 +123,9 @@ GUI 中批量生成的主要逻辑位于：
 - `generation.stream_idle_timeout_seconds`
 - `prompt.output_format`
 - `prompt.first_line_template`
-- `prompt.allow_markdown_headings`
-- `prompt.allow_english_terms`
 - `prompt.bidder_name`
 - `prompt.max_tables_per_section`
 - `prompt.max_mermaid_flowcharts_per_section`
-- `prompt.summary_title`
 - `prompt.hard_constraints`
 - `prompt.extra_rules`
 - `context_pruning.*`
@@ -163,8 +160,6 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 - `Config.role`
 - `prompt_bidder_name`
-- `prompt_allow_markdown_headings`
-- `prompt_allow_english_terms`
 - `prompt_hard_constraints`
 
 其中强约束会被放入“最高优先级输出强约束”区块，优先级高于普通风格建议。
@@ -474,10 +469,6 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
   - 出现“首先、其次、再次、最后”等段首转承
 - `missing_formal_hierarchy`
   - 文本已明显多段分层，但没有正式层级序号
-- `markdown_headings`
-  - 在禁止 Markdown 标题时仍输出 `#`
-- `forbidden_summary`
-  - 在 `summary_title` 为空时仍出现“小结/总结”
 
 注意：
 

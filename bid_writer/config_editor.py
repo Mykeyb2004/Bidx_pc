@@ -134,11 +134,8 @@ def build_default_editor_model() -> dict[str, Any]:
             "target_words_upper_ratio": 1.15,
             "output_format": "纯正文",
             "first_line_template": "",
-            "allow_markdown_headings": False,
-            "allow_english_terms": False,
             "max_tables_per_section": 2,
             "max_mermaid_flowcharts_per_section": 1,
-            "summary_title": "",
             "hard_constraints": [],
             "extra_rules": [],
         },
@@ -424,14 +421,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
             "first_line_template": _coerce_str(
                 _first_defined(raw_config, ("writing", "first_line_template"), ("prompt", "first_line_template"), default="")
             ),
-            "allow_markdown_headings": _coerce_bool(
-                _first_defined(raw_config, ("writing", "allow_markdown_headings"), ("prompt", "allow_markdown_headings"), default=False),
-                default=False,
-            ),
-            "allow_english_terms": _coerce_bool(
-                _first_defined(raw_config, ("writing", "allow_english_terms"), ("prompt", "allow_english_terms"), default=False),
-                default=False,
-            ),
             "max_tables_per_section": _coerce_int(
                 _first_defined(raw_config, ("writing", "max_tables_per_section"), ("prompt", "max_tables_per_section"), default=4),
                 default=4,
@@ -444,9 +433,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     default=0,
                 ),
                 default=0,
-            ),
-            "summary_title": _coerce_str(
-                _first_defined(raw_config, ("writing", "summary_title"), ("prompt", "summary_title"), default="章节小结")
             ),
             "hard_constraints": _coerce_string_list(
                 _first_defined(raw_config, ("writing", "hard_constraints"), ("prompt", "hard_constraints"), default=[]),
@@ -657,11 +643,8 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         },
         "output_format": model["writing"]["output_format"],
         "first_line_template": model["writing"]["first_line_template"],
-        "allow_markdown_headings": bool(model["writing"]["allow_markdown_headings"]),
-        "allow_english_terms": bool(model["writing"]["allow_english_terms"]),
         "max_tables_per_section": int(model["writing"]["max_tables_per_section"]),
         "max_mermaid_flowcharts_per_section": int(model["writing"]["max_mermaid_flowcharts_per_section"]),
-        "summary_title": model["writing"]["summary_title"],
         "hard_constraints": list(model["writing"]["hard_constraints"]),
         "extra_rules": list(model["writing"]["extra_rules"]),
     }
@@ -1250,6 +1233,8 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
         },
         "output_format": True,
         "first_line_template": True,
+        # Deprecated writing keys are intentionally managed here so canonical
+        # saves drop them instead of preserving them as custom extras.
         "allow_markdown_headings": True,
         "allow_english_terms": True,
         "max_tables_per_section": True,
