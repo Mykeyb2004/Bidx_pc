@@ -96,6 +96,59 @@ processing:
     assert payload["processing"]["full_context"]["chapter_writing_plan"]["max_chars"] == 280
 
 
+def test_config_editor_preserves_h2_project_background_settings(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "auto.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    scope: "h2_auto"
+    max_chars: 700
+    h2:
+      precompute_on_batch: false
+      generate_missing_on_single: false
+      max_evidence_blocks: 4
+      max_evidence_chars: 1600
+      include_evidence_in_prompt: true
+      min_evidence_blocks: 1
+      fallback: "raw_evidence"
+      cache_dir: "./cache/h2-bg"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.model["processing"]["project_background"]["scope"] == "h2_auto"
+    assert document.model["processing"]["project_background"]["h2"]["max_evidence_blocks"] == 4
+    assert payload["processing"]["project_background"] == {
+        "enabled": True,
+        "scope": "h2_auto",
+        "max_chars": 700,
+        "h2": {
+            "precompute_on_batch": False,
+            "generate_missing_on_single": False,
+            "max_evidence_blocks": 4,
+            "max_evidence_chars": 1600,
+            "include_evidence_in_prompt": True,
+            "min_evidence_blocks": 1,
+            "fallback": "raw_evidence",
+            "cache_dir": "./cache/h2-bg",
+        },
+    }
+
+
 def test_config_editor_validation_full_context_does_not_require_auto_runtime(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "full-context.yaml"

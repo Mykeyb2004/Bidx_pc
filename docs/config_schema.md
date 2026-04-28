@@ -36,7 +36,7 @@
 
 ## 2. `processing` 的 canonical 设计
 
-`processing` 只保留 3 条业务路径：
+`processing` 推荐保留 4 条业务路径：
 
 - `full_context`
   - 采购需求和评分标准都不做章节级处理，直接把完整原文送入主 prompt
@@ -44,12 +44,14 @@
   - 采购需求和评分标准都走现有规则链路
 - `hybrid_extract`
   - 采购需求和评分标准都走检索摘录链路
+- `auto`
+  - 走章节级智能裁剪链路：评分项与采购需求先检索，再按章节/H2 边界组织上下文
 
 推荐写法：
 
 ```yaml
 processing:
-  path: "legacy_rule" # full_context / legacy_rule / hybrid_extract
+  path: "auto" # full_context / legacy_rule / hybrid_extract / auto
 ```
 
 在 canonical schema 中，不再推荐把“评分标准”和“采购需求”的主链路拆成两条可自由混搭的项目级参数。
@@ -137,10 +139,20 @@ writing:
 
 ```yaml
 processing:
-  path: "hybrid_extract"
+  path: "auto"
   project_background:
     enabled: true
+    scope: "h2_auto" # global / h2_auto
     max_chars: 800
+    h2:
+      precompute_on_batch: true
+      generate_missing_on_single: true
+      max_evidence_blocks: 6
+      max_evidence_chars: 2400
+      include_evidence_in_prompt: false
+      min_evidence_blocks: 2
+      fallback: "global" # global / raw_evidence / empty
+      cache_dir: "./caches/project_background_h2"
   chapter_facts:
     enabled: true
     auto_extract_on_batch: true
@@ -182,7 +194,16 @@ processing:
 说明：
 
 - `processing.path` 决定当前项目跑哪条链路
-- `processing.project_background.*` 当前会在 `auto` 和 `full_context` 下生效
+- `processing.project_background.enabled` 控制是否注入项目背景摘要
+- `processing.project_background.scope` 默认是 `global`，兼容旧配置；显式设为 `h2_auto` 时，只有 `processing.path: auto` 会启用 H2 级背景，`full_context` 仍保持全局背景语义
+- `processing.project_background.max_chars` 是全局背景或 H2 背景摘要的目标长度上限
+- `processing.project_background.h2.precompute_on_batch` 控制批量生成前是否一次性预生成所有 H2 背景缓存
+- `processing.project_background.h2.generate_missing_on_single` 控制单章节生成时若当前 H2 背景缺失，是否补生成一次
+- `processing.project_background.h2.max_evidence_blocks` / `max_evidence_chars` 限制 H2 背景生成时使用的采购需求证据片段数量与总长度
+- `processing.project_background.h2.include_evidence_in_prompt` 当前默认 `false`；证据会写入 trace，但不默认注入章节 prompt
+- `processing.project_background.h2.min_evidence_blocks` 是生成摘要所需的证据片段下限，低于该值会触发回退
+- `processing.project_background.h2.fallback` 支持 `global` / `raw_evidence` / `empty`，分别表示回退全局背景、回退原文片段、或不注入项目背景
+- `processing.project_background.h2.cache_dir` 默认相对 `project.root_dir` 解析，用于保存 H2 背景 JSON 缓存
 - `processing.knowledge.*` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再注入 `knowledge_context`
 - `processing.chapter_facts.*` 控制正文 facts 提炼与缓存刷新边界；`auto_extract_on_batch` 只建议用于批量生成路径
 - `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”

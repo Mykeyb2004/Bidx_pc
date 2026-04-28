@@ -25,10 +25,20 @@ writing:
   extra_rules: []
 
 processing:
-  path: "full_context"
+  path: "auto"
   project_background:
-    enabled: false
+    enabled: true
+    scope: "h2_auto"
     max_chars: 800
+    h2:
+      precompute_on_batch: true
+      generate_missing_on_single: true
+      max_evidence_blocks: 6
+      max_evidence_chars: 2400
+      include_evidence_in_prompt: false
+      min_evidence_blocks: 2
+      fallback: "global"
+      cache_dir: "./caches/project_background_h2"
   chapter_facts:
     enabled: true
     auto_extract_on_batch: true

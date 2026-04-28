@@ -450,3 +450,136 @@ def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, t
     assert "- 写作依据：优先根据下方评分关注和需求要点组织内容。" in result.prompt
     assert "## 需求要点" in result.prompt
     assert "## 需求原文摘录" not in result.prompt
+
+
+def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "auto"
+    config._config.setdefault("processing", {}).setdefault("project_background", {})["enabled"] = True
+    config._config["processing"]["project_background"]["scope"] = "h2_auto"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    monkeypatch.setattr(
+        writer.context_pruner,
+        "build_context",
+        lambda _: ChapterContext(
+            chapter_focus_terms=["质量保障措施"],
+            requirement_seed="质量保障应建立过程检查机制。",
+            retrieval_mode="path=auto;vector=off;classify=off",
+        ),
+    )
+    monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
+
+    class DummyH2BackgroundGenerator:
+        @staticmethod
+        def get_for_heading(_heading):
+            from bid_writer.h2_project_background import H2ProjectBackgroundResult
+
+            return H2ProjectBackgroundResult(
+                h2_title="项目实施方案",
+                h2_full_path="综合服务项目投标方案 > 项目实施方案",
+                summary="H2专属背景摘要。",
+                evidence_unit_ids=["requirements_0"],
+                evidence_blocks=["采购需求证据片段"],
+                source_hash="source",
+                subtree_hash="tree",
+                cache_status="hit",
+                precomputed=True,
+            )
+
+    writer.h2_project_background_generator = DummyH2BackgroundGenerator()
+    writer.project_background_generator = type(
+        "DummyGlobalBackground",
+        (),
+        {"get_or_generate": staticmethod(lambda: "全局背景不应进入 auto h2 prompt。")},
+    )()
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+
+    assert "## 项目背景" in result.prompt
+    assert "H2专属背景摘要。" in result.prompt
+    assert "全局背景不应进入 auto h2 prompt。" not in result.prompt
+    block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
+    assert "H2ProjectBackgroundGenerator.get_for_heading" in block["source_context"]
+    assert result.project_background_trace["h2_title"] == "项目实施方案"
+    assert result.project_background_trace["cache_status"] == "hit"
+
+
+def test_full_context_prompt_keeps_global_project_background_when_h2_scope_configured(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "full_context"
+    config._config.setdefault("processing", {}).setdefault("project_background", {})["enabled"] = True
+    config._config["processing"]["project_background"]["scope"] = "h2_auto"
+    writer = _build_writer(monkeypatch, config)
+    writer.project_background_generator = type(
+        "DummyGlobalBackground",
+        (),
+        {"get_or_generate": staticmethod(lambda: "全局项目背景摘要。")},
+    )()
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+
+    assert "全局项目背景摘要。" in result.prompt
+    block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
+    assert "ProjectBackgroundGenerator.get_or_generate" in block["source_context"]
+    assert result.project_background_trace["scope"] == "global"
+
+
+def test_trace_records_h2_project_background_evidence(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "auto"
+    config._config.setdefault("processing", {}).setdefault("project_background", {})["enabled"] = True
+    config._config["processing"]["project_background"]["scope"] = "h2_auto"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    monkeypatch.setattr(
+        writer.context_pruner,
+        "build_context",
+        lambda _: ChapterContext(
+            chapter_focus_terms=["质量保障措施"],
+            requirement_seed="质量保障应建立过程检查机制。",
+            requirement_blocks=[],
+            retrieval_mode="path=auto;vector=off;classify=off",
+        ),
+    )
+    monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
+
+    class DummyH2BackgroundGenerator:
+        @staticmethod
+        def get_for_heading(_heading):
+            from bid_writer.h2_project_background import H2ProjectBackgroundResult
+
+            return H2ProjectBackgroundResult(
+                h2_title="项目实施方案",
+                h2_full_path="综合服务项目投标方案 > 项目实施方案",
+                summary="H2专属背景摘要。",
+                evidence_unit_ids=["requirements_7"],
+                evidence_blocks=["采购需求证据片段"],
+                source_hash="source",
+                subtree_hash="tree",
+                cache_status="hit",
+                precomputed=True,
+            )
+
+    writer.h2_project_background_generator = DummyH2BackgroundGenerator()
+
+    prepared = writer.prepare_generation(heading, target_words=1200, stream=False)
+    assert prepared.trace_session is not None
+    prepared.trace_session.finalize("测试正文")
+
+    context_payload = json.loads(
+        prepared.trace_session.artifact_paths["context_assembly"].read_text(encoding="utf-8")
+    )
+    summary = prepared.trace_session.artifact_paths["summary"].read_text(encoding="utf-8")
+
+    assert context_payload["project_background"]["scope"] == "h2"
+    assert context_payload["project_background"]["h2_title"] == "项目实施方案"
+    assert context_payload["project_background"]["evidence_unit_ids"] == ["requirements_7"]
+    assert context_payload["project_background"]["evidence_blocks"] == ["采购需求证据片段"]
+    assert "- project_background_scope: h2" in summary
+    assert "- project_background_h2: 项目实施方案" in summary
+    assert "- project_background_evidence_blocks: 1" in summary
+    assert "- project_background_cache_status: hit" in summary

@@ -21,6 +21,7 @@ from .fact_cards import (
 )
 from .chapter_writing_plan import ChapterWritingPlanGenerator
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
+from .h2_project_background import H2ProjectBackgroundGenerator
 from .outline_parser import HeadingNode
 from .project_background import ProjectBackgroundGenerator
 from .timing_logger import write_timing_log
@@ -38,6 +39,7 @@ class PromptBuildResult:
     full_context_stats: dict[str, Any] = field(default_factory=dict)
     fact_card_mode: bool = False
     fact_card_selection: list[dict[str, Any]] = field(default_factory=list)
+    project_background_trace: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -106,6 +108,11 @@ class AIWriter:
         self.project_background_generator = (
             ProjectBackgroundGenerator(config)
             if config.project_background_enabled
+            else None
+        )
+        self.h2_project_background_generator = (
+            H2ProjectBackgroundGenerator(config)
+            if config.h2_project_background_enabled
             else None
         )
         self.chapter_writing_plan_generator = (
@@ -670,10 +677,12 @@ class AIWriter:
         prompt_sections: list[dict[str, str]],
         pruned_context: Optional[ChapterContext],
         additional_requirements: str,
+        project_background_trace: Optional[dict[str, Any]] = None,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         section_map = {section["name"]: section["content"] for section in prompt_sections}
         system_prompt = self.build_system_prompt()
+        project_background_trace = project_background_trace or {}
         mermaid_rule_present = (
             "task_card" in section_map and "流程图控制：" in section_map.get("task_card", "")
         )
@@ -746,7 +755,11 @@ class AIWriter:
                 "prompt_kind": "user",
                 "section_names": ["project_background"],
                 "source_context": [
-                    "ProjectBackgroundGenerator.get_or_generate"
+                    (
+                        "H2ProjectBackgroundGenerator.get_for_heading"
+                        if project_background_trace.get("scope") == "h2"
+                        else "ProjectBackgroundGenerator.get_or_generate"
+                    )
                     if "project_background" in section_map else "",
                 ],
             },
@@ -864,13 +877,39 @@ class AIWriter:
         first_line = self._format_first_line(heading)
         scope_reference = self._build_scope_reference(heading)
         background = ""
+        project_background_trace: dict[str, Any] = {}
         try:
-            if self.project_background_generator is not None:
+            if pruned_context is not None and self.h2_project_background_generator is not None:
+                if status_callback is not None:
+                    status_callback("整理H2项目背景", "正在整理当前H2项目背景...")
+                h2_background = self.h2_project_background_generator.get_for_heading(heading)
+                background = h2_background.summary
+                project_background_trace = h2_background.to_trace_payload()
+                if (
+                    not background
+                    and self.project_background_generator is not None
+                    and self.config.h2_project_background_fallback == "global"
+                ):
+                    background = self.project_background_generator.get_or_generate()
+                    project_background_trace = {
+                        "scope": "global",
+                        "summary_chars": len(background),
+                        "cache_status": "fallback",
+                        "fallback_reason": h2_background.fallback_reason,
+                    }
+            elif self.project_background_generator is not None:
                 if status_callback is not None:
                     status_callback("整理项目背景", "正在整理项目背景...")
                 background = self.project_background_generator.get_or_generate()
+                if background:
+                    project_background_trace = {
+                        "scope": "global",
+                        "summary_chars": len(background),
+                        "cache_status": "unknown",
+                    }
         except Exception:
             background = ""
+            project_background_trace = {}
 
         full_context_sections: list[tuple[str, str]] = []
         chapter_writing_plan = ""
@@ -1063,6 +1102,7 @@ class AIWriter:
                 prompt_sections=prompt_sections,
                 pruned_context=pruned_context,
                 additional_requirements=additional_requirements,
+                project_background_trace=project_background_trace,
                 max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
             ),
             pruned_context=pruned_context,
@@ -1070,6 +1110,7 @@ class AIWriter:
             full_context_stats=full_context_stats,
             fact_card_mode=fact_card_mode,
             fact_card_selection=fact_card_selection,
+            project_background_trace=project_background_trace,
         )
 
     def build_prompt(
@@ -1192,6 +1233,7 @@ class AIWriter:
             full_context_stats=prompt_result.full_context_stats,
             fact_card_mode=prompt_result.fact_card_mode,
             fact_card_selection=prompt_result.fact_card_selection,
+            project_background_trace=prompt_result.project_background_trace,
             request_options=request_options,
         )
 

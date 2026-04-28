@@ -149,7 +149,18 @@ def build_default_editor_model() -> dict[str, Any]:
             },
             "project_background": {
                 "enabled": False,
+                "scope": "global",
                 "max_chars": 800,
+                "h2": {
+                    "precompute_on_batch": True,
+                    "generate_missing_on_single": True,
+                    "max_evidence_blocks": 6,
+                    "max_evidence_chars": 2400,
+                    "include_evidence_in_prompt": False,
+                    "min_evidence_blocks": 2,
+                    "fallback": "global",
+                    "cache_dir": "./caches/project_background_h2",
+                },
             },
             "auto": {
                 "requirements_top_k": 8,
@@ -468,10 +479,45 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     _first_defined(raw_config, ("processing", "project_background", "enabled"), default=True),
                     default=True,
                 ),
+                "scope": _normalize_project_background_scope(
+                    _first_defined(raw_config, ("processing", "project_background", "scope"), default="global")
+                ),
                 "max_chars": _coerce_int(
                     _first_defined(raw_config, ("processing", "project_background", "max_chars"), default=800),
                     default=800,
                 ),
+                "h2": {
+                    "precompute_on_batch": _coerce_bool(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "precompute_on_batch"), default=True),
+                        default=True,
+                    ),
+                    "generate_missing_on_single": _coerce_bool(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "generate_missing_on_single"), default=True),
+                        default=True,
+                    ),
+                    "max_evidence_blocks": _coerce_int(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "max_evidence_blocks"), default=6),
+                        default=6,
+                    ),
+                    "max_evidence_chars": _coerce_int(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "max_evidence_chars"), default=2400),
+                        default=2400,
+                    ),
+                    "include_evidence_in_prompt": _coerce_bool(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "include_evidence_in_prompt"), default=False),
+                        default=False,
+                    ),
+                    "min_evidence_blocks": _coerce_int(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "min_evidence_blocks"), default=2),
+                        default=2,
+                    ),
+                    "fallback": _normalize_h2_project_background_fallback(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "fallback"), default="global")
+                    ),
+                    "cache_dir": _coerce_str(
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "cache_dir"), default="./caches/project_background_h2")
+                    ),
+                },
             },
             "auto": {
                 "requirements_top_k": _coerce_int(
@@ -658,7 +704,18 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
             },
             "project_background": {
                 "enabled": bool(model["processing"]["project_background"]["enabled"]),
+                "scope": model["processing"]["project_background"]["scope"],
                 "max_chars": int(model["processing"]["project_background"]["max_chars"]),
+                "h2": {
+                    "precompute_on_batch": bool(model["processing"]["project_background"]["h2"]["precompute_on_batch"]),
+                    "generate_missing_on_single": bool(model["processing"]["project_background"]["h2"]["generate_missing_on_single"]),
+                    "max_evidence_blocks": int(model["processing"]["project_background"]["h2"]["max_evidence_blocks"]),
+                    "max_evidence_chars": int(model["processing"]["project_background"]["h2"]["max_evidence_chars"]),
+                    "include_evidence_in_prompt": bool(model["processing"]["project_background"]["h2"]["include_evidence_in_prompt"]),
+                    "min_evidence_blocks": int(model["processing"]["project_background"]["h2"]["min_evidence_blocks"]),
+                    "fallback": model["processing"]["project_background"]["h2"]["fallback"],
+                    "cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"].strip() or "./caches/project_background_h2",
+                },
             },
             "auto": {
                 "requirements_top_k": int(model["processing"]["auto"]["requirements_top_k"]),
@@ -1143,6 +1200,16 @@ def _coerce_string_list(value: Any) -> list[str]:
     return []
 
 
+def _normalize_project_background_scope(value: Any) -> str:
+    normalized = str(value).strip().lower() if value is not None else "global"
+    return normalized if normalized in {"global", "h2_auto"} else "global"
+
+
+def _normalize_h2_project_background_fallback(value: Any) -> str:
+    normalized = str(value).strip().lower() if value is not None else "global"
+    return normalized if normalized in {"global", "raw_evidence", "empty"} else "global"
+
+
 def _maybe_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
@@ -1218,8 +1285,19 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
         },
         "project_background": {
             "enabled": True,
+            "scope": True,
             "max_chars": True,
             "cache_dir": True,
+            "h2": {
+                "precompute_on_batch": True,
+                "generate_missing_on_single": True,
+                "max_evidence_blocks": True,
+                "max_evidence_chars": True,
+                "include_evidence_in_prompt": True,
+                "min_evidence_blocks": True,
+                "fallback": True,
+                "cache_dir": True,
+            },
         },
         "auto": {
             "requirements_top_k": True,

@@ -48,6 +48,7 @@ class GenerationTraceSession:
         full_context_stats: dict[str, Any],
         fact_card_mode: bool,
         fact_card_selection: list[dict[str, Any]],
+        project_background_trace: dict[str, Any],
         request_options: dict[str, Any],
     ):
         self.config = config
@@ -65,6 +66,7 @@ class GenerationTraceSession:
         self.full_context_stats = full_context_stats
         self.fact_card_mode = fact_card_mode
         self.fact_card_selection = fact_card_selection
+        self.project_background_trace = project_background_trace
         self.request_options = request_options
         self.trace_id = self._build_trace_id()
         self.created_at = _utc_now_string()
@@ -188,6 +190,8 @@ class GenerationTraceSession:
             payload["pruned_context"] = asdict(self.pruned_context)
         else:
             payload["full_context"] = self.full_context_stats
+        if self.project_background_trace:
+            payload["project_background"] = self.project_background_trace
         return payload
 
     def _build_manifest(self, output_chars: int = 0, error: str = "") -> dict[str, Any]:
@@ -284,6 +288,16 @@ class GenerationTraceSession:
             lines.append(
                 "- prompt_contract_blocks: "
                 + ", ".join(block.get("id", "") for block in self.prompt_contract_blocks if block.get("id"))
+            )
+        if self.project_background_trace:
+            lines.extend(
+                [
+                    f"- project_background_scope: {self.project_background_trace.get('scope', '（无）')}",
+                    f"- project_background_h2: {self.project_background_trace.get('h2_title', '（无）')}",
+                    f"- project_background_chars: {self.project_background_trace.get('summary_chars', 0)}",
+                    f"- project_background_evidence_blocks: {self.project_background_trace.get('evidence_count', 0)}",
+                    f"- project_background_cache_status: {self.project_background_trace.get('cache_status', '（无）')}",
+                ]
             )
         if self.postprocess:
             issues = self.postprocess.get("format_repair_issues") or []
@@ -404,6 +418,7 @@ class GenerationTraceLogger:
         full_context_stats: dict[str, Any],
         fact_card_mode: bool,
         fact_card_selection: list[dict[str, Any]],
+        project_background_trace: dict[str, Any],
         request_options: dict[str, Any],
     ) -> Optional[GenerationTraceSession]:
         if not self.config.generation_trace_enabled:
@@ -425,5 +440,6 @@ class GenerationTraceLogger:
             full_context_stats=full_context_stats,
             fact_card_mode=fact_card_mode,
             fact_card_selection=fact_card_selection,
+            project_background_trace=project_background_trace,
             request_options=request_options,
         )

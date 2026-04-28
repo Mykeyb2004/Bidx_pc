@@ -259,7 +259,16 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("processing.context_view.include_siblings", tk.BooleanVar())
         add_var("processing.context_view.max_siblings", tk.StringVar())
         add_var("processing.project_background.enabled", tk.BooleanVar())
+        add_var("processing.project_background.scope", tk.StringVar())
         add_var("processing.project_background.max_chars", tk.StringVar())
+        add_var("processing.project_background.h2.precompute_on_batch", tk.BooleanVar())
+        add_var("processing.project_background.h2.generate_missing_on_single", tk.BooleanVar())
+        add_var("processing.project_background.h2.max_evidence_blocks", tk.StringVar())
+        add_var("processing.project_background.h2.max_evidence_chars", tk.StringVar())
+        add_var("processing.project_background.h2.include_evidence_in_prompt", tk.BooleanVar())
+        add_var("processing.project_background.h2.min_evidence_blocks", tk.StringVar())
+        add_var("processing.project_background.h2.fallback", tk.StringVar())
+        add_var("processing.project_background.h2.cache_dir", tk.StringVar())
         add_var("processing.full_context.chapter_writing_plan.enabled", tk.BooleanVar())
         add_var("processing.full_context.chapter_writing_plan.max_chars", tk.StringVar())
         add_var("processing.auto.requirements_top_k", tk.StringVar())
@@ -540,7 +549,16 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self.processing_project_background_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
         self._add_check_row(self.processing_project_background_frame, 0, "启用项目背景生成", "processing.project_background.enabled")
-        self._add_entry_row(self.processing_project_background_frame, 1, "背景最大字符数", "processing.project_background.max_chars")
+        self._add_entry_row(self.processing_project_background_frame, 1, "作用域（global / h2_auto）", "processing.project_background.scope")
+        self._add_entry_row(self.processing_project_background_frame, 2, "背景最大字符数", "processing.project_background.max_chars")
+        self._add_check_row(self.processing_project_background_frame, 3, "批量前预生成 H2 背景", "processing.project_background.h2.precompute_on_batch")
+        self._add_check_row(self.processing_project_background_frame, 4, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
+        self._add_entry_row(self.processing_project_background_frame, 5, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
+        self._add_entry_row(self.processing_project_background_frame, 6, "H2 证据字符上限", "processing.project_background.h2.max_evidence_chars")
+        self._add_check_row(self.processing_project_background_frame, 7, "证据同时进入 prompt", "processing.project_background.h2.include_evidence_in_prompt")
+        self._add_entry_row(self.processing_project_background_frame, 8, "最少证据片段数", "processing.project_background.h2.min_evidence_blocks")
+        self._add_entry_row(self.processing_project_background_frame, 9, "失败回退（global / raw_evidence / empty）", "processing.project_background.h2.fallback")
+        self._add_path_row(self.processing_project_background_frame, 10, "H2 缓存目录", "processing.project_background.h2.cache_dir", browse_kind="dir", relative_to="project")
         self.processing_project_background_frame.columnconfigure(1, weight=1)
 
         self.processing_chapter_plan_frame = ttk.LabelFrame(content, text="章节写作计划", padding=12)
@@ -769,7 +787,16 @@ class ConfigEditorDialog(tk.Toplevel):
             "processing.context_view.include_siblings": model["processing"]["context_view"]["include_siblings"],
             "processing.context_view.max_siblings": str(model["processing"]["context_view"]["max_siblings"]),
             "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
+            "processing.project_background.scope": model["processing"]["project_background"]["scope"],
             "processing.project_background.max_chars": str(model["processing"]["project_background"]["max_chars"]),
+            "processing.project_background.h2.precompute_on_batch": model["processing"]["project_background"]["h2"]["precompute_on_batch"],
+            "processing.project_background.h2.generate_missing_on_single": model["processing"]["project_background"]["h2"]["generate_missing_on_single"],
+            "processing.project_background.h2.max_evidence_blocks": str(model["processing"]["project_background"]["h2"]["max_evidence_blocks"]),
+            "processing.project_background.h2.max_evidence_chars": str(model["processing"]["project_background"]["h2"]["max_evidence_chars"]),
+            "processing.project_background.h2.include_evidence_in_prompt": model["processing"]["project_background"]["h2"]["include_evidence_in_prompt"],
+            "processing.project_background.h2.min_evidence_blocks": str(model["processing"]["project_background"]["h2"]["min_evidence_blocks"]),
+            "processing.project_background.h2.fallback": model["processing"]["project_background"]["h2"]["fallback"],
+            "processing.project_background.h2.cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"],
             "processing.full_context.chapter_writing_plan.enabled": model["processing"]["full_context"]["chapter_writing_plan"]["enabled"],
             "processing.full_context.chapter_writing_plan.max_chars": str(model["processing"]["full_context"]["chapter_writing_plan"]["max_chars"]),
             "processing.auto.requirements_top_k": str(model["processing"]["auto"]["requirements_top_k"]),
@@ -860,7 +887,18 @@ class ConfigEditorDialog(tk.Toplevel):
                 },
                 "project_background": {
                     "enabled": bool(self.vars["processing.project_background.enabled"].get()),
+                    "scope": self.vars["processing.project_background.scope"].get().strip() or "global",
                     "max_chars": self.vars["processing.project_background.max_chars"].get().strip(),
+                    "h2": {
+                        "precompute_on_batch": bool(self.vars["processing.project_background.h2.precompute_on_batch"].get()),
+                        "generate_missing_on_single": bool(self.vars["processing.project_background.h2.generate_missing_on_single"].get()),
+                        "max_evidence_blocks": self.vars["processing.project_background.h2.max_evidence_blocks"].get().strip(),
+                        "max_evidence_chars": self.vars["processing.project_background.h2.max_evidence_chars"].get().strip(),
+                        "include_evidence_in_prompt": bool(self.vars["processing.project_background.h2.include_evidence_in_prompt"].get()),
+                        "min_evidence_blocks": self.vars["processing.project_background.h2.min_evidence_blocks"].get().strip(),
+                        "fallback": self.vars["processing.project_background.h2.fallback"].get().strip() or "global",
+                        "cache_dir": self.vars["processing.project_background.h2.cache_dir"].get().strip() or "./caches/project_background_h2",
+                    },
                 },
                 "full_context": {
                     "chapter_writing_plan": {

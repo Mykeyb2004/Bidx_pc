@@ -28,14 +28,24 @@ writing:
   - 章节篇幅优先控制在目标区间内，不为凑篇幅重复展开。
   role_file: ./roles/公共服务满意度_role.md
 processing:
-  path: full_context
+  path: auto
   context_view:
     include_ancestors: true
     include_siblings: true
     max_siblings: 8
   project_background:
-    enabled: false
+    enabled: true
+    scope: h2_auto
     max_chars: 800
+    h2:
+      precompute_on_batch: true
+      generate_missing_on_single: true
+      max_evidence_blocks: 6
+      max_evidence_chars: 2400
+      include_evidence_in_prompt: false
+      min_evidence_blocks: 2
+      fallback: global
+      cache_dir: ./caches/project_background_h2
   auto:
     requirements_top_k: 8
   knowledge:
