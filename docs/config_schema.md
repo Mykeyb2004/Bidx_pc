@@ -137,7 +137,6 @@ processing:
   path: "auto"
   project_background:
     enabled: true
-    scope: "h2_auto" # global / h2_auto
     max_chars: 800
     h2:
       precompute_on_batch: true
@@ -146,7 +145,7 @@ processing:
       max_evidence_chars: 2400
       include_evidence_in_prompt: false
       min_evidence_blocks: 2
-      fallback: "global" # global / raw_evidence / empty
+      fallback: "raw_evidence" # raw_evidence / empty
       cache_dir: "./caches/project_background_h2"
   chapter_facts:
     enabled: true
@@ -177,15 +176,15 @@ processing:
 
 - `processing.path` 决定当前项目跑哪条链路
 - `processing.project_background.*` 只服务 `processing.path: auto` 链路；`full_context` 会直接注入完整采购需求和评分标准，不再额外提炼或注入项目背景摘要
-- `processing.project_background.enabled` 控制 auto 链路是否注入项目背景摘要
-- `processing.project_background.scope` 默认是 `global`，兼容旧配置；显式设为 `h2_auto` 时，只有 `processing.path: auto` 会启用 H2 级背景
+- `processing.project_background.enabled` 控制 auto 链路是否注入 H2 级项目背景摘要
+- `processing.project_background.scope` 已废弃；auto 链路只支持 H2 级项目背景，旧值 `global` 会被运行时拒绝
 - `processing.project_background.max_chars` 是 auto 链路中项目背景摘要的目标长度上限
 - `processing.project_background.h2.precompute_on_batch` 控制批量生成前是否一次性预生成所有 H2 背景缓存
 - `processing.project_background.h2.generate_missing_on_single` 控制单章节生成时若当前 H2 背景缺失，是否补生成一次
 - `processing.project_background.h2.max_evidence_blocks` / `max_evidence_chars` 限制 H2 背景生成时使用的采购需求证据片段数量与总长度
 - `processing.project_background.h2.include_evidence_in_prompt` 当前默认 `false`；证据会写入 trace，但不默认注入章节 prompt
 - `processing.project_background.h2.min_evidence_blocks` 是生成摘要所需的证据片段下限，低于该值会触发回退
-- `processing.project_background.h2.fallback` 支持 `global` / `raw_evidence` / `empty`，分别表示回退全局背景、回退原文片段、或不注入项目背景
+- `processing.project_background.h2.fallback` 支持 `raw_evidence` / `empty`，分别表示回退原文片段、或不注入项目背景；旧值 `global` 已废弃并会被运行时拒绝
 - `processing.project_background.h2.cache_dir` 默认相对 `project.root_dir` 解析，用于保存 H2 背景 JSON 缓存
 - `processing.knowledge.*` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再注入 `knowledge_context`
 - `processing.chapter_facts.*` 控制正文 facts 提炼与缓存刷新边界；`auto_extract_on_batch` 只建议用于批量生成路径

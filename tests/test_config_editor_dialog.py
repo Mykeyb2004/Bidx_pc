@@ -219,8 +219,7 @@ def test_config_editor_processing_path_uses_radio_buttons(monkeypatch):
 
     dialog.vars = {
         "processing.path": StubVar("full_context"),
-        "processing.project_background.scope": StubVar("global"),
-        "processing.project_background.h2.fallback": StubVar("global"),
+        "processing.project_background.h2.fallback": StubVar("raw_evidence"),
     }
     dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
     dialog._register_tooltip = lambda *_args, **_kwargs: None
@@ -363,10 +362,9 @@ def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
     assert entry_keys == set()
 
 
-def test_config_editor_project_background_scope_uses_radio_buttons(monkeypatch):
+def test_config_editor_project_background_omits_scope_and_global_fallback(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     created_comboboxes = []
-    created_radios = []
 
     class FakeWidget:
         def __init__(self, *args, **kwargs):
@@ -396,14 +394,11 @@ def test_config_editor_project_background_scope_uses_radio_buttons(monkeypatch):
             created_comboboxes.append(self)
 
     class FakeRadio(FakeWidget):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            created_radios.append(self)
+        pass
 
     dialog.vars = {
         "processing.path": StubVar("auto"),
         "processing.project_background.enabled": StubVar(True),
-        "processing.project_background.scope": StubVar("h2_auto"),
         "processing.project_background.max_chars": StubVar("800"),
         "processing.project_background.h2.precompute_on_batch": StubVar(True),
         "processing.project_background.h2.generate_missing_on_single": StubVar(True),
@@ -411,7 +406,7 @@ def test_config_editor_project_background_scope_uses_radio_buttons(monkeypatch):
         "processing.project_background.h2.max_evidence_chars": StubVar("2400"),
         "processing.project_background.h2.include_evidence_in_prompt": StubVar(False),
         "processing.project_background.h2.min_evidence_blocks": StubVar("2"),
-        "processing.project_background.h2.fallback": StubVar("global"),
+        "processing.project_background.h2.fallback": StubVar("raw_evidence"),
         "processing.project_background.h2.cache_dir": StubVar("./caches/project_background_h2"),
     }
     dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
@@ -429,15 +424,9 @@ def test_config_editor_project_background_scope_uses_radio_buttons(monkeypatch):
 
     dialog._build_processing_section()
 
-    scope_radios = [
-        radio
-        for radio in created_radios
-        if radio.kwargs["variable"] is dialog.vars["processing.project_background.scope"]
-    ]
     fallback_box = created_comboboxes[-1]
-    assert [radio.kwargs["value"] for radio in scope_radios] == ["global", "h2_auto"]
     assert fallback_box.kwargs["state"] == "readonly"
-    assert fallback_box.kwargs["values"] == ("global", "raw_evidence", "empty")
+    assert fallback_box.kwargs["values"] == ("raw_evidence", "empty")
 
 
 def test_config_editor_full_context_hides_project_background_frame():
@@ -501,11 +490,10 @@ def test_config_editor_auto_hides_requirements_retrieval_frame():
     assert dialog.processing_scoring_frame.actions == ["forget", "pack"]
 
 
-def test_config_editor_hides_h2_project_background_controls_for_global_scope():
+def test_config_editor_h2_project_background_controls_follow_enabled_state():
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     dialog.vars = {
         "processing.project_background.enabled": StubVar(True),
-        "processing.project_background.scope": StubVar("global"),
     }
 
     class FakeFrame:
@@ -525,19 +513,16 @@ def test_config_editor_hides_h2_project_background_controls_for_global_scope():
         def configure(self, **kwargs):
             self.states.append(kwargs["state"])
 
-    scope_control = FakeControl()
     max_chars_control = FakeControl()
     dialog.processing_project_background_optional_controls = [
-        (scope_control, "readonly"),
         (max_chars_control, "normal"),
     ]
     dialog.processing_project_background_h2_frame = FakeFrame()
 
     dialog._update_project_background_visibility()
 
-    assert scope_control.states == ["readonly"]
     assert max_chars_control.states == ["normal"]
-    assert dialog.processing_project_background_h2_frame.actions == ["remove"]
+    assert dialog.processing_project_background_h2_frame.actions == ["grid"]
 
 
 def test_config_editor_new_mode_first_save_uses_save_as_even_when_target_exists(tmp_path):

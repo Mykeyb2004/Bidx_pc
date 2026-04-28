@@ -14,7 +14,6 @@ from .config_editor import (
     ConfigEditorDocument,
     ConnectionStatus,
     H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS,
-    PROJECT_BACKGROUND_SCOPE_OPTIONS,
     ValidationMessage,
     create_new_config_editor_document,
     load_config_editor_document,
@@ -285,7 +284,6 @@ class ConfigEditorDialog(tk.Toplevel):
 
         add_var("processing.path", tk.StringVar())
         add_var("processing.project_background.enabled", tk.BooleanVar())
-        add_var("processing.project_background.scope", tk.StringVar())
         add_var("processing.project_background.max_chars", tk.StringVar())
         add_var("processing.project_background.h2.precompute_on_batch", tk.BooleanVar())
         add_var("processing.project_background.h2.generate_missing_on_single", tk.BooleanVar())
@@ -328,10 +326,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self.section_var.trace_add("write", lambda *_: self._show_current_section())
         self.vars["processing.path"].trace_add("write", lambda *_: self._update_processing_visibility())
         self.vars["processing.project_background.enabled"].trace_add(
-            "write",
-            lambda *_: self._update_project_background_visibility(),
-        )
-        self.vars["processing.project_background.scope"].trace_add(
             "write",
             lambda *_: self._update_project_background_visibility(),
         )
@@ -563,21 +557,13 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self.processing_project_background_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
         self._add_check_row(self.processing_project_background_frame, 0, "启用项目背景生成", "processing.project_background.enabled")
-        scope_radios = self._add_radio_row(
-            self.processing_project_background_frame,
-            1,
-            "作用域",
-            "processing.project_background.scope",
-            PROJECT_BACKGROUND_SCOPE_OPTIONS,
-        )
         max_chars_entry = self._add_entry_row(
             self.processing_project_background_frame,
-            2,
+            1,
             "背景最大字符数",
             "processing.project_background.max_chars",
         )
         self.processing_project_background_optional_controls = [
-            *((radio, "normal") for radio in scope_radios),
             (max_chars_entry, "normal"),
         ]
 
@@ -586,7 +572,7 @@ class ConfigEditorDialog(tk.Toplevel):
             text="H2 背景参数",
             padding=10,
         )
-        self.processing_project_background_h2_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        self.processing_project_background_h2_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         self._add_check_row(self.processing_project_background_h2_frame, 0, "批量前预生成 H2 背景", "processing.project_background.h2.precompute_on_batch")
         self._add_check_row(self.processing_project_background_h2_frame, 1, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
         self._add_entry_row(self.processing_project_background_h2_frame, 2, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
@@ -893,7 +879,6 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.max_mermaid_flowcharts_per_section": str(model["writing"]["max_mermaid_flowcharts_per_section"]),
             "processing.path": model["processing"]["path"],
             "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
-            "processing.project_background.scope": model["processing"]["project_background"]["scope"],
             "processing.project_background.max_chars": str(model["processing"]["project_background"]["max_chars"]),
             "processing.project_background.h2.precompute_on_batch": model["processing"]["project_background"]["h2"]["precompute_on_batch"],
             "processing.project_background.h2.generate_missing_on_single": model["processing"]["project_background"]["h2"]["generate_missing_on_single"],
@@ -981,7 +966,6 @@ class ConfigEditorDialog(tk.Toplevel):
                 "path": self.vars["processing.path"].get().strip() or "auto",
                 "project_background": {
                     "enabled": bool(self.vars["processing.project_background.enabled"].get()),
-                    "scope": self.vars["processing.project_background.scope"].get().strip() or "global",
                     "max_chars": self.vars["processing.project_background.max_chars"].get().strip(),
                     "h2": {
                         "precompute_on_batch": bool(self.vars["processing.project_background.h2.precompute_on_batch"].get()),
@@ -990,7 +974,7 @@ class ConfigEditorDialog(tk.Toplevel):
                         "max_evidence_chars": self.vars["processing.project_background.h2.max_evidence_chars"].get().strip(),
                         "include_evidence_in_prompt": bool(self.vars["processing.project_background.h2.include_evidence_in_prompt"].get()),
                         "min_evidence_blocks": self.vars["processing.project_background.h2.min_evidence_blocks"].get().strip(),
-                        "fallback": self.vars["processing.project_background.h2.fallback"].get().strip() or "global",
+                        "fallback": self.vars["processing.project_background.h2.fallback"].get().strip() or "raw_evidence",
                         "cache_dir": self.vars["processing.project_background.h2.cache_dir"].get().strip() or "./caches/project_background_h2",
                     },
                 },
@@ -1141,7 +1125,6 @@ class ConfigEditorDialog(tk.Toplevel):
             return
 
         enabled = bool(self.vars["processing.project_background.enabled"].get())
-        scope = self.vars["processing.project_background.scope"].get().strip().lower()
 
         for widget, active_state in getattr(self, "processing_project_background_optional_controls", []):
             try:
@@ -1150,7 +1133,7 @@ class ConfigEditorDialog(tk.Toplevel):
                 continue
 
         try:
-            if enabled and scope == "h2_auto":
+            if enabled:
                 h2_frame.grid()
             else:
                 h2_frame.grid_remove()

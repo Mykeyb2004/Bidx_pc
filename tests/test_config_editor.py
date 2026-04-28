@@ -122,7 +122,6 @@ processing:
   path: "auto"
   project_background:
     enabled: true
-    scope: "h2_auto"
     max_chars: 700
     h2:
       precompute_on_batch: false
@@ -140,11 +139,9 @@ processing:
     document = load_config_editor_document(config_path)
     payload = yaml.safe_load(document.render_yaml())
 
-    assert document.model["processing"]["project_background"]["scope"] == "h2_auto"
     assert document.model["processing"]["project_background"]["h2"]["max_evidence_blocks"] == 4
     assert payload["processing"]["project_background"] == {
         "enabled": True,
-        "scope": "h2_auto",
         "max_chars": 700,
         "h2": {
             "precompute_on_batch": False,
@@ -223,7 +220,7 @@ processing:
     assert not any("auto 模式需要配置辅助模型" in message.text for message in messages)
 
 
-def test_config_editor_validation_rejects_invalid_project_background_enums(tmp_path: Path):
+def test_config_editor_validation_rejects_invalid_h2_project_background_fallback(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "auto.yaml"
     config_path.write_text(
@@ -239,7 +236,6 @@ processing:
   path: "auto"
   project_background:
     enabled: true
-    scope: "bad-scope"
     h2:
       fallback: "bad-fallback"
 """.strip(),
@@ -248,13 +244,11 @@ processing:
 
     document = load_config_editor_document(config_path)
     model = copy.deepcopy(document.model)
-    model["processing"]["project_background"]["scope"] = "bad-scope"
     model["processing"]["project_background"]["h2"]["fallback"] = "bad-fallback"
 
     messages = document.validate(model)
 
     errors = [message.text for message in messages if message.level == "error"]
-    assert any("project_background.scope" in text for text in errors)
     assert any("project_background.h2.fallback" in text for text in errors)
 
 

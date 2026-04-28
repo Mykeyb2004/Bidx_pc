@@ -17,8 +17,7 @@ import yaml
 _MISSING = object()
 _SUPPORTED_PROCESSING_PATHS = {"auto", "full_context"}
 _KNOWN_PROCESSING_PATHS = _SUPPORTED_PROCESSING_PATHS | {"legacy_rule", "hybrid_extract", "mixed"}
-PROJECT_BACKGROUND_SCOPE_OPTIONS = ("global", "h2_auto")
-H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS = ("global", "raw_evidence", "empty")
+H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS = ("raw_evidence", "empty")
 
 
 @dataclass(frozen=True)
@@ -140,7 +139,6 @@ def build_default_editor_model() -> dict[str, Any]:
             "path": "full_context",
             "project_background": {
                 "enabled": False,
-                "scope": "global",
                 "max_chars": 800,
                 "h2": {
                     "precompute_on_batch": True,
@@ -149,7 +147,7 @@ def build_default_editor_model() -> dict[str, Any]:
                     "max_evidence_chars": 2400,
                     "include_evidence_in_prompt": False,
                     "min_evidence_blocks": 2,
-                    "fallback": "global",
+                    "fallback": "raw_evidence",
                     "cache_dir": "./caches/project_background_h2",
                 },
             },
@@ -436,9 +434,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     _first_defined(raw_config, ("processing", "project_background", "enabled"), default=True),
                     default=True,
                 ),
-                "scope": _normalize_project_background_scope(
-                    _first_defined(raw_config, ("processing", "project_background", "scope"), default="global")
-                ),
                 "max_chars": _coerce_int(
                     _first_defined(raw_config, ("processing", "project_background", "max_chars"), default=800),
                     default=800,
@@ -469,7 +464,7 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                         default=2,
                     ),
                     "fallback": _normalize_h2_project_background_fallback(
-                        _first_defined(raw_config, ("processing", "project_background", "h2", "fallback"), default="global")
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "fallback"), default="raw_evidence")
                     ),
                     "cache_dir": _coerce_str(
                         _first_defined(raw_config, ("processing", "project_background", "h2", "cache_dir"), default="./caches/project_background_h2")
@@ -642,7 +637,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
     if processing_path == "auto":
         processing_payload["project_background"] = {
             "enabled": bool(model["processing"]["project_background"]["enabled"]),
-            "scope": model["processing"]["project_background"]["scope"],
             "max_chars": int(model["processing"]["project_background"]["max_chars"]),
             "h2": {
                 "precompute_on_batch": bool(model["processing"]["project_background"]["h2"]["precompute_on_batch"]),
@@ -729,14 +723,11 @@ def validate_editor_model(
         messages.append(ValidationMessage("error", "processing.path 当前仅支持 auto / full_context 两种模式。"))
 
     project_background = model["processing"]["project_background"]
-    project_background_scope = _coerce_str(project_background["scope"]).strip()
     h2_project_background_fallback = _coerce_str(project_background["h2"]["fallback"]).strip()
     if processing_path == "auto":
-        if project_background_scope not in PROJECT_BACKGROUND_SCOPE_OPTIONS:
-            messages.append(ValidationMessage("error", "processing.project_background.scope 仅支持 global / h2_auto。"))
         if h2_project_background_fallback not in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS:
             messages.append(
-                ValidationMessage("error", "processing.project_background.h2.fallback 仅支持 global / raw_evidence / empty。")
+                ValidationMessage("error", "processing.project_background.h2.fallback 仅支持 raw_evidence / empty。")
             )
 
     _add_cross_platform_path_warnings(messages, model)
@@ -1150,14 +1141,9 @@ def _coerce_string_list(value: Any) -> list[str]:
     return []
 
 
-def _normalize_project_background_scope(value: Any) -> str:
-    normalized = str(value).strip().lower() if value is not None else "global"
-    return normalized if normalized in PROJECT_BACKGROUND_SCOPE_OPTIONS else "global"
-
-
 def _normalize_h2_project_background_fallback(value: Any) -> str:
-    normalized = str(value).strip().lower() if value is not None else "global"
-    return normalized if normalized in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS else "global"
+    normalized = str(value).strip().lower() if value is not None else "raw_evidence"
+    return normalized if normalized in H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS else "raw_evidence"
 
 
 def _maybe_int(value: Any) -> int | None:

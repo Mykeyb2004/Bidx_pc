@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 from bid_writer.config import Config
 
 
@@ -481,7 +483,7 @@ processing:
     assert config.chapter_facts_max_facts_per_chapter == 9
 
 
-def test_h2_project_background_config_defaults_to_global_for_old_shape(tmp_path: Path):
+def test_h2_project_background_config_defaults_to_h2_raw_evidence_for_old_shape(tmp_path: Path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         """
@@ -499,16 +501,55 @@ processing:
 
     config = Config(str(config_path))
 
-    assert config.project_background_scope == "global"
-    assert config.h2_project_background_enabled is False
+    assert config.project_background_scope == "h2_auto"
+    assert config.h2_project_background_enabled is True
     assert config.h2_project_background_precompute_on_batch is True
     assert config.h2_project_background_generate_missing_on_single is True
     assert config.h2_project_background_max_evidence_blocks == 6
     assert config.h2_project_background_max_evidence_chars == 2400
     assert config.h2_project_background_include_evidence_in_prompt is False
     assert config.h2_project_background_min_evidence_blocks == 2
-    assert config.h2_project_background_fallback == "global"
+    assert config.h2_project_background_fallback == "raw_evidence"
     assert config.h2_project_background_cache_dir == str(tmp_path / "caches" / "project_background_h2")
+
+
+def test_project_background_global_scope_is_rejected(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    scope: "global"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    with pytest.raises(ValueError, match="project_background.scope"):
+        _ = config.project_background_scope
+
+
+def test_h2_project_background_global_fallback_is_rejected(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  path: "auto"
+  project_background:
+    enabled: true
+    h2:
+      fallback: "global"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    with pytest.raises(ValueError, match="project_background.h2.fallback"):
+        _ = config.h2_project_background_fallback
 
 
 def test_h2_project_background_config_reads_new_h2_auto_scope(tmp_path: Path):

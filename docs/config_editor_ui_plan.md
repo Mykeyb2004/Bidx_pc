@@ -395,7 +395,7 @@
 - 已与主窗口共享 GUI 主题，并会随屏幕 DPI / 分辨率自动调大默认字号
 - 配置编辑器初始尺寸会受当前屏幕约束，低分辨率屏幕下优先保留内部滚动而不是撑出屏幕
 - `processing.path` 当前已提供 `auto / full_context` 两个单选入口；`full_context` 会恢复全文直送链路所需的配置项展示
-- `processing.project_background.scope` 已改为 `global / h2_auto` 单选入口，避免在两个固定取值之间使用下拉框
+- `processing.project_background.scope` 已废弃并从界面移除；auto 模式固定使用 H2 级项目背景
 - `full_context` 下已支持“章节写作计划”开关和长度上限配置
 
 首版与理想方案的差异：

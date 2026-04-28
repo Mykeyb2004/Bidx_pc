@@ -7,7 +7,7 @@
 - 当前章节拿到了哪些局部大纲
 - 命中了哪些评分项
 - 采购需求哪些片段被选入上下文
-- 项目背景来自全局摘要还是 H2 背景，以及 H2 背景的证据片段
+- H2 项目背景摘要及其证据片段
 - 最终发给模型的 `system prompt` / `user prompt` 是什么
 - 模型最终输出了什么内容
 
@@ -150,7 +150,7 @@ output/
 
 当本次 prompt 注入了项目背景时，还会记录 `project_background`：
 
-- `scope`：`global` 或 `h2`
+- `scope`：固定为 `h2`
 - `summary_chars`
 - `cache_status`
 - `fallback_reason`

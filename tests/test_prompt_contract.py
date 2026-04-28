@@ -518,21 +518,59 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
             )
 
     writer.h2_project_background_generator = DummyH2BackgroundGenerator()
-    writer.project_background_generator = type(
-        "DummyGlobalBackground",
-        (),
-        {"get_or_generate": staticmethod(lambda: "全局背景不应进入 auto h2 prompt。")},
-    )()
 
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "## 项目背景" in result.prompt
     assert "H2专属背景摘要。" in result.prompt
-    assert "全局背景不应进入 auto h2 prompt。" not in result.prompt
     block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
     assert "H2ProjectBackgroundGenerator.get_for_heading" in block["source_context"]
     assert result.project_background_trace["h2_title"] == "项目实施方案"
     assert result.project_background_trace["cache_status"] == "hit"
+
+
+def test_auto_prompt_does_not_fallback_to_global_project_background(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "auto"
+    config._config.setdefault("processing", {}).setdefault("project_background", {})["enabled"] = True
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    monkeypatch.setattr(
+        writer.context_pruner,
+        "build_context",
+        lambda _: ChapterContext(
+            chapter_focus_terms=["质量保障措施"],
+            requirement_seed="质量保障应建立过程检查机制。",
+            retrieval_mode="path=auto;vector=off;classify=off",
+        ),
+    )
+    monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
+
+    class EmptyH2BackgroundGenerator:
+        @staticmethod
+        def get_for_heading(_heading):
+            from bid_writer.h2_project_background import H2ProjectBackgroundResult
+
+            return H2ProjectBackgroundResult(
+                h2_title="项目实施方案",
+                h2_full_path="综合服务项目投标方案 > 项目实施方案",
+                summary="",
+                evidence_unit_ids=[],
+                evidence_blocks=[],
+                source_hash="source",
+                subtree_hash="tree",
+                cache_status="fallback",
+                fallback_reason="测试空回退",
+            )
+
+    writer.h2_project_background_generator = EmptyH2BackgroundGenerator()
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+
+    assert "## 项目背景" not in result.prompt
+    assert result.project_background_trace["scope"] == "h2"
+    assert result.project_background_trace["fallback_reason"] == "测试空回退"
 
 
 def test_full_context_prompt_skips_project_background_even_when_configured(monkeypatch, tmp_path):
@@ -542,18 +580,10 @@ def test_full_context_prompt_skips_project_background_even_when_configured(monke
     config._config["processing"]["project_background"]["scope"] = "h2_auto"
     writer = _build_writer(monkeypatch, config)
 
-    calls: list[str] = []
-
-    writer.project_background_generator = type(
-        "DummyGlobalBackground",
-        (),
-        {"get_or_generate": staticmethod(lambda: calls.append("called") or "全局项目背景摘要。")},
-    )()
     heading = _select_leaf_heading(config, "质量保障措施")
 
     result = writer.build_prompt_result(heading, target_words=1200)
 
-    assert calls == []
     assert "## 项目背景" not in result.prompt
     assert "全局项目背景摘要。" not in result.prompt
     block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")

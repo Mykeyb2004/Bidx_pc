@@ -1254,13 +1254,15 @@ class Config:
 
     @property
     def project_background_scope(self) -> str:
-        """项目背景作用域：global 或 h2_auto。"""
+        """项目背景作用域：固定为 h2_auto，旧 global 已废弃。"""
         value = self._get_first_defined(
             ('processing', 'project_background', 'scope'),
-            default='global',
+            default='h2_auto',
         )
-        normalized = str(value).strip().lower() if value is not None else 'global'
-        return normalized if normalized in {'global', 'h2_auto'} else 'global'
+        normalized = str(value).strip().lower() if value is not None else 'h2_auto'
+        if normalized != 'h2_auto':
+            raise ValueError('processing.project_background.scope 已废弃 global，仅支持 h2_auto 或省略该字段')
+        return 'h2_auto'
 
     @property
     def h2_project_background_enabled(self) -> bool:
@@ -1270,18 +1272,6 @@ class Config:
             and self.processing_path == 'auto'
             and self.project_background_scope == 'h2_auto'
         )
-
-    @property
-    def project_background_cache_dir(self) -> str:
-        """项目背景缓存目录。"""
-        value = self._get_value('processing', 'project_background', 'cache_dir', default=self._MISSING)
-        if value is not self._MISSING:
-            return self._resolve_declared_path(
-                value,
-                resolver=self._resolve_project_path,
-                default=str(self._resolve_project_path('./caches/project_background')),
-            )
-        return str(self._resolve_project_path('./caches/project_background'))
 
     @property
     def project_background_max_chars(self) -> int:
@@ -1344,10 +1334,12 @@ class Config:
         """H2 背景失败时的回退策略。"""
         value = self._get_first_defined(
             ('processing', 'project_background', 'h2', 'fallback'),
-            default='global',
+            default='raw_evidence',
         )
-        normalized = str(value).strip().lower() if value is not None else 'global'
-        return normalized if normalized in {'global', 'raw_evidence', 'empty'} else 'global'
+        normalized = str(value).strip().lower() if value is not None else 'raw_evidence'
+        if normalized not in {'raw_evidence', 'empty'}:
+            raise ValueError('processing.project_background.h2.fallback 已废弃 global，仅支持 raw_evidence / empty')
+        return normalized
 
     @property
     def h2_project_background_cache_dir(self) -> str:

@@ -146,7 +146,7 @@
 
 补充：
 
-- 当 `processing.path=auto`、`processing.project_background.enabled=true` 且 `processing.project_background.scope=h2_auto` 时，项目背景不再取全局摘要，而是通过 `H2ProjectBackgroundGenerator.get_for_heading()` 读取当前章节所属 H2 的背景缓存或按配置补生成
+- 当 `processing.path=auto` 且 `processing.project_background.enabled=true` 时，项目背景通过 `H2ProjectBackgroundGenerator.get_for_heading()` 读取当前章节所属 H2 的背景缓存或按配置补生成；旧的全局项目背景摘要已废弃
 - H2 背景只作为章级项目情境进入 `project_background` section，不替代当前章节的 `评分关注` 和 `需求要点`
 - `full_context` 已经把完整采购需求和评分标准放入 prompt，不再调用 `ProjectBackgroundGenerator.get_or_generate()`，也不会生成 `project_background` section
 
@@ -368,7 +368,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 | `task_card` | `## 章节任务卡` | 总是出现 | 定义当前章节写作任务 |
 | `structure_contract` | 无独立标题；直接输出短提醒列表 | 总是出现 | 提醒“严格遵守 system 硬门禁”并补充 task 侧简短执行规则 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
-| `project_background` | `## 项目背景` | pruned/auto 分支中项目背景摘要非空时 | auto + `scope=h2_auto` 使用当前 H2 背景；full-context 不生成该 section |
+| `project_background` | `## 项目背景` | pruned/auto 分支中 H2 项目背景摘要非空时 | auto 使用当前 H2 背景；full-context 不生成该 section |
 | `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入默认勾选且未被本章排除的全局卡片，以及当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组；full-context 分支中位于章节任务卡和章节边界之后；渲染时会去除“本章节”等来源章节元话语 |
 | `scoring_focus` | `## 评分关注` | pruned 分支且存在命中评分项时 | 只放命中的评分项 |
 | `requirement_brief` | `## 需求要点` | pruned 分支且 `requirement_brief` 非空时 | 实际内容是原文摘录 |
@@ -436,7 +436,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 当 `pruned_context` 成功构建后，user prompt 会追加以下内容：
 
 1. 公共段落中的 `## 章节边界参考`
-2. 如果存在项目背景摘要，则追加 `## 项目背景`；auto + `scope=h2_auto` 时该摘要来自当前章节所属 H2
+2. 如果存在项目背景摘要，则追加 `## 项目背景`；该摘要来自当前章节所属 H2
 3. 如果命中评分项，则追加 `## 评分关注`
 4. 如果 `requirement_brief` 非空，则追加 `## 需求要点`
 5. 否则如果 `requirement_seed` 非空，则追加 `## 需求要点`
@@ -453,9 +453,8 @@ pruned 分支里，需求相关内容只会出现一个区块：
 在 full-context 分支中，会先构建一组稳定前缀段落：
 
 1. `structure_contract`（无 `## 结构输出硬要求` 标题，仅为短提醒列表）
-2. `## 项目背景`，仅在全局项目背景摘要存在时出现
-3. `## 招标需求参考`
-4. `## 评分标准参考`
+2. `## 招标需求参考`
+3. `## 评分标准参考`
 
 对应原文非空时，该 section 才会真正出现。之后再进入章节动态段落，例如 `task_card`、`scope_reference`。
 

@@ -26,7 +26,6 @@ processing:
   path: auto
   project_background:
     enabled: true
-    scope: h2_auto
     max_chars: 800
     h2:
       precompute_on_batch: true
@@ -35,7 +34,7 @@ processing:
       max_evidence_chars: 2400
       include_evidence_in_prompt: false
       min_evidence_blocks: 2
-      fallback: global
+      fallback: raw_evidence
       cache_dir: ./caches/project_background_h2
   knowledge:
     enabled: true

@@ -24,7 +24,6 @@ processing:
   path: "auto"
   project_background:
     enabled: true
-    scope: "h2_auto"
     max_chars: 500
     h2:
       cache_dir: "./cache/h2-bg"

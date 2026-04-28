@@ -23,7 +23,6 @@ from .chapter_writing_plan import ChapterWritingPlanGenerator
 from .generation_trace import GenerationTraceLogger, GenerationTraceSession
 from .h2_project_background import H2ProjectBackgroundGenerator
 from .outline_parser import HeadingNode
-from .project_background import ProjectBackgroundGenerator
 from .timing_logger import write_timing_log
 
 
@@ -101,11 +100,6 @@ class AIWriter:
         )
         self.context_pruner = ChapterContextPruner(config)
         self.trace_logger = GenerationTraceLogger(config)
-        self.project_background_generator = (
-            ProjectBackgroundGenerator(config)
-            if config.project_background_enabled and config.processing_path != "full_context"
-            else None
-        )
         self.h2_project_background_generator = (
             H2ProjectBackgroundGenerator(config)
             if config.h2_project_background_enabled
@@ -709,11 +703,7 @@ class AIWriter:
                 "prompt_kind": "user",
                 "section_names": ["project_background"],
                 "source_context": [
-                    (
-                        "H2ProjectBackgroundGenerator.get_for_heading"
-                        if project_background_trace.get("scope") == "h2"
-                        else "ProjectBackgroundGenerator.get_or_generate"
-                    )
+                    "H2ProjectBackgroundGenerator.get_for_heading"
                     if "project_background" in section_map else "",
                 ],
             },
@@ -838,28 +828,6 @@ class AIWriter:
                 h2_background = self.h2_project_background_generator.get_for_heading(heading)
                 background = h2_background.summary
                 project_background_trace = h2_background.to_trace_payload()
-                if (
-                    not background
-                    and self.project_background_generator is not None
-                    and self.config.h2_project_background_fallback == "global"
-                ):
-                    background = self.project_background_generator.get_or_generate()
-                    project_background_trace = {
-                        "scope": "global",
-                        "summary_chars": len(background),
-                        "cache_status": "fallback",
-                        "fallback_reason": h2_background.fallback_reason,
-                    }
-            elif pruned_context is not None and self.project_background_generator is not None:
-                if status_callback is not None:
-                    status_callback("整理项目背景", "正在整理项目背景...")
-                background = self.project_background_generator.get_or_generate()
-                if background:
-                    project_background_trace = {
-                        "scope": "global",
-                        "summary_chars": len(background),
-                        "cache_status": "unknown",
-                    }
         except Exception:
             background = ""
             project_background_trace = {}

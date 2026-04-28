@@ -64,7 +64,7 @@ processing.path
 - `requirement_brief`
   - 命中的采购需求块进一步抽取出的“原文摘录版需求要点”
 - `project_background`
-  - 在 `auto + processing.project_background.scope=h2_auto` 时，由当前章节所属 H2 的采购需求证据片段生成章级背景摘要
+  - 在 `auto + processing.project_background.enabled=true` 时，由当前章节所属 H2 的采购需求证据片段生成章级背景摘要
 
 ## 3. 当前支持的模式
 
@@ -172,7 +172,6 @@ processing:
   path: auto
   project_background:
     enabled: true
-    scope: h2_auto
 ```
 
 章节 prompt 中的 `## 项目背景` 会由 H2 级背景提供：
