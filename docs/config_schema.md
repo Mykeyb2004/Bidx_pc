@@ -181,6 +181,7 @@ processing:
   - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_FUSED`，默认 `30`
   - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_FINAL`，默认 `8`
   - `BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE`，默认 `0.0`
+- `processing.scoring_classify.cache_dir` 是 auto 模式下 H2 评分分类缓存目录；未配置时默认相对 `project.root_dir` 解析到 `./caches/scoring_classify`。同一 H2 下的 H4/H5 扩写共享 `h2_*.json` 分类缓存。
 - 旧配置中的 `processing.auto.requirements_top_k`、`processing.*.requirements_*`、`processing.*.requirement_brief_enabled` 不再生效；新建或通过配置编辑器保存时不再导出这些字段
 - 旧配置中的 `processing.hybrid_extract.retrieval.*` 仍作为评分检索兼容回退读取；新建或通过配置编辑器保存时不再导出这些专业字段
 - 每条链路自己的参数挂在各自子块下

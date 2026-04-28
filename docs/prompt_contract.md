@@ -90,13 +90,13 @@
 
 当 `ChapterContextPruner.build_context()` 成功返回时，进入 pruned 分支。当前顺序是：
 
-1. `task_card`
-2. `structure_contract`
+1. 可选 `project_background`
+2. 可选 `scoring_focus`
 3. `scope_reference`
-4. 可选 `project_background`
-5. 可选 `scoring_focus`
-6. 可选 `fact_card_context`
-7. 可选 `additional_requirements`
+4. 可选 `fact_card_context`
+5. `structure_contract`
+6. 可选 `additional_requirements`
+7. `task_card`
 
 其中：
 
@@ -118,10 +118,10 @@
 1. `structure_contract`
 2. 可选 `bid_requirements`
 3. 可选 `scoring_criteria`
-4. `task_card`
-5. `scope_reference`
-6. 可选 `fact_card_context`
-7. 可选 `additional_requirements`
+4. `scope_reference`
+5. 可选 `fact_card_context`
+6. 可选 `additional_requirements`
+7. `task_card`
 
 `full_context` 已经把完整采购需求和评分标准放入 prompt，因此不会额外生成 `project_background`。
 
@@ -156,7 +156,7 @@
 `pruned` 分支中的写作依据现在是：
 
 ```text
-- 写作依据：优先根据下方评分关注、项目背景和章节边界组织内容。
+- 写作依据：优先根据前文项目背景、评分关注和章节边界组织内容。
 ```
 
 `full_context` 分支会根据是否存在完整采购需求和评分标准，改成引用前文固定参考材料，避免“下方”指代错位。
@@ -214,25 +214,25 @@ trace 中的 `prompt_contract_blocks` 是维护者摘要层，不会发送给模
 ...
 
 [user]
-## 章节任务卡
-...
-
-请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。
-...
-
-## 章节边界参考
-...
-
 ## 项目背景
 ...
 
 ## 评分关注
 ...
 
+## 章节边界参考
+...
+
 ## 事实卡片参考
 ...
 
+请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。
+...
+
 ## 用户附加要求
+...
+
+## 章节任务卡
 ...
 ```
 
@@ -255,10 +255,10 @@ trace 中的 `prompt_contract_blocks` 是维护者摘要层，不会发送给模
 ## 评分标准参考
 ...
 
-## 章节任务卡
+## 章节边界参考
 ...
 
-## 章节边界参考
+## 章节任务卡
 ...
 ```
 

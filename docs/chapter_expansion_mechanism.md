@@ -165,23 +165,23 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 `AIWriter.build_prompt_result()` 是章节 prompt 的核心装配函数。pruned 分支的默认顺序为：
 
-1. `task_card`
-2. `structure_contract`
+1. `project_background`，若存在
+2. `scoring_focus`，若命中评分项
 3. `scope_reference`
-4. `project_background`，若存在
-5. `scoring_focus`，若命中评分项
-6. 若存在可用事实卡片，则为 `fact_card_context`
-7. `additional_requirements`
+4. 若存在可用事实卡片，则为 `fact_card_context`
+5. `structure_contract`
+6. `additional_requirements`
+7. `task_card`
 
 在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
 
 1. `structure_contract`
 2. `bid_requirements`
 3. `scoring_criteria`
-4. `task_card`
-5. `scope_reference`
-6. 若存在可用事实卡片，则为 `fact_card_context`
-7. `additional_requirements`
+4. `scope_reference`
+5. 若存在可用事实卡片，则为 `fact_card_context`
+6. `additional_requirements`
+7. `task_card`
 
 `full_context` 已经把完整采购需求和评分标准放入 prompt，因此不会再生成或注入 `project_background` 摘要。
 
@@ -303,18 +303,20 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 ### 4.5 评分项路由
 
-评分项路由依赖 `scoring_criteria` 中的 Markdown 表格：
+评分项路由会把 `scoring_criteria` 解析成源文片段，并按当前章节标题链、响应标签和焦点词召回候选评分项：
 
-1. `_parse_markdown_tables()` 解析表格
-2. `_parse_scoring_rows()` 找到“子项/评分项/评审因素”和“评审标准”等列
-3. `_score_criterion()` 根据响应标签、关键词和最长公共子串计算分数
-4. `_score_focus_terms()` 用章节自身焦点词加权
-5. `_route_scoring_items()` 取 Top N 项作为 `scoring_items`
+1. `SourceUnitParser.parse_scoring()` 解析表格或文本型评分标准
+2. `_route_scoring_items_hybrid()` 使用 lexical/vector 检索召回候选
+3. `_verify_hits_if_needed()` 可选调用辅助模型校验候选 ID
+4. `_classify_scoring_with_h2_cache()` 在 `auto` 模式下按当前章节所属 H2 做评分分类
+5. 当前叶子章节只从自己的检索命中里按 H2 分类结果拆成 `scoring_must_respond` / `scoring_reference`
+
+同一个 H2 下的 H4/H5 扩写共用一份 H2 评分分类缓存，缓存文件位于 `processing.scoring_classify.cache_dir` 或默认 `./caches/scoring_classify`，文件名前缀为 `h2_`。缓存 key 包含评分标准全文、H2 完整路径和 H2 子树结构；评分标准或 H2 子树变化后会自动生成新缓存。
 
 维护注意：
 
-- 如果评分标准不是 Markdown 表格，当前路由能力会明显下降
-- 表头命名虽然有别名兼容，但仍依赖表格结构可被解析
+- 评分分类缓存只决定“必需响应/参考”的分组，不替代每个叶子章节自己的评分项检索
+- 缓存值使用稳定评分片段 ID；旧 `h4_*.json` 缓存仍可留在目录中，但新生成会使用 `h2_*.json`
 
 ### 4.6 采购需求如何进入 auto prompt
 

@@ -59,6 +59,14 @@
 
 verifier 只负责选片段 ID，不负责生成或改写评分内容。
 
+### 3.3 auto 下的 H2 评分分类缓存
+
+`auto` 模式命中评分项后，会把评分项进一步分为 `scoring_must_respond` 与 `scoring_reference`。该分类结果按当前章节所属 H2 缓存，同一个 H2 下的 H3/H4/H5 章节共享一次辅助模型分类结果。
+
+缓存文件位于 `processing.scoring_classify.cache_dir`，未配置时默认写入项目根目录下的 `./caches/scoring_classify`。新缓存文件名前缀为 `h2_`，缓存 key 包含评分标准全文、H2 完整路径和 H2 子树结构；评分标准或 H2 子树变化会自动生成新缓存。
+
+注意：H2 评分分类缓存只负责“必需响应/参考”的分组。每个叶子章节仍会先执行自己的评分项检索，然后只对本章节命中的评分项套用 H2 分类结果。
+
 ## 4. H2 项目背景处理
 
 当配置满足：
@@ -124,6 +132,7 @@ processing:
 | `processing.hybrid_extract.retrieval.top_k_final` | `8` | 最终保留候选数 |
 | `processing.hybrid_extract.retrieval.min_fused_score` | `0.0` | 最低融合分 |
 | `processing.hybrid_extract.verify_max_candidates` | `8` | 送入 verifier 的候选数上限 |
+| `processing.scoring_classify.cache_dir` | `./caches/scoring_classify` | auto 下 H2 评分分类缓存目录 |
 
 `auto` 模式下，评分检索的专业参数优先从环境变量读取，适合放在 `.env.local` 中：
 

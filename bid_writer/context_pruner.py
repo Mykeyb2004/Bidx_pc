@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,6 +71,7 @@ class ScoringCriterion:
     standard: str
     weight: str = ""
     match_score: int = 0
+    source_unit_id: str = ""
 
 @dataclass
 class ChapterContext:
@@ -226,78 +229,118 @@ class ChapterContextPruner:
         heading: HeadingNode,
         context: ChapterContext,
     ) -> tuple[list[ScoringCriterion], list[ScoringCriterion]]:
-        """使用 H4 级缓存对评分项做 must_respond/reference 分类。
+        """使用 H2 级缓存对评分项做 must_respond/reference 分类。
 
-        缓存 key 以当前 H4 章节的完整路径为粒度，保证分类结果对本章节精确。
-        分类时传入 H4 标题、完整路径和同级章节信息，让分类器能够区分
-        哪些评分项属于本章节职责范围，哪些应由相邻章节负责。
+        同一个 H2 下的 H4 扩写共用一次评分分类结果，避免每个 H4
+        都重复调用辅助模型。缓存值使用稳定评分项 ID，避免不同 H4
+        命中候选顺序不一致时发生错配。
         """
-        import hashlib
-        from pathlib import Path
-
-        # 缓存 key：当前章节路径 + 评分标准内容，精确到 H4
-        cache_input = (
-            self.config.scoring_criteria.strip()
-            + heading.full_path
-        )
-        cache_key = hashlib.sha1(cache_input.encode("utf-8")).hexdigest()[:16]
-        cache_dir = Path(self.config.scoring_classify_cache_dir)
-        cache_path = cache_dir / f"h4_{cache_key}.json"
+        h2 = self._find_h2_ancestor(heading)
+        cache_path = self._h2_classify_cache_path(h2)
 
         # 尝试读缓存
         cached_ids = self._read_classify_cache(cache_path)
         if cached_ids is not None:
             return self._split_by_cached_ids(context.scoring_items, cached_ids)
 
-        # 未命中：调用 LLMVerifier，传入当前 H4 节点的信息
+        # 未命中：调用 LLMVerifier，传入当前 H2 的信息
+        classification_items = self._collect_h2_classification_items(h2, context)
         all_items = [
             {
-                "id": f"{i}_{item.subitem}",
+                "id": self._scoring_item_id(item),
                 "subitem": item.subitem,
                 "standard": item.standard,
                 "weight": item.weight,
             }
-            for i, item in enumerate(context.scoring_items)
+            for item in classification_items
         ]
 
-        # 同级章节标题，用于帮助分类器判断边界
-        siblings = []
-        if heading.parent:
-            siblings = [node.title for node in heading.parent.children if node is not heading]
-
-        focus_terms = self._build_focus_terms(heading)
-        response_labels = self._extract_response_labels(heading)
-        # 若当前节点无响应标签，补充 H2 的标签作为上下文
-        if not response_labels:
-            h2 = self._find_h2_ancestor(heading)
-            response_labels = self._extract_response_labels(h2)
+        sibling_titles = [node.title for node in h2.children]
+        focus_terms = self._build_focus_terms(h2)
+        response_labels = self._extract_response_labels(h2)
 
         assert self.llm_verifier is not None
         result = self.llm_verifier.classify_scoring(
-            heading_path=heading.full_path,
-            heading_title=heading.title,
+            heading_path=h2.full_path,
+            heading_title=h2.title,
             response_labels=response_labels,
             focus_terms=focus_terms,
             all_scoring_items=all_items,
-            sibling_titles=siblings,
+            sibling_titles=sibling_titles,
         )
 
         # 写缓存
-        self._write_classify_cache(cache_path, result.must_respond_ids, result.reference_ids)
+        self._write_classify_cache(
+            cache_path,
+            result.must_respond_ids,
+            result.reference_ids,
+            scope="h2",
+            heading_path=h2.full_path,
+        )
 
         return self._split_by_ids(
             context.scoring_items,
-            all_items,
             result.must_respond_ids,
             result.reference_ids,
         )
+
+    def _h2_classify_cache_path(self, h2: HeadingNode) -> Path:
+        cache_input = "\n".join(
+            [
+                self.config.scoring_criteria.strip(),
+                h2.full_path,
+                self._subtree_fingerprint(h2),
+            ]
+        )
+        cache_key = hashlib.sha1(cache_input.encode("utf-8")).hexdigest()[:16]
+        cache_dir = Path(self.config.scoring_classify_cache_dir)
+        return cache_dir / f"h2_{cache_key}.json"
+
+    @classmethod
+    def _subtree_fingerprint(cls, root: HeadingNode) -> str:
+        lines: list[str] = []
+
+        def visit(node: HeadingNode) -> None:
+            lines.append(f"{node.level}:{node.full_path}")
+            for child in node.children:
+                visit(child)
+
+        visit(root)
+        return hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _scoring_item_id(cls, item: ScoringCriterion) -> str:
+        if item.source_unit_id:
+            return item.source_unit_id
+        digest_source = "\n".join([item.subitem, item.standard, item.weight])
+        return f"criterion-{hashlib.sha1(digest_source.encode('utf-8')).hexdigest()[:16]}"
+
+    def _collect_h2_classification_items(
+        self,
+        h2: HeadingNode,
+        current_context: ChapterContext,
+    ) -> list[ScoringCriterion]:
+        units = self.source_unit_parser.parse_scoring(
+            self.config.scoring_criteria,
+            parse_mode=self.config.context_pruning_scoring_parse_mode,
+        )
+        if units:
+            return [
+                self._to_scoring_criterion(RetrievedUnit(unit=unit))
+                for unit in units
+            ]
+
+        # 兼容极端解析失败场景：至少用当前章节命中的评分项生成缓存。
+        try:
+            return list(current_context.scoring_items)
+        except Exception:
+            return []
 
     @staticmethod
     def _read_classify_cache(cache_path) -> Optional[dict]:
         try:
             if not cache_path.exists():
                 return None
-            import json
             data = json.loads(cache_path.read_text(encoding="utf-8"))
             if "must_respond_ids" in data and "reference_ids" in data:
                 return data
@@ -306,16 +349,27 @@ class ChapterContextPruner:
             return None
 
     @staticmethod
-    def _write_classify_cache(cache_path, must_ids: list[str], ref_ids: list[str]) -> None:
-        import json
+    def _write_classify_cache(
+        cache_path,
+        must_ids: list[str],
+        ref_ids: list[str],
+        *,
+        scope: str = "",
+        heading_path: str = "",
+    ) -> None:
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = cache_path.with_suffix(".tmp")
+            payload = {
+                "must_respond_ids": must_ids,
+                "reference_ids": ref_ids,
+            }
+            if scope:
+                payload["scope"] = scope
+            if heading_path:
+                payload["heading_path"] = heading_path
             tmp.write_text(
-                json.dumps(
-                    {"must_respond_ids": must_ids, "reference_ids": ref_ids},
-                    ensure_ascii=False,
-                ),
+                json.dumps(payload, ensure_ascii=False),
                 encoding="utf-8",
             )
             tmp.replace(cache_path)
@@ -327,15 +381,18 @@ class ChapterContextPruner:
         scoring_items: list[ScoringCriterion],
         cached: dict,
     ) -> tuple[list[ScoringCriterion], list[ScoringCriterion]]:
-        """按缓存的 ID 前缀（index_subitem）匹配拆分。"""
+        """按缓存 ID 匹配拆分，兼容旧 index_subitem 缓存值。"""
         must_set = set(cached.get("must_respond_ids", []))
         ref_set = set(cached.get("reference_ids", []))
         must, ref = [], []
         for i, item in enumerate(scoring_items):
-            key = f"{i}_{item.subitem}"
-            if key in must_set:
+            keys = {
+                ChapterContextPruner._scoring_item_id(item),
+                f"{i}_{item.subitem}",
+            }
+            if keys & must_set:
                 must.append(item)
-            elif key in ref_set:
+            elif keys & ref_set:
                 ref.append(item)
             else:
                 must.append(item)
@@ -344,17 +401,17 @@ class ChapterContextPruner:
     @staticmethod
     def _split_by_ids(
         scoring_items: list[ScoringCriterion],
-        all_items: list[dict],
         must_ids: list[str],
         ref_ids: list[str],
     ) -> tuple[list[ScoringCriterion], list[ScoringCriterion]]:
         must_set = set(must_ids)
         ref_set = set(ref_ids)
         must, ref = [], []
-        for item_dict, item in zip(all_items, scoring_items):
-            if item_dict["id"] in must_set:
+        for item in scoring_items:
+            key = ChapterContextPruner._scoring_item_id(item)
+            if key in must_set:
                 must.append(item)
-            elif item_dict["id"] in ref_set:
+            elif key in ref_set:
                 ref.append(item)
             else:
                 must.append(item)
@@ -427,6 +484,7 @@ class ChapterContextPruner:
             standard=standard,
             weight=hit.unit.weight_text,
             match_score=int(hit.rerank_score or hit.fused_score or hit.lexical_score),
+            source_unit_id=hit.unit.unit_id,
         )
 
     def _verify_hits_if_needed(

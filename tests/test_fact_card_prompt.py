@@ -111,8 +111,8 @@ def test_full_context_fact_card_context_follows_task_and_scope(monkeypatch, tmp_
     section_order = [section["name"] for section in result.prompt_sections]
     assert section_order.index("bid_requirements") < section_order.index("task_card")
     assert section_order.index("scoring_criteria") < section_order.index("task_card")
-    assert section_order.index("task_card") < section_order.index("scope_reference")
     assert section_order.index("scope_reference") < section_order.index("fact_card_context")
+    assert section_order.index("fact_card_context") < section_order.index("task_card")
 
 
 def test_fact_card_mode_without_selected_cards_injects_no_fact_context(monkeypatch, tmp_path):

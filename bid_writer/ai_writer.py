@@ -163,7 +163,7 @@ class AIWriter:
         full_context_has_scoring_criteria: bool = False,
     ) -> str:
         if pruned_context is not None:
-            return "- 写作依据：优先根据下方评分关注、项目背景和章节边界组织内容。"
+            return "- 写作依据：优先根据前文项目背景、评分关注和章节边界组织内容。"
 
         references: list[str] = []
         if full_context_has_bid_requirements:
@@ -266,7 +266,7 @@ class AIWriter:
     def _build_project_background_section(background: str) -> str:
         return "\n".join([
             "## 项目背景",
-            "以下为当前 H2 相关项目背景材料，供理解整体目标和范围，不直接作为正文内容：",
+            "以下可参考的目背景，供理解整体项目采购目标和需求：",
             background.strip(),
         ])
 
@@ -856,50 +856,17 @@ class AIWriter:
             full_context_has_scoring_criteria=full_context_has_scoring_criteria,
         )
 
-        if pruned_context is None:
-            self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "task_card",
-                self._build_task_card(
-                    heading,
-                    pruned_context,
-                    target_word_range,
-                    chapter_writing_plan=chapter_writing_plan,
-                    max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
-                    task_basis_line=task_basis_line,
-                ),
-            )
-        else:
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "task_card",
-                self._build_task_card(
-                    heading,
-                    pruned_context,
-                    target_word_range,
-                    chapter_writing_plan=chapter_writing_plan,
-                    max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
-                    task_basis_line=task_basis_line,
-                ),
-            )
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "structure_contract",
-                self._build_structure_contract_section(),
-            )
+        task_card = self._build_task_card(
+            heading,
+            pruned_context,
+            target_word_range,
+            chapter_writing_plan=chapter_writing_plan,
+            max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
+            task_basis_line=task_basis_line,
+        )
 
         if pruned_context is not None:
             context_mode = "pruned"
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "scope_reference",
-                scope_reference,
-            )
             if background:
                 self._append_prompt_section(
                     prompt_parts,
@@ -929,6 +896,12 @@ class AIWriter:
                     self._build_scoring_focus_section(pruned_context),
                 )
 
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "scope_reference",
+                scope_reference,
+            )
             if fact_card_context:
                 self._append_prompt_section(
                     prompt_parts,
@@ -936,7 +909,14 @@ class AIWriter:
                     "fact_card_context",
                     fact_card_context,
                 )
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "structure_contract",
+                self._build_structure_contract_section(),
+            )
         else:
+            self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
             self._append_prompt_section(
                 prompt_parts,
                 prompt_sections,
@@ -962,6 +942,13 @@ class AIWriter:
 {additional_requirements}
 """,
             )
+
+        self._append_prompt_section(
+            prompt_parts,
+            prompt_sections,
+            "task_card",
+            task_card,
+        )
 
         prompt = "\n".join(prompt_parts)
         if pruned_context is not None:

@@ -7,7 +7,7 @@ import pytest
 import bid_writer.ai_writer as ai_writer_module
 from bid_writer.ai_writer import AIWriter
 from bid_writer.config import Config
-from bid_writer.context_pruner import ChapterContext
+from bid_writer.context_pruner import ChapterContext, ScoringCriterion
 from bid_writer.fact_card_store import FactCardStore
 from bid_writer.outline_parser import parse_outline
 
@@ -216,8 +216,8 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert "## 完整总大纲参考" not in result.prompt
     assert result.prompt.index("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。") < result.prompt.index("## 招标需求参考")
     assert "## 投标方知识库" not in result.prompt
-    assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节任务卡")
-    assert result.prompt.index("## 章节任务卡") < result.prompt.index("## 章节边界参考")
+    assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节边界参考")
+    assert result.prompt.index("## 章节边界参考") < result.prompt.index("## 章节任务卡")
 
 
 def test_prompt_ignores_deprecated_output_format_and_first_line_template(monkeypatch, tmp_path):
@@ -393,7 +393,7 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     assert captured["scope_reference"].startswith("## 章节边界参考")
     assert result.prompt.startswith(captured["shared_prompt_prefix"])
     assert result.prompt.index("## 章节任务卡") > result.prompt.index("## 评分标准参考")
-    assert result.prompt.index("## 章节边界参考") > result.prompt.index("## 章节任务卡")
+    assert result.prompt.index("## 章节边界参考") < result.prompt.index("## 章节任务卡")
 
 
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):
@@ -505,6 +505,13 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
         "build_context",
         lambda _: ChapterContext(
             chapter_focus_terms=["质量保障措施"],
+            scoring_items=[
+                ScoringCriterion(
+                    subitem="项目实施方案",
+                    standard="对质量保障措施安排具体、可执行。",
+                    weight="12分",
+                )
+            ],
             retrieval_mode="path=auto;vector=off;classify=off",
         ),
     )
@@ -532,7 +539,13 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "## 项目背景" in result.prompt
+    assert "以下可参考的目背景，供理解整体项目采购目标和需求：" in result.prompt
+    assert "以下为当前 H2 相关项目背景材料，供理解整体目标和范围，不直接作为正文内容：" not in result.prompt
     assert "H2专属背景摘要。" in result.prompt
+    section_order = [section["name"] for section in result.prompt_sections]
+    assert section_order.index("project_background") < section_order.index("scoring_focus")
+    assert section_order.index("scoring_focus") < section_order.index("scope_reference")
+    assert section_order.index("scope_reference") < section_order.index("task_card")
     block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
     assert "H2ProjectBackgroundGenerator.get_for_heading" in block["source_context"]
     assert result.project_background_trace["h2_title"] == "项目实施方案"
