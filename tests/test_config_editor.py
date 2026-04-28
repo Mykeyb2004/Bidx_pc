@@ -39,6 +39,8 @@ api:
 
 prompt:
   max_mermaid_flowcharts_per_section: 5
+  hard_constraints:
+    - "旧 system 门禁字段"
 
 output:
   directory: "./output"
@@ -62,9 +64,11 @@ output:
     assert "allow_markdown_headings" not in document.model["writing"]
     assert "allow_english_terms" not in document.model["writing"]
     assert "summary_title" not in document.model["writing"]
+    assert "hard_constraints" not in document.model["writing"]
     assert "allow_markdown_headings" not in payload["writing"]
     assert "allow_english_terms" not in payload["writing"]
     assert "summary_title" not in payload["writing"]
+    assert "hard_constraints" not in payload["writing"]
 
 
 def test_config_editor_preserves_full_context_processing_path(tmp_path: Path):

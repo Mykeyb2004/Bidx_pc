@@ -8,7 +8,7 @@ def test_config_editor_tooltips_cover_key_sections_and_fields():
         "project.root_dir",
         "project.bid_requirements_file",
         "writing.role_mode",
-        "writing.hard_constraints_text",
+        "writing.extra_rules_text",
         "writing.max_mermaid_flowcharts_per_section",
         "processing.path",
         "processing.project_background.enabled",
@@ -28,3 +28,4 @@ def test_config_editor_tooltips_omit_deprecated_writing_fields():
     assert get_tooltip_text("writing.summary_title") == ""
     assert get_tooltip_text("writing.output_format") == ""
     assert get_tooltip_text("writing.first_line_template") == ""
+    assert get_tooltip_text("writing.hard_constraints_text") == ""

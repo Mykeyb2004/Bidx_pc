@@ -134,13 +134,12 @@
 | `writing.target_words.upper_ratio` | 数字输入 |
 | `writing.max_tables_per_section` | 数字输入 |
 | `writing.max_mermaid_flowcharts_per_section` | 数字输入 |
-| `writing.hard_constraints` | 列表编辑器 |
 | `writing.extra_rules` | 列表编辑器 |
 
 交互建议：
 
 - `role` 使用“文件 / 内嵌文本”二选一
-- `hard_constraints` 和 `extra_rules` 提供“新增一条 / 删除 / 上移 / 下移”
+- `extra_rules` 提供“新增一条 / 删除 / 上移 / 下移”
 - 长文本区域支持只读预览和展开编辑
 
 ### 4.3 `处理路径`
@@ -400,7 +399,7 @@
 
 首版与理想方案的差异：
 
-- `hard_constraints` / `extra_rules` 当前采用“每行一条”的文本编辑方式，尚未做成带增删排序按钮的列表控件
+- `extra_rules` 当前采用“每行一条”的文本编辑方式，尚未做成带增删排序按钮的列表控件
 - `hybrid_extract` 高级参数当前直接展开在同页中，尚未单独做折叠交互
 - `legacy_rule / hybrid_extract` 仍未恢复为完整可视化编辑路径，当前更适合继续手工维护 YAML
 - YAML 注释和原字段顺序仍不会被保留，保存后会转为标准化结构

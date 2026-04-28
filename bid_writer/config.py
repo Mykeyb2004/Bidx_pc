@@ -784,11 +784,6 @@ class Config:
         return text
 
     @property
-    def prompt_hard_constraints(self) -> list[str]:
-        """高优先级强约束"""
-        return self._get_string_list(('writing', 'hard_constraints'), ('prompt', 'hard_constraints'), default=[])
-
-    @property
     def prompt_extra_rules(self) -> list[str]:
         """额外提示规则"""
         return self._get_string_list(('writing', 'extra_rules'), ('prompt', 'extra_rules'), default=[])

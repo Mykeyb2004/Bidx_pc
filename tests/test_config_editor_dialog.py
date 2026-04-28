@@ -237,6 +237,7 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     entry_keys = []
     check_keys = []
+    text_keys = []
 
     class FakeWidget:
         def __init__(self, *args, **kwargs):
@@ -259,7 +260,7 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
     dialog._register_tooltip = lambda *_args, **_kwargs: None
     dialog._add_mode_selector = lambda *_args, **_kwargs: None
     dialog._add_path_row = lambda *_args, **_kwargs: None
-    dialog._add_text_block = lambda *_args, **_kwargs: None
+    dialog._add_text_block = lambda _parent, _label, key, **_kwargs: text_keys.append(key)
     dialog._add_entry_row = lambda _parent, _row, _label, key, **_kwargs: entry_keys.append(key)
     dialog._add_number_row = lambda _parent, _row, _label, key, **_kwargs: entry_keys.append(key)
     dialog._add_check_row = lambda _parent, _row, _label, key: check_keys.append(key)
@@ -274,6 +275,7 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
     assert "writing.summary_title" not in entry_keys
     assert "writing.output_format" not in entry_keys
     assert "writing.first_line_template" not in entry_keys
+    assert "writing.hard_constraints_text" not in text_keys
 
 
 def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):

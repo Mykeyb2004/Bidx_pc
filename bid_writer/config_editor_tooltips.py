@@ -30,7 +30,6 @@ FIELD_TOOLTIPS: dict[str, str] = {
     "writing.target_words.upper_ratio": "目标区间上沿相对基准值的倍率。例如 1.15 表示 3000 会自动推导为约 3000-3500 字。",
     "writing.max_tables_per_section": "单节允许出现的最大表格数。数值越大，模型越容易输出表格。",
     "writing.max_mermaid_flowcharts_per_section": "单节允许出现的 Mermaid 图示上限。设为 0 时不注入流程图控制提示。",
-    "writing.hard_constraints_text": "兼容旧字段保留，不再作为 system prompt 门禁来源。请改 ./roles/system_gate_rules.md。",
     "writing.extra_rules_text": "补充写作规则，每行一条。当前会追加到“结构输出硬要求”的末尾，适合放必须跟随结构要求一起传达的业务写作口径。",
     "processing.path": "当前项目的主处理路径。编辑器当前提供 auto 和 full_context 两个入口：auto 会做章节级检索与分类，full_context 会直接把采购需求和评分标准全文拼入提示词。",
     "processing.project_background.enabled": "是否根据采购需求生成项目背景摘要。该配置只服务 auto 链路；full_context 会直接注入完整材料，不再提炼项目背景。",

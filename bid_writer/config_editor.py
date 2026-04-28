@@ -134,7 +134,6 @@ def build_default_editor_model() -> dict[str, Any]:
             "target_words_upper_ratio": 1.15,
             "max_tables_per_section": 2,
             "max_mermaid_flowcharts_per_section": 1,
-            "hard_constraints": [],
             "extra_rules": [],
         },
         "processing": {
@@ -426,9 +425,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                 ),
                 default=0,
             ),
-            "hard_constraints": _coerce_string_list(
-                _first_defined(raw_config, ("writing", "hard_constraints"), ("prompt", "hard_constraints"), default=[]),
-            ),
             "extra_rules": _coerce_string_list(
                 _first_defined(raw_config, ("writing", "extra_rules"), ("prompt", "extra_rules"), default=[]),
             ),
@@ -635,7 +631,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         },
         "max_tables_per_section": int(model["writing"]["max_tables_per_section"]),
         "max_mermaid_flowcharts_per_section": int(model["writing"]["max_mermaid_flowcharts_per_section"]),
-        "hard_constraints": list(model["writing"]["hard_constraints"]),
         "extra_rules": list(model["writing"]["extra_rules"]),
     }
     if model["writing"]["role_mode"] == "inline":

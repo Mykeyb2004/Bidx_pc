@@ -521,16 +521,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_number_row(rules, 1, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section", increment=1)
         rules.columnconfigure(1, weight=1)
 
-        hard_constraints = ttk.LabelFrame(content, text="兼容旧字段（暂不参与 system 门禁）", padding=12)
-        hard_constraints.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
-        self._add_text_block(
-            hard_constraints,
-            "hard_constraints",
-            "writing.hard_constraints_text",
-            help_text="兼容旧配置保留；system 门禁请改 ./roles/system_gate_rules.md。",
-            height=8,
-        )
-
         extra_rules = ttk.LabelFrame(content, text="额外规则", padding=12)
         extra_rules.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
         self._add_text_block(extra_rules, "extra_rules", "writing.extra_rules_text", help_text="每行一条规则。", height=6)
@@ -924,7 +914,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self._set_text_value("project.bid_requirements_text", model["project"]["bid_requirements_text"])
         self._set_text_value("project.scoring_criteria_text", model["project"]["scoring_criteria_text"])
         self._set_text_value("writing.role_text", model["writing"]["role_text"])
-        self._set_text_value("writing.hard_constraints_text", "\n".join(model["writing"]["hard_constraints"]))
         self._set_text_value("writing.extra_rules_text", "\n".join(model["writing"]["extra_rules"]))
         self._update_mode_visibility()
         self._update_processing_visibility()
@@ -962,7 +951,6 @@ class ConfigEditorDialog(tk.Toplevel):
                 "target_words_upper_ratio": self.vars["writing.target_words.upper_ratio"].get().strip(),
                 "max_tables_per_section": self.vars["writing.max_tables_per_section"].get().strip(),
                 "max_mermaid_flowcharts_per_section": self.vars["writing.max_mermaid_flowcharts_per_section"].get().strip(),
-                "hard_constraints": self._split_lines(self._get_text_value("writing.hard_constraints_text")),
                 "extra_rules": self._split_lines(self._get_text_value("writing.extra_rules_text")),
             },
             "processing": {

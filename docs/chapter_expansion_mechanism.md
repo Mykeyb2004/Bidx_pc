@@ -124,7 +124,6 @@ GUI 中批量生成的主要逻辑位于：
 - `prompt.bidder_name`
 - `prompt.max_tables_per_section`
 - `prompt.max_mermaid_flowcharts_per_section`
-- `prompt.hard_constraints`
 - `prompt.extra_rules`
 - `context_pruning.*`
 - `generation_trace.*`
@@ -157,8 +156,8 @@ GUI 中批量生成的主要逻辑位于：
 system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 - `Config.role`
-- `prompt_bidder_name`
-- `prompt_hard_constraints`
+- `roles/system_gate_rules.md`
+- `project.bidder_name`（仅用于替换门禁文件中的 `{bidder_name}`）
 
 其中强约束会被放入“最高优先级输出强约束”区块，优先级高于普通风格建议。
 

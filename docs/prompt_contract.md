@@ -100,9 +100,8 @@
 - `bid_requirements`
 - `scoring_criteria`
 - `additional_requirements`
-- `prompt_hard_constraints`
 
-其中 `bid_requirements`、`scoring_criteria`、`additional_requirements` 会进入 `user prompt`；`prompt_hard_constraints`、`prompt_output_format`、`prompt_first_line_template` 已废弃，不再影响 prompt。
+其中 `bid_requirements`、`scoring_criteria`、`additional_requirements` 会进入 `user prompt`；`prompt.hard_constraints`、`prompt_output_format`、`prompt_first_line_template` 已废弃，不再影响 prompt。
 
 ## 4. 项目采购需求与评分标准提炼
 
@@ -631,7 +630,6 @@ messages = [
 | `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
 | `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
 | `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
-| `prompt_hard_constraints` | `prompt.hard_constraints` | 兼容旧字段，当前不再作为 system prompt 附加强约束来源 | 否 |
 | `prompt_extra_rules` | `prompt.extra_rules` | 追加到 `structure_contract` 末尾的补充规则 | 是 |
 | `additional_requirements` | 运行时入参 | 操作员临时补充的要求 | 是 |
 | `fact_card_mode` | GUI 运行时入参 | 控制是否启用事实卡片模式 | 是 |

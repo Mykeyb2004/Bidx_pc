@@ -10,8 +10,6 @@ project:
 
 writing:
   role_file: "./roles/example_role.md"
-  hard_constraints:
-    - "旧字段不应再进入 system prompt"
   extra_rules:
     - "内容要专业、严谨，符合标书撰写规范。"
     - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"
