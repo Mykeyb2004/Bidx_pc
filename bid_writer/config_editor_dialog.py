@@ -354,7 +354,6 @@ class ConfigEditorDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=(16, 0, 16, 12))
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(1, weight=1)
-        body.columnconfigure(2, weight=0)
         body.rowconfigure(0, weight=1)
 
         sidebar = ttk.Frame(body, padding=(0, 0, 12, 0))
@@ -375,12 +374,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self.content_container.grid(row=0, column=1, sticky="nsew")
         self.content_container.rowconfigure(0, weight=1)
         self.content_container.columnconfigure(0, weight=1)
-
-        self.right_panel = ttk.Frame(body, padding=(16, 0, 0, 0))
-        self.right_panel.grid(row=0, column=2, sticky="nsew")
-        self.right_panel.rowconfigure(3, weight=1)
-        self.right_panel.columnconfigure(0, weight=1)
-        self._create_right_panel()
 
         self._build_project_section()
         self._build_writing_section()
@@ -1035,18 +1028,18 @@ class ConfigEditorDialog(tk.Toplevel):
         if self.document is None:
             return
         model = self._collect_model()
-        messages = self.document.validate(model)
-        summary_lines = summarize_model(model, self.document.env_status)
-
-        self._set_text_readonly(self.summary_text, "\n".join(summary_lines))
-        self._set_text_readonly(self.validation_text, self._format_validation(messages))
-
         yaml_text: str
         try:
             yaml_text = self.document.render_yaml(model)
         except Exception as exc:
             yaml_text = f"# YAML 预览生成失败\n# {exc}\n"
-        self._set_text_readonly(self.yaml_preview, yaml_text)
+
+        if hasattr(self, "summary_text"):
+            messages = self.document.validate(model)
+            summary_lines = summarize_model(model, self.document.env_status)
+            self._set_text_readonly(self.summary_text, "\n".join(summary_lines))
+            self._set_text_readonly(self.validation_text, self._format_validation(messages))
+            self._set_text_readonly(self.yaml_preview, yaml_text)
 
         is_dirty = yaml_text != self._saved_yaml
         base_status = "未保存变更" if is_dirty else "配置已同步"

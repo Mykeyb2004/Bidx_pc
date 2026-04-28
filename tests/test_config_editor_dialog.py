@@ -100,6 +100,67 @@ def test_config_editor_path_browse_button_keeps_right_gutter(monkeypatch):
     assert created_buttons[0].grid_kwargs["padx"] == (8, 12)
 
 
+def test_config_editor_widgets_do_not_create_side_assessment_panel(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.SECTION_LABELS = [("project", "项目")]
+    dialog.section_var = StubVar("project")
+    dialog.current_file_var = StubVar("当前文件：config.yaml")
+    dialog.status_var = StubVar("配置已同步")
+    dialog._tooltips = []
+    dialog.section_pages = {}
+    calls: list[str] = []
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        def grid(self, **_kwargs):
+            return None
+
+        def pack(self, **_kwargs):
+            return None
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+        def rowconfigure(self, *_args, **_kwargs):
+            return None
+
+    class FakeButton(FakeWidget):
+        pass
+
+    class FakeRadio(FakeWidget):
+        pass
+
+    def fail_create_right_panel():
+        raise AssertionError("right assessment panel should not be created")
+
+    dialog.columnconfigure = lambda *_args, **_kwargs: None
+    dialog.rowconfigure = lambda *_args, **_kwargs: None
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+    dialog._create_right_panel = fail_create_right_panel
+    dialog._build_project_section = lambda: calls.append("project")
+    dialog._build_writing_section = lambda: calls.append("writing")
+    dialog._build_processing_section = lambda: calls.append("processing")
+    dialog._build_runtime_section = lambda: calls.append("runtime")
+    dialog._show_current_section = lambda: calls.append("show")
+    dialog._reload_from_disk = lambda: None
+    dialog._save_as = lambda: None
+    dialog._save_current = lambda: None
+    dialog._on_close = lambda: None
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Button", FakeButton)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Radiobutton", FakeRadio)
+
+    dialog._create_widgets()
+
+    assert not hasattr(dialog, "right_panel")
+    assert calls == ["project", "writing", "processing", "runtime", "show"]
+
+
 def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     created_comboboxes = []
