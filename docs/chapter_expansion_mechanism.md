@@ -136,7 +136,7 @@ GUI 中批量生成的主要逻辑位于：
 - 开启流式生成
 - 开启上下文裁剪
 - 开启评分路由
-- 开启 `requirement_brief`
+- auto 链路下通过 H2 项目背景注入采购需求证据
 - 开启 trace 全量落盘
 - 禁止 Markdown 标题
 - 禁止不必要英文
@@ -169,14 +169,9 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 2. `structure_contract`
 3. `scope_reference`
 4. `project_background`，若存在
-5. 若有裁剪上下文：
-   - `scoring_focus`
-   - `requirement_brief` 或 `requirement_points`
+5. `scoring_focus`，若命中评分项
 6. 若存在可用事实卡片，则为 `fact_card_context`
-7. 若没有裁剪上下文：
-   - `bid_requirements`
-   - `scoring_criteria`
-8. `additional_requirements`
+7. `additional_requirements`
 
 在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
 
@@ -285,9 +280,9 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - `match_keywords`
 - `scoring_items`
 - `scoring_candidates`
-- `requirement_seed`
-- `requirement_blocks`
-- `requirement_brief`
+- `scoring_must_respond`
+- `scoring_reference`
+- `selected_scoring_unit_ids`
 
 ### 4.3 响应标签与关键词
 
@@ -304,7 +299,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 当前章节标题
 - 祖先标题
 
-生成一组匹配关键词，用于评分项路由和需求块筛选。
+生成一组匹配关键词，用于评分项路由。
 
 ### 4.5 评分项路由
 
@@ -321,46 +316,24 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 如果评分标准不是 Markdown 表格，当前路由能力会明显下降
 - 表头命名虽然有别名兼容，但仍依赖表格结构可被解析
 
-### 4.6 采购需求块筛选
+### 4.6 采购需求如何进入 auto prompt
 
-需求裁剪流程如下：
+当前不再做叶子章节级采购需求块筛选，也不再生成 `requirement_seed` / `requirement_brief`。
 
-1. `_split_requirement_blocks()` 按空行切块
-2. `_merge_heading_blocks()` 尝试把纯标题块和其后的正文块合并
-3. `_build_requirement_seed()` 对每个需求块按关键词、响应标签、焦点词打分
-4. 高分块进入 `selected`
-5. `_summarize_requirement_blocks()` 将选中的原文块压缩成要点摘要
+`auto` 链路中的采购需求只通过 H2 项目背景进入 prompt：
 
-这里有两个产物：
+1. `H2ProjectBackgroundGenerator` 找到当前章节所属 H2
+2. 基于 H2 标题、路径和子标题从采购需求中检索证据片段
+3. 默认 `content_mode=excerpts` 时，直接把证据原文格式化为 `## 项目背景`
+4. `content_mode=summary` 时，才调用辅助模型生成 H2 摘要
 
-- `requirement_seed`: 归纳后的要点列表
-- `requirement_blocks`: 命中的原始块及其得分、是否被选中
-
-### 4.7 requirement_brief 的真实实现
-
-当前 `requirement_brief` 不是辅助模型生成的摘要，而是从已选中的需求块里抽取原文摘录：
-
-- `_extract_requirement_excerpt()`
-- `_build_requirement_brief()`
-
-它会：
-
-- 过滤低价值块
-- 尝试保留原文语义
-- 最多摘取 4 条
-- 避免重复
-
-因此当前的 `requirements_brief` 更接近“原文摘录”而不是“智能总结”。
-
-但在最终发给模型的 `user prompt` 中，这部分仍以“需求要点”标题呈现，以保持和任务卡里的“根据下方评分关注和需求要点组织内容”一致，避免前后指代漂移。
+因此，当前 pruned/auto prompt 中不存在 `## 需求要点`。
 
 ### 4.8 调试输出
 
 当 `context_pruning.debug_dump` 开启时，`dump_debug()` 会在输出目录下写入 `_context_pruning_debug` 调试文件，便于维护者检查：
 
 - 命中的评分项
-- 需求 seed
-- 需求原文摘录
 - 局部大纲
 - prompt 长度
 
@@ -523,7 +496,7 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 
 ### 9.2 Prompt Contract 摘要层
 
-当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含八个 block：
+当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含七个 block：
 
 1. `system_constraints`
 2. `chapter_task`
@@ -531,8 +504,7 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 4. `chapter_scope`
 5. `project_background`
 6. `fact_card_context`
-7. `requirement_context`
-8. `scoring_context`
+7. `scoring_context`
 
 这层不是替代原始 prompt sections，而是为了让维护者更快看懂“一次章节扩写到底喂给了模型什么”。
 

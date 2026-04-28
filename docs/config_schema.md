@@ -36,32 +36,22 @@
 
 ## 2. `processing` 的 canonical 设计
 
-`processing` 推荐保留 4 条业务路径：
+`processing` 当前推荐保留 2 条主业务路径：
 
 - `full_context`
   - 采购需求和评分标准都不做章节级处理，直接把完整原文送入主 prompt
-- `legacy_rule`
-  - 采购需求和评分标准都走现有规则链路
-- `hybrid_extract`
-  - 采购需求和评分标准都走检索摘录链路
 - `auto`
-  - 走章节级智能裁剪链路：评分项与采购需求先检索，再按章节/H2 边界组织上下文
+  - 评分标准走章节级检索/分类
+  - 采购需求只用于 H2 项目背景证据，不再生成叶子章节“需求要点”
 
 推荐写法：
 
 ```yaml
 processing:
-  path: "auto" # full_context / legacy_rule / hybrid_extract / auto
+  path: "auto" # auto / full_context
 ```
 
-在 canonical schema 中，不再推荐把“评分标准”和“采购需求”的主链路拆成两条可自由混搭的项目级参数。
-
-旧 schema 理论上允许 mixed-mode：
-
-- `context_pruning.scoring.mode = legacy_rule`
-- `context_pruning.requirements.mode = hybrid_extract`
-
-当前代码仍保留兼容，但这只是兼容层，不再作为推荐写法继续推广。
+`legacy_rule` / `hybrid_extract` 仍作为旧配置兼容路径存在，当前只影响评分标准路由。旧 `context_pruning.requirements.*` 会被忽略或在规范化保存时丢弃。
 
 ## 3. 推荐字段布局
 
@@ -144,7 +134,7 @@ processing:
       max_evidence_blocks: 6
       max_evidence_chars: 2400
       content_mode: "excerpts" # excerpts / summary
-      min_evidence_blocks: 2
+      min_evidence_blocks: 1
       fallback: "raw_evidence" # raw_evidence / empty
       cache_dir: "./caches/project_background_h2"
   chapter_facts:
@@ -155,18 +145,10 @@ processing:
     chapter_writing_plan:
       enabled: false
       max_chars: 320
-  legacy_rule:
-    scoring_max_rows: 4
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: true
   hybrid_extract:
     unavailable_policy: "fail_fast"
     scoring_parse_mode: "auto"
-    scoring_max_rows: 4
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: true
+    scoring_max_rows: 20
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8
@@ -178,21 +160,20 @@ processing:
 - `processing.project_background.*` 只服务 `processing.path: auto` 链路；`full_context` 会直接注入完整采购需求和评分标准，不再额外提炼或注入项目背景摘要
 - `processing.project_background.enabled` 控制 auto 链路是否注入 H2 级项目背景
 - `processing.project_background.scope` 已废弃；auto 链路只支持 H2 级项目背景，旧值 `global` 会被运行时拒绝
-- `processing.project_background.max_chars` 是 `summary` 模式下项目背景摘要的目标长度上限
-- `processing.project_background.h2.precompute_on_batch` 控制批量生成前是否一次性预生成所有 H2 背景缓存
+- `processing.project_background.max_chars` 是 `summary` 模式下项目背景摘要的目标长度上限；配置编辑器仅在 `summary` 模式下启用该输入
+- `processing.project_background.h2.precompute_on_batch` 是后端兼容字段；当前配置编辑器暂不展示，GUI 批量流程也尚未接入预生成阶段
 - `processing.project_background.h2.generate_missing_on_single` 控制单章节生成时若当前 H2 背景缺失，是否补生成一次
 - `processing.project_background.h2.max_evidence_blocks` / `max_evidence_chars` 限制 H2 背景使用的采购需求原文摘录数量与总长度
 - `processing.project_background.h2.content_mode` 控制 H2 背景内容：`excerpts` 直接注入采购需求原文摘录，`summary` 调用辅助模型生成摘要；默认 `excerpts`
 - `processing.project_background.h2.include_evidence_in_prompt` 已废弃，仅为旧配置兼容读取；新配置保存时不再输出
-- `processing.project_background.h2.min_evidence_blocks` 是生成 H2 背景所需的证据片段下限，低于该值会触发回退
+- `processing.project_background.h2.min_evidence_blocks` 是生成 H2 背景所需的证据片段下限，默认 `1`；低于该值会触发回退
 - `processing.project_background.h2.fallback` 支持 `raw_evidence` / `empty`；有已命中片段时 `raw_evidence` 使用原文片段，无命中时不注入项目背景；旧值 `global` 已废弃并会被运行时拒绝
 - `processing.project_background.h2.cache_dir` 默认相对 `project.root_dir` 解析，用于保存 H2 背景 JSON 缓存
 - `processing.knowledge.*` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再注入 `knowledge_context`
 - `processing.chapter_facts.*` 控制正文 facts 提炼与缓存刷新边界；`auto_extract_on_batch` 只建议用于批量生成路径
 - `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”
 - 开启后会增加一次辅助 LLM 调用；当前实现会尽量复用正文扩写的 system prompt 与 full-context 参考前缀，以改善 prompt cache 命中率
-- auto 模式下的需求检索专业参数不再写入 YAML，也不在配置编辑器展示；如需调整，放入 `.env.local` 或外部环境变量：
-  - `BID_WRITER_AUTO_REQUIREMENTS_TOP_K`，默认 `8`
+- auto 模式下的评分检索专业参数不再写入 YAML，也不在配置编辑器展示；如需调整，放入 `.env.local` 或外部环境变量：
   - `BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED`，默认 `true`
   - `BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED`，默认 `false`
   - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL`，默认 `20`
@@ -200,7 +181,8 @@ processing:
   - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_FUSED`，默认 `30`
   - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_FINAL`，默认 `8`
   - `BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE`，默认 `0.0`
-- 旧配置中的 `processing.auto.requirements_top_k` 与 `processing.hybrid_extract.retrieval.*` 仍作为兼容回退读取；新建或通过配置编辑器保存时不再导出这些字段
+- 旧配置中的 `processing.auto.requirements_top_k`、`processing.*.requirements_*`、`processing.*.requirement_brief_enabled` 不再生效；新建或通过配置编辑器保存时不再导出这些字段
+- 旧配置中的 `processing.hybrid_extract.retrieval.*` 仍作为评分检索兼容回退读取；新建或通过配置编辑器保存时不再导出这些专业字段
 - 每条链路自己的参数挂在各自子块下
 - `verify_enabled` 统一表达原先 `rerank_enabled` / `llm_verify_enabled` 那条候选校验链路
 

@@ -151,7 +151,7 @@ def test_fact_card_prompt_includes_usage_rules():
     section = build_fact_card_prompt_section(cards)
 
     assert "若事实卡片与采购需求或评分标准冲突，以采购需求和评分标准为准。" in section
-    assert "参考事实只在与当前章节标题、评分关注或需求要点直接相关时吸收" in section
+    assert "参考事实只在与当前章节标题、评分关注或项目背景直接相关时吸收" in section
     assert "不要照搬来源章节中的“本章节”“本文”“上述内容”等指代" in section
 
 

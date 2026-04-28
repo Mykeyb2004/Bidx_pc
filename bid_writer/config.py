@@ -393,13 +393,6 @@ class Config:
         )
         return self._normalize_mode(value, default=self._legacy_context_pruning_base_mode())
 
-    def _legacy_context_pruning_requirements_mode(self) -> str:
-        value = self._get_first_defined(
-            ('context_pruning', 'requirements', 'mode'),
-            default=self._legacy_context_pruning_base_mode(),
-        )
-        return self._normalize_mode(value, default=self._legacy_context_pruning_base_mode())
-
     def _using_new_processing_schema(self) -> bool:
         return self._get_value('processing', 'path', default=self._MISSING) is not self._MISSING
 
@@ -413,11 +406,7 @@ class Config:
         if not self._legacy_context_pruning_enabled():
             return 'full_context'
 
-        scoring_mode = self._legacy_context_pruning_scoring_mode()
-        requirements_mode = self._legacy_context_pruning_requirements_mode()
-        if scoring_mode == requirements_mode:
-            return scoring_mode
-        return 'mixed'
+        return self._legacy_context_pruning_scoring_mode()
 
     def _get_processing_branch_value(self, *path: str, default: Any = _MISSING) -> Any:
         """按当前 processing.path 优先读取对应链路参数。"""
@@ -887,61 +876,6 @@ class Config:
         )
 
     @property
-    def context_pruning_requirements_mode(self) -> str:
-        """采购需求提炼模式。"""
-        if self._using_new_processing_schema():
-            if self.processing_path == 'hybrid_extract':
-                return 'hybrid_extract'
-            if self.processing_path in {'full_context', 'legacy_rule'}:
-                return 'legacy_rule'
-        return self._legacy_context_pruning_requirements_mode()
-
-    @property
-    def context_pruning_requirements_max_quotes(self) -> int:
-        """采购需求摘录最多保留条数。"""
-        return self._get_int(
-            ('processing', self.processing_path, 'requirements_max_quotes'),
-            ('processing', 'legacy_rule', 'requirements_max_quotes'),
-            ('processing', 'hybrid_extract', 'requirements_max_quotes'),
-            ('context_pruning', 'requirements', 'max_quotes'),
-            default=4,
-        )
-
-    @property
-    def context_pruning_requirements_max_quote_chars(self) -> int:
-        """采购需求单条摘录最大字符数。"""
-        return self._get_int(
-            ('processing', self.processing_path, 'requirements_max_quote_chars'),
-            ('processing', 'legacy_rule', 'requirements_max_quote_chars'),
-            ('processing', 'hybrid_extract', 'requirements_max_quote_chars'),
-            ('context_pruning', 'requirements', 'max_quote_chars'),
-            default=220,
-        )
-
-    @property
-    def context_pruning_requirements_brief_enabled(self) -> bool:
-        """是否启用需求摘要。"""
-        return self._get_bool(
-            ('processing', self.processing_path, 'requirement_brief_enabled'),
-            ('processing', 'legacy_rule', 'requirement_brief_enabled'),
-            ('processing', 'hybrid_extract', 'requirement_brief_enabled'),
-            ('context_pruning', 'requirements_brief', 'enabled'),
-            default=False,
-        )
-
-    @property
-    def context_pruning_requirements_brief_fallback(self) -> str:
-        """需求摘要失败时的回退策略。"""
-        value = self._get_first_defined(
-            ('processing', self.processing_path, 'requirement_brief_fallback'),
-            ('processing', 'legacy_rule', 'requirement_brief_fallback'),
-            ('processing', 'hybrid_extract', 'requirement_brief_fallback'),
-            ('context_pruning', 'requirements_brief', 'fallback'),
-            default='rule_only',
-        )
-        return str(value).strip() if value is not None else 'rule_only'
-
-    @property
     def context_pruning_retrieval_lexical_enabled(self) -> bool:
         """是否启用 lexical retrieval。"""
         if self.processing_path == 'auto':
@@ -1153,13 +1087,6 @@ class Config:
             self.context_pruning_enabled
             and (
                 processing_path == 'hybrid_extract'
-                or (
-                    processing_path == 'mixed'
-                    and (
-                        self._legacy_context_pruning_scoring_mode() == 'hybrid_extract'
-                        or self._legacy_context_pruning_requirements_mode() == 'hybrid_extract'
-                    )
-                )
             )
         )
         if not hybrid_requested:
@@ -1338,7 +1265,7 @@ class Config:
         """生成 H2 背景所需的最少证据片段数。"""
         return self._get_int(
             ('processing', 'project_background', 'h2', 'min_evidence_blocks'),
-            default=2,
+            default=1,
         )
 
     @property
@@ -1376,17 +1303,6 @@ class Config:
                 default=str(self._resolve_project_path('./caches/scoring_classify')),
             )
         return str(self._resolve_project_path('./caches/scoring_classify'))
-
-    @property
-    def auto_requirements_top_k(self) -> int:
-        """auto 模式下需求检索的 top-K 数量。"""
-        env_value = self._get_env_int('BID_WRITER_AUTO_REQUIREMENTS_TOP_K')
-        if env_value is not None:
-            return env_value
-        return self._get_int(
-            ('processing', 'auto', 'requirements_top_k'),
-            default=8,
-        )
 
     @property
     def chapter_writing_plan_enabled(self) -> bool:

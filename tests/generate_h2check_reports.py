@@ -15,7 +15,7 @@ DEFAULT_CONFIGS = [
     "config_公共服务满意度_hybrid_extract_full.yaml",
 ]
 OUTPUT_DIR = Path("output/h2check")
-REQUIREMENT_SECTION_NAMES = {"requirement_brief", "requirement_points"}
+PROJECT_BACKGROUND_SECTION_NAME = "project_background"
 SCORING_SECTION_NAME = "scoring_focus"
 
 
@@ -47,23 +47,9 @@ def _format_scoring_items(context: ChapterContext) -> str:
     return "\n".join(lines).strip()
 
 
-def _format_selected_requirement_blocks(context: ChapterContext) -> str:
-    selected = [match for match in context.requirement_blocks if match.selected and match.block.strip()]
-    if not selected:
-        return "（无）"
-
-    lines: list[str] = []
-    for index, match in enumerate(selected, start=1):
-        lines.append(f"{index}. block_index={match.index} score={match.score} chars={match.chars}")
-        lines.append("")
-        lines.append(match.block.strip())
-        lines.append("")
-    return "\n".join(lines).strip()
-
-
 def _render_h2_entry(
     heading: HeadingNode,
-    requirement_text: str,
+    project_background_text: str,
     scoring_text: str,
     context: ChapterContext | None,
 ) -> str:
@@ -79,8 +65,8 @@ def _render_h2_entry(
             [
                 "- context_status: pruned_context_failed_or_fallback_to_full",
                 "",
-                "### 采购需求提炼输出",
-                requirement_text or "（无）",
+                "### H2 项目背景输出",
+                project_background_text or "（无）",
                 "",
                 "### 评分标准提炼输出",
                 scoring_text or "（无）",
@@ -93,17 +79,13 @@ def _render_h2_entry(
         [
             f"- retrieval_mode: {context.retrieval_mode or '（无）'}",
             f"- fallback_reason: {context.fallback_reason or '（无）'}",
-            f"- selected_requirement_unit_ids: {', '.join(context.selected_requirement_unit_ids) if context.selected_requirement_unit_ids else '（无）'}",
             f"- selected_scoring_unit_ids: {', '.join(context.selected_scoring_unit_ids) if context.selected_scoring_unit_ids else '（无）'}",
             "",
-            "### 采购需求提炼输出",
-            requirement_text or "（无）",
+            "### H2 项目背景输出",
+            project_background_text or "（无）",
             "",
             "### 评分标准提炼输出",
             scoring_text or "（无）",
-            "",
-            "### 命中采购需求原文块",
-            _format_selected_requirement_blocks(context),
             "",
             "### 命中评分标准原文块",
             _format_scoring_items(context),
@@ -130,19 +112,18 @@ def build_report(config_path: Path) -> str:
         f"- h2_count: {len(h2_headings)}",
         f"- context_pruning_mode: {config.context_pruning_mode}",
         f"- scoring_mode: {config.context_pruning_scoring_mode}",
-        f"- requirements_mode: {config.context_pruning_requirements_mode}",
         f"- vector_enabled: {config.context_pruning_retrieval_vector_enabled}",
         f"- rerank_or_verify_enabled: {config.context_pruning_rerank_or_verify_enabled}",
         "",
-        "> 说明：以下“采购需求提炼输出”和“评分标准提炼输出”均为当前代码实际拼给模型的 section 文本，不是手工重写。",
+        "> 说明：以下“H2 项目背景输出”和“评分标准提炼输出”均为当前代码实际拼给模型的 section 文本，不是手工重写。",
         "",
     ]
 
     for heading in h2_headings:
         prompt_result = writer.build_prompt_result(heading)
-        requirement_text = _find_section(prompt_result.prompt_sections, REQUIREMENT_SECTION_NAMES)
+        project_background_text = _find_section(prompt_result.prompt_sections, PROJECT_BACKGROUND_SECTION_NAME)
         scoring_text = _find_section(prompt_result.prompt_sections, SCORING_SECTION_NAME)
-        lines.append(_render_h2_entry(heading, requirement_text, scoring_text, prompt_result.pruned_context))
+        lines.append(_render_h2_entry(heading, project_background_text, scoring_text, prompt_result.pruned_context))
         lines.append("")
 
     return "\n".join(lines).strip() + "\n"
@@ -156,7 +137,7 @@ def write_report(config_path: Path, output_dir: Path) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="生成 H2 节点的采购需求/评分标准提炼核查报告")
+    parser = argparse.ArgumentParser(description="生成 H2 节点的项目背景/评分标准提炼核查报告")
     parser.add_argument(
         "--config",
         dest="configs",

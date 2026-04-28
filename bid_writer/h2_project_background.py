@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -24,6 +25,7 @@ from .source_unit_parser import SourceUnitParser
 
 
 PROMPT_VERSION = "h2-project-background-v1"
+_SENTENCE_BOUNDARY_RE = re.compile(r'[。！？!?；;\n]')
 
 
 @dataclass
@@ -451,10 +453,27 @@ class H2ProjectBackgroundGenerator:
             if remaining <= 0:
                 break
             if len(text) > remaining:
-                text = text[:remaining].rstrip()
+                text = self._trim_to_sentence_boundary(text, remaining)
+                if not text:
+                    continue
             trimmed.append(text)
             used += len(text)
         return trimmed
+
+    @staticmethod
+    def _trim_to_sentence_boundary(text: str, max_chars: int) -> str:
+        if max_chars <= 0:
+            return ""
+        candidate = text.strip()
+        if len(candidate) <= max_chars:
+            return candidate
+        candidate = candidate[:max_chars].rstrip()
+        last_boundary_end = 0
+        for match in _SENTENCE_BOUNDARY_RE.finditer(candidate):
+            last_boundary_end = match.end()
+        if last_boundary_end <= 0:
+            return ""
+        return candidate[:last_boundary_end].rstrip()
 
     def _fallback_result(
         self,

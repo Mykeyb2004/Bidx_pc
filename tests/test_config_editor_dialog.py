@@ -366,6 +366,7 @@ def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
 def test_config_editor_project_background_omits_scope_and_global_fallback(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     created_comboboxes = []
+    check_row_keys = []
 
     class FakeWidget:
         def __init__(self, *args, **kwargs):
@@ -401,7 +402,6 @@ def test_config_editor_project_background_omits_scope_and_global_fallback(monkey
         "processing.path": StubVar("auto"),
         "processing.project_background.enabled": StubVar(True),
         "processing.project_background.max_chars": StubVar("800"),
-        "processing.project_background.h2.precompute_on_batch": StubVar(True),
         "processing.project_background.h2.generate_missing_on_single": StubVar(True),
         "processing.project_background.h2.max_evidence_blocks": StubVar("6"),
         "processing.project_background.h2.max_evidence_chars": StubVar("2400"),
@@ -412,7 +412,7 @@ def test_config_editor_project_background_omits_scope_and_global_fallback(monkey
     }
     dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
     dialog._register_tooltip = lambda *_args, **_kwargs: None
-    dialog._add_check_row = lambda *_args, **_kwargs: None
+    dialog._add_check_row = lambda _parent, _row, _label, key: check_row_keys.append(key)
     dialog._add_entry_row = lambda *_args, **_kwargs: FakeWidget()
     dialog._add_path_row = lambda *_args, **_kwargs: None
     dialog._schedule_refresh = lambda: None
@@ -428,6 +428,7 @@ def test_config_editor_project_background_omits_scope_and_global_fallback(monkey
     fallback_box = created_comboboxes[-1]
     assert fallback_box.kwargs["state"] == "readonly"
     assert fallback_box.kwargs["values"] == ("raw_evidence", "empty")
+    assert "processing.project_background.h2.precompute_on_batch" not in check_row_keys
 
 
 def test_config_editor_full_context_hides_project_background_frame():
@@ -495,6 +496,7 @@ def test_config_editor_h2_project_background_controls_follow_enabled_state():
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     dialog.vars = {
         "processing.project_background.enabled": StubVar(True),
+        "processing.project_background.h2.content_mode": StubVar("excerpts"),
     }
 
     class FakeFrame:
@@ -515,7 +517,45 @@ def test_config_editor_h2_project_background_controls_follow_enabled_state():
             self.states.append(kwargs["state"])
 
     max_chars_control = FakeControl()
-    dialog.processing_project_background_optional_controls = [
+    dialog.processing_project_background_optional_controls = []
+    dialog.processing_project_background_summary_controls = [
+        (max_chars_control, "normal"),
+    ]
+    dialog.processing_project_background_h2_frame = FakeFrame()
+
+    dialog._update_project_background_visibility()
+
+    assert max_chars_control.states == ["disabled"]
+    assert dialog.processing_project_background_h2_frame.actions == ["grid"]
+
+
+def test_config_editor_h2_summary_mode_enables_summary_controls():
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {
+        "processing.project_background.enabled": StubVar(True),
+        "processing.project_background.h2.content_mode": StubVar("summary"),
+    }
+
+    class FakeFrame:
+        def __init__(self):
+            self.actions: list[str] = []
+
+        def grid(self):
+            self.actions.append("grid")
+
+        def grid_remove(self):
+            self.actions.append("remove")
+
+    class FakeControl:
+        def __init__(self):
+            self.states: list[str] = []
+
+        def configure(self, **kwargs):
+            self.states.append(kwargs["state"])
+
+    max_chars_control = FakeControl()
+    dialog.processing_project_background_optional_controls = []
+    dialog.processing_project_background_summary_controls = [
         (max_chars_control, "normal"),
     ]
     dialog.processing_project_background_h2_frame = FakeFrame()

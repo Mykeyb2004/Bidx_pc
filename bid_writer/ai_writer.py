@@ -71,7 +71,6 @@ class AIWriter:
         ("chapter_scope", "Chapter Scope", "user"),
         ("project_background", "Project Background", "user"),
         ("fact_card_context", "Fact Card Context", "user"),
-        ("requirement_context", "Requirement Context", "user"),
         ("scoring_context", "Scoring Context", "user"),
     )
 
@@ -164,7 +163,7 @@ class AIWriter:
         full_context_has_scoring_criteria: bool = False,
     ) -> str:
         if pruned_context is not None:
-            return "- 写作依据：优先根据下方评分关注和需求要点组织内容。"
+            return "- 写作依据：优先根据下方评分关注、项目背景和章节边界组织内容。"
 
         references: list[str] = []
         if full_context_has_bid_requirements:
@@ -719,17 +718,6 @@ class AIWriter:
                 ],
             },
             {
-                "id": "requirement_context",
-                "label": "Requirement Context",
-                "prompt_kind": "user",
-                "section_names": ["requirement_brief", "requirement_points", "bid_requirements"],
-                "source_context": [
-                    "pruned_context.requirement_brief" if "requirement_brief" in section_map else "",
-                    "pruned_context.requirement_seed" if "requirement_points" in section_map else "",
-                    "Config.bid_requirements" if "bid_requirements" in section_map else "",
-                ],
-            },
-            {
                 "id": "scoring_context",
                 "label": "Scoring Context",
                 "prompt_kind": "user",
@@ -939,29 +927,6 @@ class AIWriter:
                     prompt_sections,
                     "scoring_focus",
                     self._build_scoring_focus_section(pruned_context),
-                )
-
-            if pruned_context.requirement_brief:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "requirement_brief",
-                    f"""
-## 需求要点
-以下为从项目采购需求原文中摘取的当前章节相关内容，请优先围绕这些要求写作，并尽量贴合原文表述，不要把摘录重新概括成“必须覆盖”“硬约束”等元语言：
-{pruned_context.requirement_brief}
-""",
-                )
-            elif pruned_context.requirement_seed:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "requirement_points",
-                    f"""
-## 需求要点
-以下为从项目采购需求中提炼出的当前章节要点，请优先围绕这些要求写作：
-{pruned_context.requirement_seed}
-""",
                 )
 
             if fact_card_context:

@@ -40,9 +40,6 @@ processing:
   path: "legacy_rule"
   legacy_rule:
     scoring_max_rows: 3
-    requirements_max_quotes: 2
-    requirements_max_quote_chars: 180
-    requirement_brief_enabled: true
   hybrid_extract:
     retrieval:
       lexical_enabled: true
@@ -74,11 +71,7 @@ runtime:
     assert config.processing_path == "legacy_rule"
     assert config.context_pruning_enabled is True
     assert config.context_pruning_scoring_mode == "legacy_rule"
-    assert config.context_pruning_requirements_mode == "legacy_rule"
     assert config.context_pruning_scoring_max_rows == 3
-    assert config.context_pruning_requirements_max_quotes == 2
-    assert config.context_pruning_requirements_max_quote_chars == 180
-    assert config.context_pruning_requirements_brief_enabled is True
     assert config.output_directory == str(project_root / "output")
     assert config.generation_trace_directory == str(tmp_path / "trace-output")
     assert config.embedding_cache_dir == str(Path(sys.argv[0]).resolve().parent / "embedding_cache")
@@ -322,7 +315,6 @@ def test_env_local_values_refresh_between_config_directories(monkeypatch, tmp_pa
 
 def test_auto_retrieval_settings_are_loaded_from_env_local(monkeypatch, tmp_path: Path):
     for key in (
-        "BID_WRITER_AUTO_REQUIREMENTS_TOP_K",
         "BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED",
         "BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED",
         "BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL",
@@ -338,8 +330,6 @@ def test_auto_retrieval_settings_are_loaded_from_env_local(monkeypatch, tmp_path
         """
 processing:
   path: "auto"
-  auto:
-    requirements_top_k: 3
   hybrid_extract:
     retrieval:
       lexical_enabled: false
@@ -354,7 +344,6 @@ processing:
     )
     (tmp_path / ".env.local").write_text(
         """
-BID_WRITER_AUTO_REQUIREMENTS_TOP_K=11
 BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED=true
 BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED=true
 BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL=21
@@ -368,7 +357,6 @@ BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE=0.35
 
     config = Config(str(config_path))
 
-    assert config.auto_requirements_top_k == 11
     assert config.context_pruning_retrieval_lexical_enabled is True
     assert config.context_pruning_retrieval_vector_enabled is True
     assert config.context_pruning_retrieval_top_k_lexical == 21
@@ -509,7 +497,7 @@ processing:
     assert config.h2_project_background_max_evidence_chars == 2400
     assert config.h2_project_background_include_evidence_in_prompt is False
     assert config.h2_project_background_content_mode == "excerpts"
-    assert config.h2_project_background_min_evidence_blocks == 2
+    assert config.h2_project_background_min_evidence_blocks == 1
     assert config.h2_project_background_fallback == "raw_evidence"
     assert config.h2_project_background_cache_dir == str(tmp_path / "caches" / "project_background_h2")
 
@@ -649,7 +637,7 @@ output:
     assert config.output_directory == str(tmp_path / "output")
 
 
-def test_mixed_legacy_modes_remain_compatible(tmp_path: Path):
+def test_legacy_requirements_mode_is_ignored(tmp_path: Path):
     config_path = tmp_path / "mixed.yaml"
     config_path.write_text(
         """
@@ -666,7 +654,6 @@ context_pruning:
 
     config = Config(str(config_path))
 
-    assert config.processing_path == "mixed"
+    assert config.processing_path == "legacy_rule"
     assert config.context_pruning_enabled is True
     assert config.context_pruning_scoring_mode == "legacy_rule"
-    assert config.context_pruning_requirements_mode == "hybrid_extract"

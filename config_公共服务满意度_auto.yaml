@@ -33,7 +33,7 @@ processing:
       max_evidence_blocks: 6
       max_evidence_chars: 2400
       content_mode: excerpts
-      min_evidence_blocks: 2
+      min_evidence_blocks: 1
       fallback: raw_evidence
       cache_dir: ./caches/project_background_h2
   knowledge:

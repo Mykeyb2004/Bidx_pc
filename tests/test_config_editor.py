@@ -170,8 +170,6 @@ project:
 
 processing:
   path: "auto"
-  auto:
-    requirements_top_k: 13
   hybrid_extract:
     scoring_parse_mode: "auto"
     scoring_max_rows: 5
@@ -252,7 +250,7 @@ processing:
     assert any("project_background.h2.fallback" in text for text in errors)
 
 
-def test_config_editor_validation_requires_explicit_processing_path_for_legacy_mixed_mode(tmp_path: Path):
+def test_config_editor_ignores_legacy_requirements_mode_when_deriving_path(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "mixed.yaml"
     config_path.write_text(
@@ -275,7 +273,7 @@ context_pruning:
     document = load_config_editor_document(config_path)
     messages = document.validate()
 
-    assert document.model["processing"]["path"] == "mixed"
+    assert document.model["processing"]["path"] == "legacy_rule"
     assert any("processing.path" in message.text for message in messages if message.level == "error")
 
 
@@ -359,18 +357,10 @@ processing:
   path: "hybrid_extract"
   legacy_rule:
     scoring_max_rows: 4
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: false
-    requirement_brief_fallback: "rule_only"
   hybrid_extract:
     unavailable_policy: "fallback_legacy"
     scoring_parse_mode: "auto"
     scoring_max_rows: 4
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: false
-    requirement_brief_fallback: "rule_only"
     retrieval:
       lexical_enabled: true
       vector_enabled: true
@@ -436,7 +426,7 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
             "max_evidence_blocks": 6,
             "max_evidence_chars": 2400,
             "content_mode": "excerpts",
-            "min_evidence_blocks": 2,
+            "min_evidence_blocks": 1,
             "fallback": "raw_evidence",
             "cache_dir": "./caches/project_background_h2",
         },

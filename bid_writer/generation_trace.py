@@ -317,10 +317,6 @@ class GenerationTraceSession:
                     f"- fallback_reason: {self.pruned_context.fallback_reason or '（无）'}",
                     f"- response_labels: {', '.join(self.pruned_context.response_labels) if self.pruned_context.response_labels else '（无）'}",
                     f"- scoring_items: {len(self.pruned_context.scoring_items)}",
-                    f"- requirement_blocks: {len(self.pruned_context.requirement_blocks)}",
-                    f"- requirement_seed_chars: {len(self.pruned_context.requirement_seed)}",
-                    f"- requirement_brief_chars: {len(self.pruned_context.requirement_brief)}",
-                    f"- requirement_brief_status: {self.pruned_context.requirement_brief_status or '（无）'}",
                 ]
             )
         else:

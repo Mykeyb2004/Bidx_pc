@@ -16,7 +16,7 @@ import yaml
 
 _MISSING = object()
 _SUPPORTED_PROCESSING_PATHS = {"auto", "full_context"}
-_KNOWN_PROCESSING_PATHS = _SUPPORTED_PROCESSING_PATHS | {"legacy_rule", "hybrid_extract", "mixed"}
+_KNOWN_PROCESSING_PATHS = _SUPPORTED_PROCESSING_PATHS | {"legacy_rule", "hybrid_extract"}
 H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS = ("raw_evidence", "empty")
 H2_PROJECT_BACKGROUND_CONTENT_MODE_OPTIONS = ("excerpts", "summary")
 
@@ -147,13 +147,12 @@ def build_default_editor_model() -> dict[str, Any]:
                     "max_evidence_blocks": 6,
                     "max_evidence_chars": 2400,
                     "content_mode": "excerpts",
-                    "min_evidence_blocks": 2,
+                    "min_evidence_blocks": 1,
                     "fallback": "raw_evidence",
                     "cache_dir": "./caches/project_background_h2",
                 },
             },
             "auto": {
-                "requirements_top_k": 8,
                 "scoring_parse_mode": "auto",
                 "scoring_max_rows": 4,
                 "retrieval": {
@@ -460,8 +459,8 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                         _first_defined(raw_config, ("processing", "project_background", "h2", "content_mode"), default="excerpts")
                     ),
                     "min_evidence_blocks": _coerce_int(
-                        _first_defined(raw_config, ("processing", "project_background", "h2", "min_evidence_blocks"), default=2),
-                        default=2,
+                        _first_defined(raw_config, ("processing", "project_background", "h2", "min_evidence_blocks"), default=1),
+                        default=1,
                     ),
                     "fallback": _normalize_h2_project_background_fallback(
                         _first_defined(raw_config, ("processing", "project_background", "h2", "fallback"), default="raw_evidence")
@@ -472,10 +471,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                 },
             },
             "auto": {
-                "requirements_top_k": _coerce_int(
-                    _first_defined(raw_config, ("processing", "auto", "requirements_top_k"), default=8),
-                    default=8,
-                ),
                 "scoring_parse_mode": _coerce_str(
                     _first_defined(raw_config, ("processing", "hybrid_extract", "scoring_parse_mode"), default="auto")
                 ),
@@ -968,13 +963,7 @@ def _derive_processing_path(raw_config: dict[str, Any]) -> str:
         _get_value(raw_config, "context_pruning", "scoring", "mode", default=base_mode),
         default=base_mode,
     )
-    requirements_mode = _normalize_mode(
-        _get_value(raw_config, "context_pruning", "requirements", "mode", default=base_mode),
-        default=base_mode,
-    )
-    if scoring_mode == requirements_mode:
-        return scoring_mode
-    return "mixed"
+    return scoring_mode
 
 
 def _normalize_mode(value: Any, default: str = "legacy_rule") -> str:
@@ -1243,9 +1232,7 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
                 "cache_dir": True,
             },
         },
-        "auto": {
-            "requirements_top_k": True,
-        },
+        "auto": {},
         "full_context": {
             "chapter_writing_plan": {
                 "enabled": True,
@@ -1255,19 +1242,11 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
         },
         "legacy_rule": {
             "scoring_max_rows": True,
-            "requirements_max_quotes": True,
-            "requirements_max_quote_chars": True,
-            "requirement_brief_enabled": True,
-            "requirement_brief_fallback": True,
         },
         "hybrid_extract": {
             "unavailable_policy": True,
             "scoring_parse_mode": True,
             "scoring_max_rows": True,
-            "requirements_max_quotes": True,
-            "requirements_max_quote_chars": True,
-            "requirement_brief_enabled": True,
-            "requirement_brief_fallback": True,
             "retrieval": {
                 "lexical_enabled": True,
                 "vector_enabled": True,

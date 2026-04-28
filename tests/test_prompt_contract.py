@@ -20,7 +20,6 @@ EXPECTED_BLOCK_IDS = [
     "chapter_scope",
     "project_background",
     "fact_card_context",
-    "requirement_context",
     "scoring_context",
 ]
 
@@ -456,7 +455,7 @@ def test_trace_summary_records_processing_path(monkeypatch, tmp_path, processing
     assert "- target_word_range: 1200-1400" in summary
 
 
-def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, tmp_path):
+def test_pruned_prompt_omits_requirement_points_section(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     config._config.setdefault("processing", {})["path"] = "legacy_rule"
     config._config.setdefault("context_pruning", {})["enabled"] = True
@@ -468,17 +467,29 @@ def test_requirement_brief_prompt_uses_requirement_points_wording(monkeypatch, t
         "build_context",
         lambda _: ChapterContext(
             chapter_focus_terms=["质量保障措施"],
-            requirement_brief="1. 建立质量检查机制。\n2. 强化过程留痕。",
-            requirement_brief_status="extracted",
         ),
     )
     monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
 
     result = writer.build_prompt_result(heading, target_words=1200)
 
-    assert "- 写作依据：优先根据下方评分关注和需求要点组织内容。" in result.prompt
-    assert "## 需求要点" in result.prompt
-    assert "## 需求原文摘录" not in result.prompt
+    assert "需求要点" not in result.prompt
+    block_ids = [block["id"] for block in result.prompt_contract_blocks]
+    assert "requirement_context" not in block_ids
+
+
+def test_auto_context_skips_requirement_retrieval(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "auto"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    context = writer.context_pruner.build_context(heading)
+
+    assert not hasattr(writer.context_pruner, "_build_requirement_seed_hybrid_raw")
+    assert not hasattr(writer.context_pruner, "_build_requirement_seed")
+    assert not hasattr(context, "requirement_seed")
+    assert not hasattr(context, "requirement_brief")
 
 
 def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
@@ -494,7 +505,6 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
         "build_context",
         lambda _: ChapterContext(
             chapter_focus_terms=["质量保障措施"],
-            requirement_seed="质量保障应建立过程检查机制。",
             retrieval_mode="path=auto;vector=off;classify=off",
         ),
     )
@@ -541,7 +551,6 @@ def test_auto_prompt_does_not_fallback_to_global_project_background(monkeypatch,
         "build_context",
         lambda _: ChapterContext(
             chapter_focus_terms=["质量保障措施"],
-            requirement_seed="质量保障应建立过程检查机制。",
             retrieval_mode="path=auto;vector=off;classify=off",
         ),
     )
@@ -604,8 +613,6 @@ def test_trace_records_h2_project_background_evidence(monkeypatch, tmp_path):
         "build_context",
         lambda _: ChapterContext(
             chapter_focus_terms=["质量保障措施"],
-            requirement_seed="质量保障应建立过程检查机制。",
-            requirement_blocks=[],
             retrieval_mode="path=auto;vector=off;classify=off",
         ),
     )

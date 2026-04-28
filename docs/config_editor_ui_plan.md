@@ -154,35 +154,21 @@
 
 ### 路径选择
 
+- `auto`
+  - 评分走章节级检索，采购需求通过 H2 项目背景进入 prompt
 - `full_context`
   - 不做章节级处理
-- `legacy_rule`
-  - 使用当前规则链路
-- `hybrid_extract`
-  - 使用检索摘录链路
 
-### `legacy_rule` 参数
+### `auto` 参数
 
 - `scoring_max_rows`
-- `requirements_max_quotes`
-- `requirements_max_quote_chars`
-- `requirement_brief_enabled`
-
-### `hybrid_extract` 参数
-
-基础参数：
-
-- `unavailable_policy`
 - `scoring_parse_mode`
-- `scoring_max_rows`
-- `requirements_max_quotes`
-- `requirements_max_quote_chars`
-- `requirement_brief_enabled`
+- H2 项目背景参数
 
-高级参数：
+### `full_context` 参数
 
-- `retrieval.lexical_enabled`
-- `retrieval.vector_enabled`
+- `chapter_writing_plan.enabled`
+- `chapter_writing_plan.max_chars`
 - `retrieval.verify_enabled`
 - `retrieval.top_k_lexical`
 - `retrieval.top_k_vector`
@@ -324,16 +310,16 @@
 ```text
 +------------------------------------------------------------------------------------------------------------------+
 | 处理路径                                                                                                         |
-| 业务链路:   ( ) full_context      (x) legacy_rule      ( ) hybrid_extract                                        |
-| 说明: legacy_rule 会对采购需求和评分标准做章节级规则提炼。                                                       |
+| 业务链路:   (x) auto      ( ) full_context                                                                       |
+| 说明: auto 会提取评分关注，并按 H2 组织项目背景；full_context 会直接注入完整采购需求和评分标准。                 |
 +------------------------------------------------------------------------------------------------------------------+
-| legacy_rule 参数                                                                                                 |
-| 评分最多保留 [ 4 ] 行      需求最多摘录 [ 4 ] 条      单条最大字符 [ 220 ]                                        |
-| [x] 启用 requirement brief                                                                                       |
+| auto 参数                                                                                                        |
+| 评分最多保留 [ 20 ] 行      评分解析模式 [ auto ]                                                                |
+| H2 背景：证据片段上限 [ 6 ]      证据字符上限 [ 2400 ]      内容模式 [ excerpts ]                                |
 +------------------------------------------------------------------------------------------------------------------+
 | 高级说明                                                                                                         |
 | - 切到 full_context 后，本页参数不再生效                                                                         |
-| - 切到 hybrid_extract 后，将显示 retrieval / verify 高级参数                                                     |
+| - 旧需求要点相关参数不再展示，也不再写入规范化配置                                                               |
 +------------------------------------------------------------------------------------------------------------------+
 ```
 

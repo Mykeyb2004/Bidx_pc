@@ -4,6 +4,7 @@ from pathlib import Path
 from bid_writer.config import Config
 from bid_writer.h2_project_background import H2ProjectBackgroundGenerator
 from bid_writer.outline_parser import parse_outline
+from bid_writer.retrieval_models import RetrievedUnit, SourceUnit
 
 
 def _write_config(tmp_path: Path, *, requirements: str = "项目需求") -> Config:
@@ -35,6 +36,21 @@ processing:
         encoding="utf-8",
     )
     return Config(str(config_path))
+
+
+def _requirement_hit(unit_id: str, text: str) -> RetrievedUnit:
+    return RetrievedUnit(
+        unit=SourceUnit(
+            unit_id=unit_id,
+            doc_type="requirements",
+            section_path="采购需求",
+            block_type="paragraph",
+            source_text=text,
+            source_text_exact=text,
+        ),
+        lexical_score=1.0,
+        fused_score=1.0,
+    )
 
 
 def test_h2_generator_finds_h2_ancestor_and_collects_h2_nodes(tmp_path: Path):
@@ -164,6 +180,57 @@ def test_h2_background_summary_mode_uses_requirement_evidence_and_model(tmp_path
     assert result.cache_status == "generated"
     assert result.summary.startswith("项目理解摘要：")
     assert prompts and "项目理解要求" in prompts[0]
+
+
+def test_h2_background_trims_evidence_on_sentence_boundary(tmp_path: Path, monkeypatch):
+    requirements = (
+        "项目理解要求说明第一项完整背景。"
+        "项目理解要求说明第二项完整范围。"
+        "项目理解要求说明第三项完整交付。"
+    )
+    config = _write_config(tmp_path, requirements=requirements)
+    config._config["processing"]["project_background"]["h2"]["max_evidence_chars"] = 35
+    parser = parse_outline("# 项目\n## 项目理解\n### 现状分析\n")
+    h2 = parser.find_heading_by_title("项目理解")
+    assert h2 is not None
+    generator = H2ProjectBackgroundGenerator(config)
+    monkeypatch.setattr(
+        generator,
+        "retrieve_evidence",
+        lambda _h2: [_requirement_hit("requirements_0", requirements)],
+    )
+
+    result = generator.get_or_generate(h2)
+
+    assert result.cache_status == "generated"
+    assert "第一项完整背景。" in result.summary
+    assert "第二项完整范围。" in result.summary
+    assert "第三项完整交付" not in result.summary
+    assert not result.summary.endswith("第三")
+
+
+def test_h2_background_skips_block_that_cannot_fit_any_complete_sentence(tmp_path: Path, monkeypatch):
+    config = _write_config(tmp_path, requirements="项目理解要求说明政策背景。服务方案要求说明流程。")
+    config._config["processing"]["project_background"]["h2"]["max_evidence_chars"] = 10
+    parser = parse_outline("# 项目\n## 项目理解\n### 现状分析\n")
+    h2 = parser.find_heading_by_title("项目理解")
+    assert h2 is not None
+    generator = H2ProjectBackgroundGenerator(config)
+    blocks = [
+        "项目理解要求说明政策背景。",
+        "服务方案要求说明流程。",
+    ]
+    monkeypatch.setattr(
+        generator,
+        "retrieve_evidence",
+        lambda _h2: [_requirement_hit(f"requirements_{index}", block) for index, block in enumerate(blocks)],
+    )
+
+    result = generator.get_or_generate(h2)
+
+    assert result.cache_status == "fallback"
+    assert "未命中" in result.fallback_reason
+    assert result.summary == ""
 
 
 def test_h2_background_does_not_inject_unrelated_first_requirement_when_no_hits(tmp_path: Path, monkeypatch):

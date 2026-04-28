@@ -26,14 +26,10 @@ processing:
     max_chars: 400
   legacy_rule:
     scoring_max_rows: 4
-    requirement_brief_enabled: false
   hybrid_extract:
     unavailable_policy: "fallback_legacy"
     scoring_parse_mode: "auto"
     scoring_max_rows: 4
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: false
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8

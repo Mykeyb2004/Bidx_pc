@@ -30,7 +30,7 @@ processing:
       max_evidence_blocks: 6
       max_evidence_chars: 2400
       content_mode: "excerpts"
-      min_evidence_blocks: 2
+      min_evidence_blocks: 1
       fallback: "raw_evidence"
       cache_dir: "./caches/project_background_h2"
   chapter_facts:
@@ -43,16 +43,10 @@ processing:
       max_chars: 320
   legacy_rule:
     scoring_max_rows: 4
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: true
   hybrid_extract:
     unavailable_policy: "fail_fast"
     scoring_parse_mode: "auto"
     scoring_max_rows: 20
-    requirements_max_quotes: 4
-    requirements_max_quote_chars: 220
-    requirement_brief_enabled: true
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8

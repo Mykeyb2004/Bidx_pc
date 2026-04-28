@@ -295,7 +295,6 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("processing.project_background.h2.cache_dir", tk.StringVar())
         add_var("processing.full_context.chapter_writing_plan.enabled", tk.BooleanVar())
         add_var("processing.full_context.chapter_writing_plan.max_chars", tk.StringVar())
-        add_var("processing.auto.requirements_top_k", tk.StringVar())
         add_var("processing.auto.scoring_parse_mode", tk.StringVar())
         add_var("processing.auto.scoring_max_rows", tk.StringVar())
         add_var("processing.auto.retrieval.lexical_enabled", tk.BooleanVar())
@@ -326,6 +325,10 @@ class ConfigEditorDialog(tk.Toplevel):
         self.section_var.trace_add("write", lambda *_: self._show_current_section())
         self.vars["processing.path"].trace_add("write", lambda *_: self._update_processing_visibility())
         self.vars["processing.project_background.enabled"].trace_add(
+            "write",
+            lambda *_: self._update_project_background_visibility(),
+        )
+        self.vars["processing.project_background.h2.content_mode"].trace_add(
             "write",
             lambda *_: self._update_project_background_visibility(),
         )
@@ -560,10 +563,11 @@ class ConfigEditorDialog(tk.Toplevel):
         max_chars_entry = self._add_entry_row(
             self.processing_project_background_frame,
             1,
-            "背景最大字符数",
+            "摘要最大字符数",
             "processing.project_background.max_chars",
         )
-        self.processing_project_background_optional_controls = [
+        self.processing_project_background_optional_controls = []
+        self.processing_project_background_summary_controls = [
             (max_chars_entry, "normal"),
         ]
 
@@ -573,26 +577,25 @@ class ConfigEditorDialog(tk.Toplevel):
             padding=10,
         )
         self.processing_project_background_h2_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        self._add_check_row(self.processing_project_background_h2_frame, 0, "批量前预生成 H2 背景", "processing.project_background.h2.precompute_on_batch")
-        self._add_check_row(self.processing_project_background_h2_frame, 1, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
-        self._add_entry_row(self.processing_project_background_h2_frame, 2, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
-        self._add_entry_row(self.processing_project_background_h2_frame, 3, "H2 证据字符上限", "processing.project_background.h2.max_evidence_chars")
+        self._add_check_row(self.processing_project_background_h2_frame, 0, "单章节缺失时补生成", "processing.project_background.h2.generate_missing_on_single")
+        self._add_entry_row(self.processing_project_background_h2_frame, 1, "H2 证据片段上限", "processing.project_background.h2.max_evidence_blocks")
+        self._add_entry_row(self.processing_project_background_h2_frame, 2, "H2 证据字符上限", "processing.project_background.h2.max_evidence_chars")
         self._add_combobox_row(
             self.processing_project_background_h2_frame,
-            4,
+            3,
             "背景内容模式",
             "processing.project_background.h2.content_mode",
             ("excerpts", "summary"),
         )
-        self._add_entry_row(self.processing_project_background_h2_frame, 5, "最少证据片段数", "processing.project_background.h2.min_evidence_blocks")
+        self._add_entry_row(self.processing_project_background_h2_frame, 4, "最少证据片段数", "processing.project_background.h2.min_evidence_blocks")
         self._add_combobox_row(
             self.processing_project_background_h2_frame,
-            6,
+            5,
             "失败回退",
             "processing.project_background.h2.fallback",
             H2_PROJECT_BACKGROUND_FALLBACK_OPTIONS,
         )
-        self._add_path_row(self.processing_project_background_h2_frame, 7, "H2 缓存目录", "processing.project_background.h2.cache_dir", browse_kind="dir", relative_to="project")
+        self._add_path_row(self.processing_project_background_h2_frame, 6, "H2 缓存目录", "processing.project_background.h2.cache_dir", browse_kind="dir", relative_to="project")
         self.processing_project_background_h2_frame.columnconfigure(1, weight=1)
         self.processing_project_background_frame.columnconfigure(1, weight=1)
 
@@ -896,7 +899,6 @@ class ConfigEditorDialog(tk.Toplevel):
             "processing.project_background.h2.cache_dir": model["processing"]["project_background"]["h2"]["cache_dir"],
             "processing.full_context.chapter_writing_plan.enabled": model["processing"]["full_context"]["chapter_writing_plan"]["enabled"],
             "processing.full_context.chapter_writing_plan.max_chars": str(model["processing"]["full_context"]["chapter_writing_plan"]["max_chars"]),
-            "processing.auto.requirements_top_k": str(model["processing"]["auto"]["requirements_top_k"]),
             "processing.auto.scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
             "processing.auto.scoring_max_rows": str(model["processing"]["auto"]["scoring_max_rows"]),
             "processing.auto.retrieval.lexical_enabled": model["processing"]["auto"]["retrieval"]["lexical_enabled"],
@@ -991,7 +993,6 @@ class ConfigEditorDialog(tk.Toplevel):
                     },
                 },
                 "auto": {
-                    "requirements_top_k": self.vars["processing.auto.requirements_top_k"].get().strip(),
                     "scoring_parse_mode": self.vars["processing.auto.scoring_parse_mode"].get().strip(),
                     "scoring_max_rows": self.vars["processing.auto.scoring_max_rows"].get().strip(),
                     "retrieval": {
@@ -1135,6 +1136,13 @@ class ConfigEditorDialog(tk.Toplevel):
         for widget, active_state in getattr(self, "processing_project_background_optional_controls", []):
             try:
                 widget.configure(state=active_state if enabled else "disabled")
+            except (AttributeError, tk.TclError):
+                continue
+
+        summary_mode = self.vars["processing.project_background.h2.content_mode"].get().strip() == "summary"
+        for widget, active_state in getattr(self, "processing_project_background_summary_controls", []):
+            try:
+                widget.configure(state=active_state if enabled and summary_mode else "disabled")
             except (AttributeError, tk.TclError):
                 continue
 

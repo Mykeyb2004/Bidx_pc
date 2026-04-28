@@ -6,7 +6,6 @@
 
 - 当前章节拿到了哪些局部大纲
 - 命中了哪些评分项
-- 采购需求哪些片段被选入上下文
 - H2 项目背景材料及其证据片段
 - 最终发给模型的 `system prompt` / `user prompt` 是什么
 - 模型最终输出了什么内容
@@ -137,11 +136,9 @@ output/
 - `match_keywords`
 - `scoring_items`
 - `scoring_candidates`
-- `requirement_seed`
-- `requirement_blocks`
-- `requirement_brief`
-- `requirement_brief_status`
-- `requirement_brief_error`
+- `scoring_must_respond`
+- `scoring_reference`
+- `selected_scoring_unit_ids`
 
 当 `context_mode = "full"` 时，会记录 `full_context`：
 
@@ -207,8 +204,6 @@ H2 背景的 `evidence_blocks` 是采购需求原文片段。默认 `content_mod
 - 项目背景来源、H2 标题、背景材料长度、证据片段数、缓存状态
 - prompt 长度
 - 命中评分项数量
-- 需求 seed / brief 长度
-- brief 状态
 - 后处理动作摘要
 - trace 文件清单
 
