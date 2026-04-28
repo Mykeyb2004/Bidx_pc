@@ -251,6 +251,36 @@ def test_config_editor_full_context_hides_project_background_frame():
     assert dialog.processing_scoring_frame.actions == ["forget"]
 
 
+def test_config_editor_auto_hides_requirements_retrieval_frame():
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {"processing.path": StubVar("auto")}
+    dialog._schedule_refresh = lambda: None
+    dialog._update_project_background_visibility = lambda: None
+
+    class FakeFrame:
+        def __init__(self, name):
+            self.name = name
+            self.actions: list[str] = []
+
+        def pack_forget(self):
+            self.actions.append("forget")
+
+        def pack(self, **_kwargs):
+            self.actions.append("pack")
+
+    dialog.processing_full_context_frame = FakeFrame("full_context")
+    dialog.processing_project_background_frame = FakeFrame("project_background")
+    dialog.processing_chapter_plan_frame = FakeFrame("chapter_plan")
+    dialog.processing_req_frame = FakeFrame("requirements")
+    dialog.processing_scoring_frame = FakeFrame("scoring")
+
+    dialog._update_processing_visibility()
+
+    assert dialog.processing_project_background_frame.actions == ["forget", "pack"]
+    assert dialog.processing_req_frame.actions == ["forget"]
+    assert dialog.processing_scoring_frame.actions == ["forget", "pack"]
+
+
 def test_config_editor_hides_h2_project_background_controls_for_global_scope():
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     dialog.vars = {

@@ -149,6 +149,45 @@ processing:
     }
 
 
+def test_config_editor_drops_auto_retrieval_knobs_from_yaml(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "auto.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "auto"
+  auto:
+    requirements_top_k: 13
+  hybrid_extract:
+    scoring_parse_mode: "auto"
+    scoring_max_rows: 5
+    retrieval:
+      lexical_enabled: true
+      vector_enabled: true
+      top_k_lexical: 31
+      top_k_vector: 32
+      top_k_fused: 41
+      top_k_final: 9
+      min_fused_score: 0.25
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert "auto" not in payload["processing"]
+    assert "retrieval" not in payload["processing"]["hybrid_extract"]
+    assert payload["processing"]["hybrid_extract"]["scoring_max_rows"] == 5
+
+
 def test_config_editor_validation_full_context_does_not_require_auto_runtime(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "full-context.yaml"
@@ -381,7 +420,8 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     assert payload["processing"]["path"] == "full_context"
     assert "context_view" not in payload["processing"]
     assert "project_background" not in payload["processing"]
-    assert payload["processing"]["hybrid_extract"]["retrieval"]["top_k_final"] == 8
+    assert "auto" not in payload["processing"]
+    assert "retrieval" not in payload["processing"]["hybrid_extract"]
     assert "models" not in payload
     assert payload["runtime"]["stream"]["enabled"] is True
     assert payload["runtime"]["trace"]["enabled"] is True

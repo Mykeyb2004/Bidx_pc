@@ -24,8 +24,6 @@ writing:
   role_file: ./roles/通用投标角色.md
 processing:
   path: full_context
-  auto:
-    requirements_top_k: 8
   full_context:
     chapter_writing_plan:
       enabled: false
@@ -34,15 +32,6 @@ processing:
     unavailable_policy: fail_fast
     scoring_parse_mode: auto
     scoring_max_rows: 20
-    retrieval:
-      lexical_enabled: true
-      vector_enabled: false
-      verify_enabled: false
-      top_k_lexical: 20
-      top_k_vector: 20
-      top_k_fused: 30
-      top_k_final: 8
-      min_fused_score: 0.0
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8

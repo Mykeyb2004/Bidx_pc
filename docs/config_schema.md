@@ -173,15 +173,6 @@ processing:
     requirements_max_quotes: 4
     requirements_max_quote_chars: 220
     requirement_brief_enabled: true
-    retrieval:
-      lexical_enabled: true
-      vector_enabled: false
-      verify_enabled: false
-      top_k_lexical: 20
-      top_k_vector: 20
-      top_k_fused: 30
-      top_k_final: 6
-      min_fused_score: 0.0
     quote_only: true
     return_ids_only: true
     verify_max_candidates: 8
@@ -205,6 +196,16 @@ processing:
 - `processing.chapter_facts.*` 控制正文 facts 提炼与缓存刷新边界；`auto_extract_on_batch` 只建议用于批量生成路径
 - `processing.full_context.chapter_writing_plan.*` 只在 `full_context` 下生效，用于在章节任务卡中额外插入“章节写作计划”
 - 开启后会增加一次辅助 LLM 调用；当前实现会尽量复用正文扩写的 system prompt 与 full-context 参考前缀，以改善 prompt cache 命中率
+- auto 模式下的需求检索专业参数不再写入 YAML，也不在配置编辑器展示；如需调整，放入 `.env.local` 或外部环境变量：
+  - `BID_WRITER_AUTO_REQUIREMENTS_TOP_K`，默认 `8`
+  - `BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED`，默认 `true`
+  - `BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED`，默认 `false`
+  - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL`，默认 `20`
+  - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_VECTOR`，默认 `20`
+  - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_FUSED`，默认 `30`
+  - `BID_WRITER_AUTO_RETRIEVAL_TOP_K_FINAL`，默认 `8`
+  - `BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE`，默认 `0.0`
+- 旧配置中的 `processing.auto.requirements_top_k` 与 `processing.hybrid_extract.retrieval.*` 仍作为兼容回退读取；新建或通过配置编辑器保存时不再导出这些字段
 - 每条链路自己的参数挂在各自子块下
 - `verify_enabled` 统一表达原先 `rerank_enabled` / `llm_verify_enabled` 那条候选校验链路
 

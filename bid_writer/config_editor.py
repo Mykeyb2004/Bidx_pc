@@ -689,9 +689,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         }
     processing_payload.update(
         {
-            "auto": {
-                "requirements_top_k": int(model["processing"]["auto"]["requirements_top_k"]),
-            },
             "full_context": {
                 "chapter_writing_plan": {
                     "enabled": bool(model["processing"]["full_context"]["chapter_writing_plan"]["enabled"]),
@@ -702,16 +699,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
                 "unavailable_policy": "fail_fast",
                 "scoring_parse_mode": model["processing"]["auto"]["scoring_parse_mode"],
                 "scoring_max_rows": int(model["processing"]["auto"]["scoring_max_rows"]),
-                "retrieval": {
-                    "lexical_enabled": bool(model["processing"]["auto"]["retrieval"]["lexical_enabled"]),
-                    "vector_enabled": bool(model["processing"]["auto"]["retrieval"]["vector_enabled"]),
-                    "verify_enabled": False,
-                    "top_k_lexical": int(model["processing"]["auto"]["retrieval"]["top_k_lexical"]),
-                    "top_k_vector": 20,
-                    "top_k_fused": int(model["processing"]["auto"]["retrieval"]["top_k_fused"]),
-                    "top_k_final": int(model["processing"]["auto"]["retrieval"]["top_k_final"]),
-                    "min_fused_score": float(model["processing"]["auto"]["retrieval"]["min_fused_score"]),
-                },
                 "quote_only": True,
                 "return_ids_only": True,
                 "verify_max_candidates": 8,
@@ -838,10 +825,11 @@ def validate_editor_model(
     if trace_dir.exists() and not trace_dir.is_dir():
         messages.append(ValidationMessage("error", f"trace.directory 不是目录：{trace_dir}"))
 
-    if processing_path in {"auto", "hybrid_extract"}:
-        retrieval = model["processing"]["auto"]["retrieval"]
-        if processing_path == "auto" and not env_status["pruning"].configured:
+    if processing_path == "auto":
+        if not env_status["pruning"].configured:
             messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型，请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
+    elif processing_path == "hybrid_extract":
+        retrieval = model["processing"]["auto"]["retrieval"]
         if not retrieval["lexical_enabled"]:
             messages.append(ValidationMessage("error", f"{processing_path} 模式要求 lexical_enabled=true。"))
         if retrieval["vector_enabled"] and not env_status["embedding"].configured:

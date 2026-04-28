@@ -640,14 +640,6 @@ class ConfigEditorDialog(tk.Toplevel):
         self.processing_chapter_plan_frame.columnconfigure(1, weight=1)
 
         self.processing_req_frame = ttk.LabelFrame(content, text="需求检索", padding=12)
-        self._add_entry_row(self.processing_req_frame, 0, "需求检索 top-K（原文段落数）", "processing.auto.requirements_top_k")
-        self._add_entry_row(self.processing_req_frame, 1, "top_k_lexical", "processing.auto.retrieval.top_k_lexical")
-        self._add_entry_row(self.processing_req_frame, 2, "top_k_fused", "processing.auto.retrieval.top_k_fused")
-        self._add_entry_row(self.processing_req_frame, 3, "top_k_final", "processing.auto.retrieval.top_k_final")
-        self._add_entry_row(self.processing_req_frame, 4, "min_fused_score", "processing.auto.retrieval.min_fused_score")
-        self._add_check_row(self.processing_req_frame, 5, "lexical_enabled", "processing.auto.retrieval.lexical_enabled")
-        self._add_check_row(self.processing_req_frame, 6, "vector_enabled（需配置 embedding）", "processing.auto.retrieval.vector_enabled")
-        self.processing_req_frame.columnconfigure(1, weight=1)
 
         self.processing_scoring_frame = ttk.LabelFrame(content, text="评分检索", padding=12)
         self._add_entry_row(self.processing_scoring_frame, 0, "评分最多保留行数", "processing.auto.scoring_max_rows")
@@ -1156,7 +1148,6 @@ class ConfigEditorDialog(tk.Toplevel):
             self.processing_chapter_plan_frame.pack(fill=tk.X, pady=(0, 12))
         else:
             self.processing_project_background_frame.pack(fill=tk.X, pady=(0, 12))
-            self.processing_req_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_scoring_frame.pack(fill=tk.X, pady=(0, 12))
         self._update_project_background_visibility()
         self._schedule_refresh()

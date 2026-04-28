@@ -965,6 +965,10 @@ class Config:
     @property
     def context_pruning_retrieval_lexical_enabled(self) -> bool:
         """是否启用 lexical retrieval。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_bool('BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED')
+            if env_value is not None:
+                return env_value
         return self._get_bool(
             ('processing', 'hybrid_extract', 'retrieval', 'lexical_enabled'),
             ('context_pruning', 'retrieval', 'lexical_enabled'),
@@ -974,6 +978,10 @@ class Config:
     @property
     def context_pruning_retrieval_vector_enabled(self) -> bool:
         """是否启用向量召回。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_bool('BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED')
+            if env_value is not None:
+                return env_value
         return self._get_bool(
             ('processing', 'hybrid_extract', 'retrieval', 'vector_enabled'),
             ('context_pruning', 'retrieval', 'vector_enabled'),
@@ -1000,6 +1008,10 @@ class Config:
     @property
     def context_pruning_retrieval_top_k_lexical(self) -> int:
         """lexical retrieval 候选数。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_int('BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL')
+            if env_value is not None:
+                return env_value
         return self._get_int(
             ('processing', 'hybrid_extract', 'retrieval', 'top_k_lexical'),
             ('context_pruning', 'retrieval', 'top_k_lexical'),
@@ -1009,6 +1021,10 @@ class Config:
     @property
     def context_pruning_retrieval_top_k_vector(self) -> int:
         """vector retrieval 候选数。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_int('BID_WRITER_AUTO_RETRIEVAL_TOP_K_VECTOR')
+            if env_value is not None:
+                return env_value
         return self._get_int(
             ('processing', 'hybrid_extract', 'retrieval', 'top_k_vector'),
             ('context_pruning', 'retrieval', 'top_k_vector'),
@@ -1018,6 +1034,10 @@ class Config:
     @property
     def context_pruning_retrieval_top_k_fused(self) -> int:
         """融合排序候选数。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_int('BID_WRITER_AUTO_RETRIEVAL_TOP_K_FUSED')
+            if env_value is not None:
+                return env_value
         return self._get_int(
             ('processing', 'hybrid_extract', 'retrieval', 'top_k_fused'),
             ('context_pruning', 'retrieval', 'top_k_fused'),
@@ -1027,15 +1047,23 @@ class Config:
     @property
     def context_pruning_retrieval_top_k_final(self) -> int:
         """最终进入摘录阶段的候选数。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_int('BID_WRITER_AUTO_RETRIEVAL_TOP_K_FINAL')
+            if env_value is not None:
+                return env_value
         return self._get_int(
             ('processing', 'hybrid_extract', 'retrieval', 'top_k_final'),
             ('context_pruning', 'retrieval', 'top_k_final'),
-            default=6,
+            default=8,
         )
 
     @property
     def context_pruning_retrieval_min_fused_score(self) -> float:
         """最终候选最小得分。"""
+        if self.processing_path == 'auto':
+            env_value = self._get_env_float('BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE')
+            if env_value is not None:
+                return env_value
         return self._get_float(
             ('processing', 'hybrid_extract', 'retrieval', 'min_fused_score'),
             ('context_pruning', 'retrieval', 'min_fused_score'),
@@ -1369,6 +1397,9 @@ class Config:
     @property
     def auto_requirements_top_k(self) -> int:
         """auto 模式下需求检索的 top-K 数量。"""
+        env_value = self._get_env_int('BID_WRITER_AUTO_REQUIREMENTS_TOP_K')
+        if env_value is not None:
+            return env_value
         return self._get_int(
             ('processing', 'auto', 'requirements_top_k'),
             default=8,

@@ -320,6 +320,64 @@ def test_env_local_values_refresh_between_config_directories(monkeypatch, tmp_pa
     assert config_b.embedding_model == "embedding-b"
 
 
+def test_auto_retrieval_settings_are_loaded_from_env_local(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_AUTO_REQUIREMENTS_TOP_K",
+        "BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED",
+        "BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED",
+        "BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL",
+        "BID_WRITER_AUTO_RETRIEVAL_TOP_K_VECTOR",
+        "BID_WRITER_AUTO_RETRIEVAL_TOP_K_FUSED",
+        "BID_WRITER_AUTO_RETRIEVAL_TOP_K_FINAL",
+        "BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  path: "auto"
+  auto:
+    requirements_top_k: 3
+  hybrid_extract:
+    retrieval:
+      lexical_enabled: false
+      vector_enabled: false
+      top_k_lexical: 4
+      top_k_vector: 5
+      top_k_fused: 6
+      top_k_final: 7
+      min_fused_score: 0.2
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.local").write_text(
+        """
+BID_WRITER_AUTO_REQUIREMENTS_TOP_K=11
+BID_WRITER_AUTO_RETRIEVAL_LEXICAL_ENABLED=true
+BID_WRITER_AUTO_RETRIEVAL_VECTOR_ENABLED=true
+BID_WRITER_AUTO_RETRIEVAL_TOP_K_LEXICAL=21
+BID_WRITER_AUTO_RETRIEVAL_TOP_K_VECTOR=22
+BID_WRITER_AUTO_RETRIEVAL_TOP_K_FUSED=31
+BID_WRITER_AUTO_RETRIEVAL_TOP_K_FINAL=12
+BID_WRITER_AUTO_RETRIEVAL_MIN_FUSED_SCORE=0.35
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.auto_requirements_top_k == 11
+    assert config.context_pruning_retrieval_lexical_enabled is True
+    assert config.context_pruning_retrieval_vector_enabled is True
+    assert config.context_pruning_retrieval_top_k_lexical == 21
+    assert config.context_pruning_retrieval_top_k_vector == 22
+    assert config.context_pruning_retrieval_top_k_fused == 31
+    assert config.context_pruning_retrieval_top_k_final == 12
+    assert config.context_pruning_retrieval_min_fused_score == 0.35
+
+
 def test_embedding_cache_defaults_next_to_execution_file(monkeypatch, tmp_path: Path):
     execution_dir = tmp_path / "runner"
     execution_dir.mkdir()
