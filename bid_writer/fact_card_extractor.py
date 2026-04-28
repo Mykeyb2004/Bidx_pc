@@ -280,6 +280,14 @@ class FactCardExtractor:
         return str(content or "").strip()
 
     def _get_client_and_model(self) -> tuple[OpenAI, str]:
+        if self.config.pruning_api_is_configured:
+            client = OpenAI(
+                base_url=self.config.pruning_api_base_url,
+                api_key=self.config.pruning_api_key,
+                timeout=self.config.pruning_timeout_seconds,
+                max_retries=self.config.pruning_max_retries,
+            )
+            return client, self.config.pruning_model
         client = OpenAI(
             base_url=self.config.api_base_url,
             api_key=self.config.api_key,

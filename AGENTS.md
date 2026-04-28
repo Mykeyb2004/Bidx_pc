@@ -41,6 +41,16 @@ uv sync
 - Uses numbered hierarchy: 一、 (level 1), （一） (level 2), 1. (level 3), （1） (level 4)
 - Content must be professional, technical, and compliance-focused
 
+### 投标大纲层级约定
+- 投标大纲是系统的章节任务树，不是最终正文；系统按 Markdown 标题解析项目、章节、分节和具体写作单元。
+- `#` / H1：项目总标题，通常对应整份投标文件或项目名称，只作为全局根节点与上下文，不作为常规正文扩写单元。
+- `##` / H2：标书一级章，通常对应投标文件的大章节，如“项目理解与工作基础”“总体服务方案”等。
+- `###` / H3：章内二级节，通常用于承接 H2 下的核心板块，帮助定位评分点、采购需求和写作范围。
+- `####` / H4：具体写作单元，通常是当前项目的主要扩写对象；当大纲继续细分时，应优先选择最深层叶子节点生成正文。
+- `#####` / H5：更细的写作子单元，仅在大纲确有必要进一步拆解时使用；若存在 H5，H5 作为更优先的叶子写作单元，H4 主要承担父级上下文作用。
+- Markdown 标题层级只用于输入大纲结构解析；生成的标书正文默认不得输出 Markdown 标题，应按正式层级序号组织正文。
+- 解析和生成时应保留完整章节路径，例如 `H1 > H2 > H3 > H4`，用于判断当前章节的祖先、同级标题、评分响应范围和输出文件命名。
+
 ### File Management
 - Output directory: `./output/` (configurable)
 - Filename sanitization removes invalid characters

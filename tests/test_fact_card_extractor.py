@@ -258,6 +258,49 @@ def test_fact_card_extractor_reports_api_exception_details(tmp_path: Path):
     assert "RuntimeError: mock timeout" in result.detail
 
 
+def test_fact_card_extractor_uses_pruning_model_config_when_configured(monkeypatch, tmp_path: Path):
+    config_path = _build_config(tmp_path)
+    (tmp_path / ".env.local").write_text(
+        """
+BID_WRITER_API_BASE_URL=https://primary.example/v1
+BID_WRITER_API_KEY=primary-key
+BID_WRITER_MODEL=primary-model
+BID_WRITER_TIMEOUT_SECONDS=11
+BID_WRITER_MAX_RETRIES=2
+BID_WRITER_PRUNING_API_BASE_URL=https://pruning.example/v1
+BID_WRITER_PRUNING_API_KEY=pruning-key
+BID_WRITER_PRUNING_MODEL=pruning-model
+BID_WRITER_PRUNING_TIMEOUT_SECONDS=33
+BID_WRITER_PRUNING_MAX_RETRIES=4
+""".strip(),
+        encoding="utf-8",
+    )
+    config = Config(str(config_path))
+    constructed_clients: list[dict] = []
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            constructed_clients.append(kwargs)
+
+    monkeypatch.setattr("bid_writer.fact_card_extractor.OpenAI", _FakeOpenAI)
+    extractor = FactCardExtractor(
+        config=config,
+        file_saver=_FakeFileSaver(tmp_path / "output" / "quality.md", "正文"),
+    )
+
+    _client, model = extractor._get_client_and_model()
+
+    assert model == "pruning-model"
+    assert constructed_clients == [
+        {
+            "base_url": "https://pruning.example/v1",
+            "api_key": "pruning-key",
+            "timeout": 33,
+            "max_retries": 4,
+        }
+    ]
+
+
 def test_fact_card_extractor_reports_invalid_json_response_excerpt():
     result = FactCardExtractor.parse_draft_response_with_diagnostics("我无法提取事实卡片")
 
