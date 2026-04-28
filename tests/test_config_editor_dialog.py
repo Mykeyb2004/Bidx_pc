@@ -137,6 +137,9 @@ def test_config_editor_widgets_do_not_create_side_assessment_panel(monkeypatch):
         def pack(self, **_kwargs):
             return None
 
+        def grid(self, **_kwargs):
+            return None
+
         def columnconfigure(self, *_args, **_kwargs):
             return None
 
@@ -241,6 +244,9 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
             self.kwargs = kwargs
 
         def pack(self, **_kwargs):
+            return None
+
+        def grid(self, **_kwargs):
             return None
 
         def columnconfigure(self, *_args, **_kwargs):
