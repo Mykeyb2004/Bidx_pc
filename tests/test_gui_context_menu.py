@@ -131,3 +131,39 @@ def test_context_menu_generate_uses_context_heading_when_selection_is_empty():
 
     assert result == "break"
     assert selected_after_generate == [heading.full_path, "batch_generate"]
+
+
+def test_batch_generate_starts_without_secondary_confirmation(monkeypatch):
+    heading = _heading("质量控制")
+    generate_calls = []
+
+    def fail_if_confirmed(*_args, **_kwargs):
+        raise AssertionError("batch_generate should start directly after generation params are accepted")
+
+    monkeypatch.setattr(gui.messagebox, "askyesno", fail_if_confirmed)
+
+    window = SimpleNamespace(
+        _get_selected_leaf_headings=lambda: [heading],
+        _get_generation_params=lambda _headings: ("补充资质", 1200, 0, True, ["card-a"]),
+        bid_writer=SimpleNamespace(
+            config=SimpleNamespace(
+                chapter_facts_enabled=False,
+                chapter_facts_auto_extract_on_batch=False,
+                build_target_word_range=lambda _target_words: SimpleNamespace(display_text="1000-1400"),
+            )
+        ),
+        _do_batch_generate=lambda *args, **kwargs: generate_calls.append((args, kwargs)),
+    )
+
+    MainWindow.batch_generate(window)
+
+    assert generate_calls == [
+        (
+            ([heading], "补充资质", 1200, 0),
+            {
+                "fact_card_mode": True,
+                "manual_fact_card_selections": ["card-a"],
+                "auto_extract_facts": False,
+            },
+        )
+    ]

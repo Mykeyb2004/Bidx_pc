@@ -1200,7 +1200,7 @@ def test_generation_fact_card_dialog_state_lists_global_cards_first():
     assert dialog_state.global_cards == [global_card]
     assert dialog_state.available_cards == [global_card, local_card]
     assert dialog_state.default_mode is True
-    assert dialog_state.summary_text == "全局事实卡片默认勾选，可按当前章节需要取消；局部卡片会读取本章节已保存的默认方案。"
+    assert dialog_state.summary_text == "全局事实卡片默认勾选，可按当前章节需要取消；局部卡片会读取本章节已保存引用关系。"
 
 
 def test_generation_fact_card_dialog_state_keeps_saved_global_exclusion():
