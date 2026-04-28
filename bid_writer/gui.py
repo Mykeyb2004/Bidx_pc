@@ -2766,9 +2766,15 @@ class MainWindow(tk.Tk):
             CONTEXT_MENU_GENERATE_INDEX,
             label=f"生成所选 {len(selected_paths)}",
         )
+        fact_card_label = self._fact_card_menu_label_for_heading(heading)
+        fact_card_state = tk.NORMAL
+        if len(selected_paths) != 1:
+            fact_card_label = "提炼事实卡片（仅单选）"
+            fact_card_state = tk.DISABLED
         self.outline_context_menu.entryconfigure(
             CONTEXT_MENU_FACT_CARD_INDEX,
-            label=self._fact_card_menu_label_for_heading(heading),
+            label=fact_card_label,
+            state=fact_card_state,
         )
         self.outline_context_menu.tk_popup(event.x_root, event.y_root)
         self.outline_context_menu.grab_release()

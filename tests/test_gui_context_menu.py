@@ -85,7 +85,37 @@ def test_tree_context_menu_preserves_multi_selection_when_clicking_selected_leaf
     assert tree.selection() == ("item-a", "item-b")
     assert tree.focus_calls == ["item-a"]
     assert menu.configured[0] == (0, {"label": "生成所选 2"})
+    assert menu.configured[1] == (
+        1,
+        {"label": "提炼事实卡片（仅单选）", "state": gui.tk.DISABLED},
+    )
     assert menu.posted_at == (100, 220)
+
+
+def test_tree_context_menu_enables_fact_card_when_clicking_unselected_leaf_as_single_selection():
+    clicked_heading = _heading("质量控制")
+    previous_heading = _heading("服务保障")
+    tree = _FakeTree(clicked_item="item-a", selected_items=("item-b",))
+    menu = _FakeMenu()
+    window = SimpleNamespace(
+        is_generating=False,
+        outline_tree=tree,
+        tree_node_map={"item-a": clicked_heading, "item-b": previous_heading},
+        outline_context_menu=menu,
+    )
+    window._fact_card_menu_label_for_heading = lambda heading: f"提炼 {heading.title}"
+    event = SimpleNamespace(y=12, x_root=100, y_root=220)
+
+    result = MainWindow.on_tree_context_menu(window, event)
+
+    assert result == "break"
+    assert tree.selection_set_calls == ["item-a"]
+    assert tree.selection() == ("item-a",)
+    assert menu.configured[0] == (0, {"label": "生成所选 1"})
+    assert menu.configured[1] == (
+        1,
+        {"label": "提炼 质量控制", "state": gui.tk.NORMAL},
+    )
 
 
 def test_context_menu_generate_uses_context_heading_when_selection_is_empty():
