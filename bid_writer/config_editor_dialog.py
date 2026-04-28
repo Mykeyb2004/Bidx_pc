@@ -531,15 +531,13 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self.processing_path_frame = ttk.LabelFrame(content, text="处理路径", padding=12)
         self.processing_path_frame.pack(fill=tk.X, pady=(0, 12))
-        path_label = ttk.Label(self.processing_path_frame, text="processing.path")
-        path_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
-        path_box = ttk.Combobox(
+        self._add_radio_row(
             self.processing_path_frame,
-            textvariable=self.vars["processing.path"],
-            values=("auto", "full_context"),
-            state="readonly",
+            0,
+            "processing.path",
+            "processing.path",
+            ("auto", "full_context"),
         )
-        path_box.grid(row=0, column=1, sticky="ew", pady=5)
         helper = ttk.Label(
             self.processing_path_frame,
             text="可选值：auto / full_context。若载入旧配置中的其他模式，可在这里切回受支持模式。",
@@ -548,8 +546,6 @@ class ConfigEditorDialog(tk.Toplevel):
         )
         helper.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
         self.processing_path_frame.columnconfigure(1, weight=1)
-        self._register_tooltip(path_label, "processing.path")
-        self._register_tooltip(path_box, "processing.path")
         self._register_tooltip(helper, "processing.path")
 
         self.processing_full_context_frame = ttk.LabelFrame(content, text="full_context 说明", padding=12)
@@ -567,7 +563,7 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self.processing_project_background_frame = ttk.LabelFrame(content, text="项目背景", padding=12)
         self._add_check_row(self.processing_project_background_frame, 0, "启用项目背景生成", "processing.project_background.enabled")
-        scope_box = self._add_combobox_row(
+        scope_radios = self._add_radio_row(
             self.processing_project_background_frame,
             1,
             "作用域",
@@ -581,7 +577,7 @@ class ConfigEditorDialog(tk.Toplevel):
             "processing.project_background.max_chars",
         )
         self.processing_project_background_optional_controls = [
-            (scope_box, "readonly"),
+            *((radio, "normal") for radio in scope_radios),
             (max_chars_entry, "normal"),
         ]
 
@@ -736,6 +732,34 @@ class ConfigEditorDialog(tk.Toplevel):
         self._register_tooltip(label_widget, key)
         self._register_tooltip(combo, key)
         return combo
+
+    def _add_radio_row(
+        self,
+        parent: tk.Misc,
+        row: int,
+        label: str,
+        key: str,
+        values: tuple[str, ...],
+    ) -> list[ttk.Radiobutton]:
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=(0, 10), pady=5)
+        radio_frame = ttk.Frame(parent)
+        radio_frame.grid(row=row, column=1, sticky="w", pady=5)
+
+        radios: list[ttk.Radiobutton] = []
+        for index, value in enumerate(values):
+            radio = ttk.Radiobutton(
+                radio_frame,
+                text=value,
+                value=value,
+                variable=self.vars[key],
+            )
+            radio.pack(side=tk.LEFT, padx=(0, 16 if index < len(values) - 1 else 0))
+            radios.append(radio)
+            self._register_tooltip(radio, key)
+
+        self._register_tooltip(label_widget, key)
+        return radios
 
     def _add_path_row(
         self,

@@ -31,7 +31,7 @@
 
 ### 2.2 `processing.path` 是最重要的业务开关
 
-`processing.path` 决定业务链路，应作为界面中的一级决策点：
+`processing.path` 决定业务链路，应作为界面中的一级决策点，用互斥单选按钮呈现：
 
 - `full_context`
 - `legacy_rule`
@@ -394,7 +394,8 @@
 - 已支持 legacy 配置加载、canonical schema 标准化导出和部分兼容字段保留
 - 已与主窗口共享 GUI 主题，并会随屏幕 DPI / 分辨率自动调大默认字号
 - 配置编辑器初始尺寸会受当前屏幕约束，低分辨率屏幕下优先保留内部滚动而不是撑出屏幕
-- `processing.path` 当前已提供 `auto / full_context` 两个可视化入口；`full_context` 会恢复全文直送链路所需的配置项展示
+- `processing.path` 当前已提供 `auto / full_context` 两个单选入口；`full_context` 会恢复全文直送链路所需的配置项展示
+- `processing.project_background.scope` 已改为 `global / h2_auto` 单选入口，避免在两个固定取值之间使用下拉框
 - `full_context` 下已支持“章节写作计划”开关和长度上限配置
 
 首版与理想方案的差异：

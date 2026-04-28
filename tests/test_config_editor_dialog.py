@@ -180,9 +180,10 @@ def test_config_editor_widgets_do_not_create_side_assessment_panel(monkeypatch):
     assert calls == ["project", "writing", "processing", "runtime", "show"]
 
 
-def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
+def test_config_editor_processing_path_uses_radio_buttons(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     created_comboboxes = []
+    created_radios = []
 
     class FakeWidget:
         def __init__(self, *args, **kwargs):
@@ -206,6 +207,11 @@ def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
         def bind(self, *args, **kwargs):
             self.bind_calls.append((args, kwargs))
 
+    class FakeRadio(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_radios.append(self)
+
     class FakeCombobox(FakeWidget):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -225,11 +231,15 @@ def test_config_editor_processing_path_combobox_is_readonly(monkeypatch):
 
     monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
     monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
     monkeypatch.setattr(config_editor_dialog.ttk, "Combobox", FakeCombobox)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Radiobutton", FakeRadio)
 
     dialog._build_processing_section()
 
-    assert created_comboboxes[0].kwargs["state"] == "readonly"
+    path_radios = [radio for radio in created_radios if radio.kwargs["variable"] is dialog.vars["processing.path"]]
+    assert [radio.kwargs["value"] for radio in path_radios] == ["auto", "full_context"]
+    assert all(combo.kwargs["textvariable"] is not dialog.vars["processing.path"] for combo in created_comboboxes)
     assert dialog.processing_full_context_frame.bind_calls[0][0][0] == "<Configure>"
 
 
@@ -353,9 +363,10 @@ def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
     assert entry_keys == set()
 
 
-def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypatch):
+def test_config_editor_project_background_scope_uses_radio_buttons(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     created_comboboxes = []
+    created_radios = []
 
     class FakeWidget:
         def __init__(self, *args, **kwargs):
@@ -384,6 +395,11 @@ def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypa
             super().__init__(*args, **kwargs)
             created_comboboxes.append(self)
 
+    class FakeRadio(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_radios.append(self)
+
     dialog.vars = {
         "processing.path": StubVar("auto"),
         "processing.project_background.enabled": StubVar(True),
@@ -409,13 +425,17 @@ def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypa
     monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
     monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
     monkeypatch.setattr(config_editor_dialog.ttk, "Combobox", FakeCombobox)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Radiobutton", FakeRadio)
 
     dialog._build_processing_section()
 
-    scope_box = created_comboboxes[1]
-    fallback_box = created_comboboxes[2]
-    assert scope_box.kwargs["state"] == "readonly"
-    assert scope_box.kwargs["values"] == ("global", "h2_auto")
+    scope_radios = [
+        radio
+        for radio in created_radios
+        if radio.kwargs["variable"] is dialog.vars["processing.project_background.scope"]
+    ]
+    fallback_box = created_comboboxes[-1]
+    assert [radio.kwargs["value"] for radio in scope_radios] == ["global", "h2_auto"]
     assert fallback_box.kwargs["state"] == "readonly"
     assert fallback_box.kwargs["values"] == ("global", "raw_evidence", "empty")
 
