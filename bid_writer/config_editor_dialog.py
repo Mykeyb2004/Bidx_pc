@@ -39,6 +39,8 @@ CONFIG_EDITOR_MIN_HEIGHT = 760
 SCROLLABLE_SECTION_RIGHT_GUTTER = 28
 PATH_BROWSE_BUTTON_RIGHT_GUTTER = 12
 INFO_LABEL_WRAP_HORIZONTAL_PADDING = 48
+INTEGER_FIELD_MAX = 1_000_000
+RATIO_FIELD_MAX = 10.0
 
 
 def _label_wraplength_for_width(
@@ -499,19 +501,28 @@ class ConfigEditorDialog(tk.Toplevel):
 
         target_words = ttk.LabelFrame(content, text="篇幅目标", padding=12)
         target_words.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(target_words, 0, "默认目标基准", "writing.target_words.default")
-        self._add_entry_row(target_words, 1, "目标下限", "writing.target_words.min")
-        self._add_entry_row(target_words, 2, "目标上限", "writing.target_words.max")
-        self._add_entry_row(target_words, 3, "步长", "writing.target_words.step")
-        self._add_entry_row(target_words, 4, "区间上沿倍率", "writing.target_words.upper_ratio")
+        self._add_number_row(target_words, 0, "默认目标基准", "writing.target_words.default", increment=100)
+        self._add_number_row(target_words, 1, "目标下限", "writing.target_words.min", increment=100)
+        self._add_number_row(target_words, 2, "目标上限", "writing.target_words.max", increment=100)
+        self._add_number_row(target_words, 3, "步长", "writing.target_words.step", from_=1, increment=100)
+        self._add_number_row(
+            target_words,
+            4,
+            "区间上沿倍率",
+            "writing.target_words.upper_ratio",
+            from_=1.0,
+            to=RATIO_FIELD_MAX,
+            increment=0.05,
+            number_format="%.2f",
+        )
         target_words.columnconfigure(1, weight=1)
 
         rules = ttk.LabelFrame(content, text="写作与格式", padding=12)
         rules.pack(fill=tk.X, pady=(0, 12))
         self._add_entry_row(rules, 0, "输出格式", "writing.output_format")
         self._add_entry_row(rules, 1, "首行模板", "writing.first_line_template")
-        self._add_entry_row(rules, 2, "单节最大表格数", "writing.max_tables_per_section")
-        self._add_entry_row(rules, 3, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section")
+        self._add_number_row(rules, 2, "单节最大表格数", "writing.max_tables_per_section", increment=1)
+        self._add_number_row(rules, 3, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section", increment=1)
         rules.columnconfigure(1, weight=1)
 
         hard_constraints = ttk.LabelFrame(content, text="兼容旧字段（暂不参与 system 门禁）", padding=12)
@@ -688,6 +699,36 @@ class ConfigEditorDialog(tk.Toplevel):
         self._register_tooltip(label_widget, key)
         self._register_tooltip(entry, key)
         return entry
+
+    def _add_number_row(
+        self,
+        parent: tk.Misc,
+        row: int,
+        label: str,
+        key: str,
+        *,
+        from_: int | float = 0,
+        to: int | float = INTEGER_FIELD_MAX,
+        increment: int | float = 1,
+        number_format: str | None = None,
+    ) -> ttk.Spinbox:
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=(0, 10), pady=5)
+        options: dict[str, Any] = {}
+        if number_format is not None:
+            options["format"] = number_format
+        spinbox = ttk.Spinbox(
+            parent,
+            from_=from_,
+            to=to,
+            increment=increment,
+            textvariable=self.vars[key],
+            **options,
+        )
+        spinbox.grid(row=row, column=1, sticky="ew", pady=5)
+        self._register_tooltip(label_widget, key)
+        self._register_tooltip(spinbox, key)
+        return spinbox
 
     def _add_combobox_row(
         self,

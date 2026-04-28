@@ -261,6 +261,7 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
     dialog._add_path_row = lambda *_args, **_kwargs: None
     dialog._add_text_block = lambda *_args, **_kwargs: None
     dialog._add_entry_row = lambda _parent, _row, _label, key, **_kwargs: entry_keys.append(key)
+    dialog._add_number_row = lambda _parent, _row, _label, key, **_kwargs: entry_keys.append(key)
     dialog._add_check_row = lambda _parent, _row, _label, key: check_keys.append(key)
 
     monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
@@ -271,6 +272,84 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
     assert "writing.allow_markdown_headings" not in check_keys
     assert "writing.allow_english_terms" not in check_keys
     assert "writing.summary_title" not in entry_keys
+
+
+def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {
+        "writing.role_mode": StubVar("file"),
+        "writing.role_file": StubVar("./roles/通用投标角色.md"),
+        "writing.role_text": StubVar(""),
+        "writing.target_words.default": StubVar("1500"),
+        "writing.target_words.min": StubVar("100"),
+        "writing.target_words.max": StubVar("12000"),
+        "writing.target_words.step": StubVar("100"),
+        "writing.target_words.upper_ratio": StubVar("1.15"),
+        "writing.output_format": StubVar("纯正文"),
+        "writing.first_line_template": StubVar(""),
+        "writing.max_tables_per_section": StubVar("2"),
+        "writing.max_mermaid_flowcharts_per_section": StubVar("1"),
+    }
+    dialog.text_widgets = {}
+    created_entries = []
+    created_spinboxes = []
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            self.grid_kwargs = None
+
+        def pack(self, **_kwargs):
+            return None
+
+        def grid(self, **kwargs):
+            self.grid_kwargs = kwargs
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+        def bind(self, *_args, **_kwargs):
+            return None
+
+    class FakeEntry(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_entries.append(self)
+
+    class FakeSpinbox(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created_spinboxes.append(self)
+
+    dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+    dialog._add_mode_selector = lambda *_args, **_kwargs: None
+    dialog._add_path_row = lambda *_args, **_kwargs: None
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Entry", FakeEntry)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Spinbox", FakeSpinbox)
+    monkeypatch.setattr(config_editor_dialog.tk, "Text", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog, "style_text_widget", lambda *_args, **_kwargs: None)
+
+    dialog._build_writing_section()
+
+    spinbox_keys = {widget.kwargs["textvariable"] for widget in created_spinboxes}
+    assert spinbox_keys == {
+        dialog.vars["writing.target_words.default"],
+        dialog.vars["writing.target_words.min"],
+        dialog.vars["writing.target_words.max"],
+        dialog.vars["writing.target_words.step"],
+        dialog.vars["writing.target_words.upper_ratio"],
+        dialog.vars["writing.max_tables_per_section"],
+        dialog.vars["writing.max_mermaid_flowcharts_per_section"],
+    }
+    entry_keys = {widget.kwargs["textvariable"] for widget in created_entries}
+    assert dialog.vars["writing.output_format"] in entry_keys
+    assert dialog.vars["writing.first_line_template"] in entry_keys
 
 
 def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypatch):
