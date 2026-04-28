@@ -13,8 +13,6 @@ writing:
     max: 12000
     step: 100
     upper_ratio: 1.15
-  output_format: 纯正文
-  first_line_template: ''
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 1
   extra_rules: null

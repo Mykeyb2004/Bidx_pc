@@ -421,7 +421,8 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
         "step": 100,
         "upper_ratio": 1.15,
     }
-    assert payload["writing"]["output_format"] == "纯正文"
+    assert "output_format" not in payload["writing"]
+    assert "first_line_template" not in payload["writing"]
     assert payload["writing"]["max_tables_per_section"] == 2
     assert "allow_markdown_headings" not in payload["writing"]
     assert "allow_english_terms" not in payload["writing"]
@@ -442,6 +443,41 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
         "cards": [],
         "chapter_defaults": {},
     }
+
+
+def test_config_editor_drops_deprecated_output_format_and_first_line_template(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "legacy-format.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+writing:
+  output_format: "Markdown格式"
+  first_line_template: "#### {title}"
+  target_words:
+    default: 1500
+
+prompt:
+  output_format: "旧提示词格式"
+  first_line_template: "### {full_path}"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert "output_format" not in document.model["writing"]
+    assert "first_line_template" not in document.model["writing"]
+    assert "output_format" not in payload["writing"]
+    assert "first_line_template" not in payload["writing"]
+    assert "prompt" not in payload
 
 
 def test_new_config_editor_document_requires_bidder_name(tmp_path: Path):

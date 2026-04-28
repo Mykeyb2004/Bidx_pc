@@ -18,8 +18,6 @@ writing:
   target_words:
     default: 1200
     upper_ratio: 1.15
-  output_format: "纯正文"
-  first_line_template: ""
   max_tables_per_section: 2
   max_mermaid_flowcharts_per_section: 0
 

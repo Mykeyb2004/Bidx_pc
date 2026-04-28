@@ -221,6 +221,28 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert result.prompt.index("## 章节任务卡") < result.prompt.index("## 章节边界参考")
 
 
+def test_prompt_ignores_deprecated_output_format_and_first_line_template(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("writing", {})["output_format"] = "Markdown格式"
+    config._config.setdefault("writing", {})["first_line_template"] = "#### {title}"
+    config._config.setdefault("prompt", {})["output_format"] = "旧提示词格式"
+    config._config.setdefault("prompt", {})["first_line_template"] = "### {full_path}"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+    block_map = {block["id"]: block for block in result.prompt_contract_blocks}
+
+    assert "- 输出方式：直接写投标正文，不重复标题，不写说明性语句。" in result.prompt
+    assert "按“Markdown格式”组织内容" not in result.prompt
+    assert "旧提示词格式" not in result.prompt
+    assert "## 首行要求" not in result.prompt
+    assert "#### 质量保障措施" not in result.prompt
+    assert "first_line_rule" not in block_map["structure_rules"]["section_names"]
+    assert "prompt.output_format" not in block_map["chapter_task"]["source_context"]
+    assert "prompt.first_line_template" not in block_map["structure_rules"]["source_context"]
+
+
 def test_full_context_prompt_ignores_deprecated_knowledge_context(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)

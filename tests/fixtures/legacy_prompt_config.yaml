@@ -13,7 +13,6 @@ generation:
   default_min_words: 800
 
 prompt:
-  output_format: "纯正文"
   max_mermaid_flowcharts_per_section: 0
   extra_rules:
     - "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。"

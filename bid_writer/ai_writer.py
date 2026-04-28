@@ -217,7 +217,7 @@ class AIWriter:
                 "- 篇幅目标：建议控制在 "
                 f"{target_word_range.display_text} 字，优先完整覆盖本章重点，不为凑字数重复展开。"
             ),
-            f"- 输出方式：按“{self.config.prompt_output_format}”组织内容，直接写投标正文，不重复标题，不写说明性语句。",
+            "- 输出方式：直接写投标正文，不重复标题，不写说明性语句。",
             f"- 表格控制：{self._build_table_rule_text()}",
             task_basis_line,
         ]
@@ -290,16 +290,6 @@ class AIWriter:
             lines.append("**参考**（以下评分项间接相关，可适当体现，无需专门论述）")
             lines.append(self._format_scoring_items(reference))
         return "\n".join(lines)
-
-    def _format_first_line(self, heading: HeadingNode) -> str:
-        """渲染提示词中的首行模板"""
-        template = self.config.prompt_first_line_template
-        if not template:
-            return ""
-        try:
-            return template.format(title=heading.title, full_path=heading.full_path)
-        except (KeyError, ValueError):
-            return template.replace("{title}", heading.title)
 
     def _render_system_gate_rules(self) -> str:
         gate_rules = self.config.system_gate_rules_template
@@ -675,7 +665,6 @@ class AIWriter:
                     "HeadingNode.title",
                     "HeadingNode.full_path",
                     "target_word_range",
-                    "prompt.output_format",
                     "prompt_bidder_name",
                     (
                         "runtime.max_mermaid_flowcharts_per_section_override"
@@ -695,10 +684,9 @@ class AIWriter:
                 "id": "structure_rules",
                 "label": "Structure Rules",
                 "prompt_kind": "user",
-                "section_names": ["structure_contract", "first_line_rule"],
+                "section_names": ["structure_contract"],
                 "source_context": [
                     "structure_contract",
-                    "prompt.first_line_template" if "first_line_rule" in section_map else "",
                     "prompt.extra_rules" if self.config.prompt_extra_rules else "",
                 ],
             },
@@ -840,7 +828,6 @@ class AIWriter:
             except Exception:
                 pruned_context = None
 
-        first_line = self._format_first_line(heading)
         scope_reference = self._build_scope_reference(heading)
         background = ""
         project_background_trace: dict[str, Any] = {}
@@ -947,20 +934,6 @@ class AIWriter:
                 prompt_sections,
                 "structure_contract",
                 self._build_structure_contract_section(),
-            )
-
-        if first_line:
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "first_line_rule",
-                "\n".join(
-                    [
-                        "## 首行要求",
-                        f"- 首行固定输出：{first_line}",
-                        "- 除首行外，不要再次重复当前标题。",
-                    ]
-                ),
             )
 
         if pruned_context is not None:

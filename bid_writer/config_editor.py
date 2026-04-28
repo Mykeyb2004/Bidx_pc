@@ -132,8 +132,6 @@ def build_default_editor_model() -> dict[str, Any]:
             "target_words_max": 12000,
             "target_words_step": 100,
             "target_words_upper_ratio": 1.15,
-            "output_format": "纯正文",
-            "first_line_template": "",
             "max_tables_per_section": 2,
             "max_mermaid_flowcharts_per_section": 1,
             "hard_constraints": [],
@@ -415,12 +413,6 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                 _first_defined(raw_config, ("writing", "target_words", "upper_ratio"), default=1.15),
                 default=1.15,
             ),
-            "output_format": _coerce_str(
-                _first_defined(raw_config, ("writing", "output_format"), ("prompt", "output_format"), default="Markdown格式")
-            ),
-            "first_line_template": _coerce_str(
-                _first_defined(raw_config, ("writing", "first_line_template"), ("prompt", "first_line_template"), default="")
-            ),
             "max_tables_per_section": _coerce_int(
                 _first_defined(raw_config, ("writing", "max_tables_per_section"), ("prompt", "max_tables_per_section"), default=4),
                 default=4,
@@ -641,8 +633,6 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
             "step": int(model["writing"]["target_words_step"]),
             "upper_ratio": float(model["writing"]["target_words_upper_ratio"]),
         },
-        "output_format": model["writing"]["output_format"],
-        "first_line_template": model["writing"]["first_line_template"],
         "max_tables_per_section": int(model["writing"]["max_tables_per_section"]),
         "max_mermaid_flowcharts_per_section": int(model["writing"]["max_mermaid_flowcharts_per_section"]),
         "hard_constraints": list(model["writing"]["hard_constraints"]),

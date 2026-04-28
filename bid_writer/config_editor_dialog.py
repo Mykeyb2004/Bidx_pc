@@ -280,8 +280,6 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.target_words.max", tk.StringVar())
         add_var("writing.target_words.step", tk.StringVar())
         add_var("writing.target_words.upper_ratio", tk.StringVar())
-        add_var("writing.output_format", tk.StringVar())
-        add_var("writing.first_line_template", tk.StringVar())
         add_var("writing.max_tables_per_section", tk.StringVar())
         add_var("writing.max_mermaid_flowcharts_per_section", tk.StringVar())
 
@@ -519,10 +517,8 @@ class ConfigEditorDialog(tk.Toplevel):
 
         rules = ttk.LabelFrame(content, text="写作与格式", padding=12)
         rules.pack(fill=tk.X, pady=(0, 12))
-        self._add_entry_row(rules, 0, "输出格式", "writing.output_format")
-        self._add_entry_row(rules, 1, "首行模板", "writing.first_line_template")
-        self._add_number_row(rules, 2, "单节最大表格数", "writing.max_tables_per_section", increment=1)
-        self._add_number_row(rules, 3, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section", increment=1)
+        self._add_number_row(rules, 0, "单节最大表格数", "writing.max_tables_per_section", increment=1)
+        self._add_number_row(rules, 1, "单节最大 Mermaid 图示数", "writing.max_mermaid_flowcharts_per_section", increment=1)
         rules.columnconfigure(1, weight=1)
 
         hard_constraints = ttk.LabelFrame(content, text="兼容旧字段（暂不参与 system 门禁）", padding=12)
@@ -879,8 +875,6 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.target_words.max": str(model["writing"]["target_words_max"]),
             "writing.target_words.step": str(model["writing"]["target_words_step"]),
             "writing.target_words.upper_ratio": str(model["writing"]["target_words_upper_ratio"]),
-            "writing.output_format": model["writing"]["output_format"],
-            "writing.first_line_template": model["writing"]["first_line_template"],
             "writing.max_tables_per_section": str(model["writing"]["max_tables_per_section"]),
             "writing.max_mermaid_flowcharts_per_section": str(model["writing"]["max_mermaid_flowcharts_per_section"]),
             "processing.path": model["processing"]["path"],
@@ -966,8 +960,6 @@ class ConfigEditorDialog(tk.Toplevel):
                 "target_words_max": self.vars["writing.target_words.max"].get().strip(),
                 "target_words_step": self.vars["writing.target_words.step"].get().strip(),
                 "target_words_upper_ratio": self.vars["writing.target_words.upper_ratio"].get().strip(),
-                "output_format": self.vars["writing.output_format"].get(),
-                "first_line_template": self.vars["writing.first_line_template"].get(),
                 "max_tables_per_section": self.vars["writing.max_tables_per_section"].get().strip(),
                 "max_mermaid_flowcharts_per_section": self.vars["writing.max_mermaid_flowcharts_per_section"].get().strip(),
                 "hard_constraints": self._split_lines(self._get_text_value("writing.hard_constraints_text")),

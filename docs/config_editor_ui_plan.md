@@ -132,8 +132,6 @@
 | `writing.target_words.max` | 数字输入 |
 | `writing.target_words.step` | 数字输入 |
 | `writing.target_words.upper_ratio` | 数字输入 |
-| `writing.output_format` | 下拉框 |
-| `writing.first_line_template` | 单行输入框 |
 | `writing.max_tables_per_section` | 数字输入 |
 | `writing.max_mermaid_flowcharts_per_section` | 数字输入 |
 | `writing.hard_constraints` | 列表编辑器 |

@@ -272,6 +272,8 @@ def test_config_editor_writing_section_omits_deprecated_fields(monkeypatch):
     assert "writing.allow_markdown_headings" not in check_keys
     assert "writing.allow_english_terms" not in check_keys
     assert "writing.summary_title" not in entry_keys
+    assert "writing.output_format" not in entry_keys
+    assert "writing.first_line_template" not in entry_keys
 
 
 def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
@@ -285,8 +287,6 @@ def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
         "writing.target_words.max": StubVar("12000"),
         "writing.target_words.step": StubVar("100"),
         "writing.target_words.upper_ratio": StubVar("1.15"),
-        "writing.output_format": StubVar("纯正文"),
-        "writing.first_line_template": StubVar(""),
         "writing.max_tables_per_section": StubVar("2"),
         "writing.max_mermaid_flowcharts_per_section": StubVar("1"),
     }
@@ -348,8 +348,7 @@ def test_config_editor_writing_numeric_fields_use_spinboxes(monkeypatch):
         dialog.vars["writing.max_mermaid_flowcharts_per_section"],
     }
     entry_keys = {widget.kwargs["textvariable"] for widget in created_entries}
-    assert dialog.vars["writing.output_format"] in entry_keys
-    assert dialog.vars["writing.first_line_template"] in entry_keys
+    assert entry_keys == set()
 
 
 def test_config_editor_project_background_enums_are_readonly_comboboxes(monkeypatch):

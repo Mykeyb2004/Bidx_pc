@@ -26,3 +26,5 @@ def test_config_editor_tooltips_omit_deprecated_writing_fields():
     assert get_tooltip_text("writing.allow_markdown_headings") == ""
     assert get_tooltip_text("writing.allow_english_terms") == ""
     assert get_tooltip_text("writing.summary_title") == ""
+    assert get_tooltip_text("writing.output_format") == ""
+    assert get_tooltip_text("writing.first_line_template") == ""

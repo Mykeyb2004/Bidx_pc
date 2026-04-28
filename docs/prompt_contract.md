@@ -99,12 +99,10 @@
 
 - `bid_requirements`
 - `scoring_criteria`
-- `prompt_output_format`
-- `prompt_first_line_template`
 - `additional_requirements`
 - `prompt_hard_constraints`
 
-这些内容都在 `user prompt`。
+其中 `bid_requirements`、`scoring_criteria`、`additional_requirements` 会进入 `user prompt`；`prompt_hard_constraints`、`prompt_output_format`、`prompt_first_line_template` 已废弃，不再影响 prompt。
 
 ## 4. 项目采购需求与评分标准提炼
 
@@ -343,13 +341,12 @@ pruned 分支里，需求相关内容只会出现一个区块：
 
 1. `task_card`
 2. `structure_contract`
-3. 可选 `first_line_rule`
-4. `scope_reference`
-5. 可选 `project_background`
-6. 可选 `scoring_focus`
-7. 可选 `requirement_brief` / `requirement_points`
-8. 若存在可用事实卡片，则注入 `fact_card_context`
-9. 可选 `additional_requirements`
+3. `scope_reference`
+4. 可选 `project_background`
+5. 可选 `scoring_focus`
+6. 可选 `requirement_brief` / `requirement_points`
+7. 若存在可用事实卡片，则注入 `fact_card_context`
+8. 可选 `additional_requirements`
 
 #### full-context 分支
 
@@ -357,10 +354,9 @@ pruned 分支里，需求相关内容只会出现一个区块：
 2. 可选 `bid_requirements`
 3. 可选 `scoring_criteria`
 4. `task_card`
-5. 可选 `first_line_rule`
-6. `scope_reference`
-7. 若存在可用事实卡片，则注入 `fact_card_context`
-8. 可选 `additional_requirements`
+5. `scope_reference`
+6. 若存在可用事实卡片，则注入 `fact_card_context`
+7. 可选 `additional_requirements`
 
 `additional_requirements` 当前只承载操作员手工输入的附加要求。
 
@@ -372,7 +368,6 @@ pruned 分支里，需求相关内容只会出现一个区块：
 |------------|----------|----------|------|
 | `task_card` | `## 章节任务卡` | 总是出现 | 定义当前章节写作任务 |
 | `structure_contract` | 无独立标题；直接输出短提醒列表 | 总是出现 | 提醒“严格遵守 system 硬门禁”并补充 task 侧简短执行规则 |
-| `first_line_rule` | `## 首行要求` | `prompt_first_line_template` 非空时 | 要求首行固定输出 |
 | `scope_reference` | `## 章节边界参考` | 总是出现 | 给出父标题/当前标题/同级标题 |
 | `project_background` | `## 项目背景` | pruned/auto 分支中项目背景摘要非空时 | auto + `scope=h2_auto` 使用当前 H2 背景；full-context 不生成该 section |
 | `fact_card_context` | `## 事实卡片参考` | 启用事实卡片模式且当前章节存在可用事实卡片时 | 注入默认勾选且未被本章排除的全局卡片，以及当前章节选中的局部卡片，按 `enforcement=strong/reference` 分组；full-context 分支中位于章节任务卡和章节边界之后；渲染时会去除“本章节”等来源章节元话语 |
@@ -402,7 +397,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - “当前章节路径”直接使用 `HeadingNode.full_path`
 - “本章重点”来自 `pruned_context.chapter_focus_terms`，如果没有 pruned context，则退回标题自身
 - 当 `processing.full_context.chapter_writing_plan.enabled=true` 且当前走 full-context 分支时，会额外生成“章节写作计划”，并直接插入任务卡
-- “输出方式”只引用 `prompt_output_format` 这段配置文本
+- “输出方式”固定为“直接写投标正文，不重复标题，不写说明性语句”，不再读取配置字段
 - “表格控制”来自 `prompt_max_tables_per_section`
 - “流程图控制”只在 `prompt_max_mermaid_flowcharts_per_section > 0` 或运行时 override 值 `> 0` 时出现
 - 该约束只要求使用 Mermaid 代码块，不再把图类型固定为 `flowchart TD`
@@ -428,20 +423,14 @@ pruned 分支里，需求相关内容只会出现一个区块：
 - `user prompt` 仍会保留少量任务侧提醒文本；例如 `structure_contract` 的两条短提醒，以及 `task_card` 中的篇幅目标、表格控制、写作依据等任务信息
 - 现在这些全局硬门禁文本来自 `Config.role` 与 `roles/system_gate_rules.md`，不是来自 `prompt.*` 兼容字段
 
-### 5.5 `first_line_rule`
+### 5.5 已废弃的格式字段
 
-当 `prompt_first_line_template` 非空时，会额外插入：
+`prompt_output_format` / `writing.output_format` 和 `prompt_first_line_template` / `writing.first_line_template` 已废弃：
 
-```text
-## 首行要求
-- 首行固定输出：{格式化后的首行}
-- 除首行外，不要再次重复当前标题。
-```
-
-模板支持：
-
-- `{title}`
-- `{full_path}`
+- 配置编辑器规范化保存时会丢弃这两个字段
+- 运行时不再读取这两个字段
+- `user prompt` 不再生成 `first_line_rule` / `## 首行要求`
+- 输出形态由 `system prompt` 的硬门禁和 `task_card` 中的固定“输出方式”共同约束
 
 ### 5.6 pruned-context 分支
 
@@ -469,7 +458,7 @@ pruned 分支里，需求相关内容只会出现一个区块：
 3. `## 招标需求参考`
 4. `## 评分标准参考`
 
-对应原文非空时，该 section 才会真正出现。之后再进入章节动态段落，例如 `task_card`、`first_line_rule`、`scope_reference`。
+对应原文非空时，该 section 才会真正出现。之后再进入章节动态段落，例如 `task_card`、`scope_reference`。
 
 `scope_reference` 不会进入稳定前缀，因为它包含当前章节和同级标题信息；如果把它放在最前面，会让不同 h3/h4 请求在很早的位置就分叉，削弱跨章节 prompt cache 复用。
 
@@ -536,9 +525,6 @@ messages = [
 - 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。
 - 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。
 
-## 首行要求
-...
-
 ## 章节边界参考
 ...
 
@@ -555,7 +541,6 @@ messages = [
 
 其中：
 
-- `首行要求` 可能没有
 - `评分关注` 可能没有
 - `需求要点` 可能来自 `requirement_brief`，也可能来自 `requirement_seed`
 - `用户附加要求` 也可能没有
@@ -588,9 +573,6 @@ messages = [
 ## 章节任务卡
 ...
 
-## 首行要求
-...
-
 ## 章节边界参考
 ...
 
@@ -601,7 +583,6 @@ messages = [
 
 其中：
 
-- `首行要求` 可能没有
 - `项目背景` 可能没有
 - `招标需求参考` 和 `评分标准参考` 取决于对应原文是否为空
 - `用户附加要求` 也可能没有
@@ -648,8 +629,6 @@ messages = [
 | `embedding_api_key` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_API_KEY` | embedding 服务密钥 | 间接进入，影响 vector retrieval |
 | `embedding_model` | `.env.local` / 环境变量 `BID_WRITER_EMBEDDING_MODEL` | 向量模型名称 | 间接进入，决定 vector retrieval |
 | `prompt_bidder_name` | `prompt.bidder_name` | 投标主体名称 | 是 |
-| `prompt_output_format` | `prompt.output_format` | task card 中的输出方式描述 | 是 |
-| `prompt_first_line_template` | `prompt.first_line_template` | 是否追加首行要求，以及首行文本 | 是 |
 | `prompt_max_tables_per_section` | `prompt.max_tables_per_section` | task card 中的表格控制文案 | 是 |
 | `prompt_max_mermaid_flowcharts_per_section` | `prompt.max_mermaid_flowcharts_per_section` | task card 中的流程图控制文案 | 条件性进入 |
 | `prompt_hard_constraints` | `prompt.hard_constraints` | 兼容旧字段，当前不再作为 system prompt 附加强约束来源 | 否 |
@@ -722,16 +701,14 @@ flowchart TD
     D2 --> D3[bid_requirements 可选]
     D3 --> D4[scoring_criteria 可选]
     D4 --> D5[task_card]
-    D5 --> D6[first_line_rule 可选]
-    D6 --> D7[scope_reference]
+    D5 --> D7[scope_reference]
     D7 --> D8[fact_card_context 可选]
     D8 --> D9[additional_requirements 可选]
 
     G6 --> P1[task_card]
     G7 --> P1
     P1 --> P2[structure_contract]
-    P2 --> P3[first_line_rule 可选]
-    P3 --> P4[scope_reference]
+    P2 --> P4[scope_reference]
     P4 --> P5[project_background 可选]
     P5 --> P6[scoring_focus 可选]
     P6 --> P7[requirement_context 可选]

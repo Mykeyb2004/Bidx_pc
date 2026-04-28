@@ -28,8 +28,6 @@ FIELD_TOOLTIPS: dict[str, str] = {
     "writing.target_words.max": "目标篇幅基准值允许的最大值。用来避免一次把单章篇幅基准调得过大。",
     "writing.target_words.step": "篇幅基准调节步长。也会用于把自动推导的区间上沿向上取整。",
     "writing.target_words.upper_ratio": "目标区间上沿相对基准值的倍率。例如 1.15 表示 3000 会自动推导为约 3000-3500 字。",
-    "writing.output_format": "输出格式说明，会直接影响提示词中对正文形态的要求。通常只有切换写作风格时才需要改。",
-    "writing.first_line_template": "章节正文首行模板。留空时不强制插入固定首行；需要固定起句时再设置。",
     "writing.max_tables_per_section": "单节允许出现的最大表格数。数值越大，模型越容易输出表格。",
     "writing.max_mermaid_flowcharts_per_section": "单节允许出现的 Mermaid 图示上限。设为 0 时不注入流程图控制提示。",
     "writing.hard_constraints_text": "兼容旧字段保留，不再作为 system prompt 门禁来源。请改 ./roles/system_gate_rules.md。",

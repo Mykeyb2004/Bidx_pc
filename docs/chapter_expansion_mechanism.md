@@ -121,8 +121,6 @@ GUI 中批量生成的主要逻辑位于：
 - `writing.target_words.default`
 - `generation.stream`
 - `generation.stream_idle_timeout_seconds`
-- `prompt.output_format`
-- `prompt.first_line_template`
 - `prompt.bidder_name`
 - `prompt.max_tables_per_section`
 - `prompt.max_mermaid_flowcharts_per_section`
@@ -170,17 +168,16 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 1. `task_card`
 2. `structure_contract`
-3. `first_line_rule`，仅在配置了首行模板时出现
-4. `scope_reference`
-5. `project_background`，若存在
-6. 若有裁剪上下文：
+3. `scope_reference`
+4. `project_background`，若存在
+5. 若有裁剪上下文：
    - `scoring_focus`
    - `requirement_brief` 或 `requirement_points`
-7. 若存在可用事实卡片，则为 `fact_card_context`
-8. 若没有裁剪上下文：
+6. 若存在可用事实卡片，则为 `fact_card_context`
+7. 若没有裁剪上下文：
    - `bid_requirements`
    - `scoring_criteria`
-9. `additional_requirements`
+8. `additional_requirements`
 
 在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
 
@@ -188,10 +185,9 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 2. `bid_requirements`
 3. `scoring_criteria`
 4. `task_card`
-5. `first_line_rule`，若存在
-6. `scope_reference`
-7. 若存在可用事实卡片，则为 `fact_card_context`
-8. `additional_requirements`
+5. `scope_reference`
+6. 若存在可用事实卡片，则为 `fact_card_context`
+7. `additional_requirements`
 
 `full_context` 已经把完整采购需求和评分标准放入 prompt，因此不会再生成或注入 `project_background` 摘要。
 
@@ -233,12 +229,11 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 这部分与 system prompt 中的强约束一起构成双层约束：一层在 system，一层在 user。
 
-### 3.5 首行规则与额外规则
+### 3.5 额外规则
 
-- `prompt.first_line_template` 非空时，模型被要求固定首行输出
 - `prompt.extra_rules` 不再单独成段，而是追加到 `## 结构输出硬要求` 的末尾
 
-这两项都属于 user prompt 的结构补充，不属于 system 级约束。
+该项属于 user prompt 的结构补充，不属于 system 级约束。
 
 ### 3.6 事实卡片如何进入 prompt
 

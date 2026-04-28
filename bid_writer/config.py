@@ -741,14 +741,13 @@ class Config:
 
     @property
     def prompt_output_format(self) -> str:
-        """输出格式说明"""
-        return self._get_first_defined(('writing', 'output_format'), ('prompt', 'output_format'), default='Markdown格式')
+        """兼容旧调用：输出形态已固定为直接投标正文。"""
+        return '纯正文'
 
     @property
     def prompt_first_line_template(self) -> str:
-        """首行模板"""
-        value = self._get_first_defined(('writing', 'first_line_template'), ('prompt', 'first_line_template'), default='')
-        return str(value).strip() if value is not None else ''
+        """兼容旧调用：首行模板已废弃。"""
+        return ''
 
     @property
     def prompt_max_tables_per_section(self) -> int:
