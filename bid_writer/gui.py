@@ -28,6 +28,7 @@ from openai import (
 from .main import BidWriter
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
+from .outline_prepare import set_outline_locked
 from .gui_state import (
     get_startup_config_candidates,
     load_gui_state,
@@ -89,6 +90,13 @@ _WORKSPACE_CHAR_COUNT_UNCHANGED = object()
 _TK_ENV_READY = False
 _TTKBOOTSTRAP_READY: Optional[bool] = None
 _TTKBOOTSTRAP_MODULE = None
+PROJECT_MENU_NEW_CONFIG_INDEX = 0
+PROJECT_MENU_SWITCH_CONFIG_INDEX = 1
+PROJECT_MENU_EDIT_CONFIG_INDEX = 2
+PROJECT_MENU_PREPARE_OUTLINE_INDEX = 3
+PROJECT_MENU_RELOAD_OUTLINE_INDEX = 5
+PROJECT_MENU_REFRESH_STATUS_INDEX = 6
+PROJECT_MENU_OPEN_OUTPUT_INDEX = 8
 CHAPTER_MENU_FACT_CARD_INDEX = 1
 CONTEXT_MENU_GENERATE_INDEX = 0
 CONTEXT_MENU_FACT_CARD_INDEX = 1
@@ -1648,6 +1656,7 @@ class MainWindow(tk.Tk):
         menu.add_command(label="新建配置...", command=self.open_new_config_editor)
         menu.add_command(label="切换配置...", command=self.select_and_switch_config)
         menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
+        menu.add_command(label="解锁/重新准备大纲...", command=self.unlock_and_prepare_outline)
         menu.add_separator()
         menu.add_command(label="重载大纲", command=self.reload_outline)
         menu.add_command(label="扫描输出状态", command=self.refresh_status)
@@ -2645,8 +2654,24 @@ class MainWindow(tk.Tk):
         self.btn_selection_menu.config(state=selection_menu_state)
 
         if hasattr(self, "project_menu"):
-            for entry_index in (0, 1, 2, 4, 5, 7):
-                self.project_menu.entryconfigure(entry_index, state=tool_button_state)
+            prepare_label = (
+                "继续准备大纲..."
+                if not self.bid_writer.config.outline_locked
+                else "解锁/重新准备大纲..."
+            )
+            for entry_index in (
+                PROJECT_MENU_NEW_CONFIG_INDEX,
+                PROJECT_MENU_SWITCH_CONFIG_INDEX,
+                PROJECT_MENU_EDIT_CONFIG_INDEX,
+                PROJECT_MENU_PREPARE_OUTLINE_INDEX,
+                PROJECT_MENU_RELOAD_OUTLINE_INDEX,
+                PROJECT_MENU_REFRESH_STATUS_INDEX,
+                PROJECT_MENU_OPEN_OUTPUT_INDEX,
+            ):
+                if entry_index == PROJECT_MENU_PREPARE_OUTLINE_INDEX:
+                    self.project_menu.entryconfigure(entry_index, label=prepare_label, state=tool_button_state)
+                else:
+                    self.project_menu.entryconfigure(entry_index, state=tool_button_state)
         if hasattr(self, "view_menu"):
             for entry_index in (0, 2, 3, 4, 6):
                 self.view_menu.entryconfigure(entry_index, state=tool_button_state)
@@ -2847,7 +2872,11 @@ class MainWindow(tk.Tk):
         except Exception as e:
             messagebox.showerror("错误", f"加载配置失败：\n{e}", parent=self)
             self.status_text.set("配置切换失败")
-            return
+            return False
+
+        if not next_bid_writer.config.outline_locked:
+            if not self._prepare_unlocked_outline(next_bid_writer):
+                return False
 
         if not next_bid_writer.load_outline():
             messagebox.showerror(
@@ -2856,7 +2885,7 @@ class MainWindow(tk.Tk):
                 parent=self,
             )
             self.status_text.set("配置切换失败")
-            return
+            return False
 
         self.bid_writer = next_bid_writer
         self.adapter = GUIAdapter(next_bid_writer)
@@ -2866,6 +2895,36 @@ class MainWindow(tk.Tk):
         else:
             self.status_text.set(f"已切换配置: {selected_path.name}")
         return True
+
+    def _prepare_unlocked_outline(self, bid_writer: BidWriter) -> bool:
+        """打开大纲准备窗口，确认后重载配置。"""
+        from .outline_prepare_dialog import OutlinePrepareDialog
+
+        dialog = OutlinePrepareDialog(self, bid_writer.config)
+        self.wait_window(dialog)
+        if not dialog.result.get("confirmed"):
+            self.status_text.set("大纲准备已取消")
+            return False
+        bid_writer.reload_config()
+        return True
+
+    def unlock_and_prepare_outline(self):
+        """解锁当前大纲并重新进入大纲准备阶段。"""
+        current_path = self.bid_writer.config.config_path.resolve()
+        if self.bid_writer.config.outline_locked:
+            confirmed = messagebox.askyesno(
+                "确认解锁大纲",
+                "修改大纲可能导致已生成章节状态、文件匹配和事实卡片引用不再对应当前目录。确定要重新准备大纲吗？",
+                parent=self,
+            )
+            if not confirmed:
+                return
+        try:
+            set_outline_locked(current_path, False)
+        except Exception as exc:
+            messagebox.showerror("解锁失败", str(exc), parent=self)
+            return
+        self._switch_to_config_path(current_path, force_reload=True)
 
     def open_new_config_editor(self):
         """打开新配置创建编辑器。"""
