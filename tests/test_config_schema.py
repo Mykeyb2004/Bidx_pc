@@ -709,3 +709,105 @@ context_pruning:
     assert config.processing_path == "legacy_rule"
     assert config.context_pruning_enabled is True
     assert config.context_pruning_scoring_mode == "legacy_rule"
+
+
+def test_outline_lock_defaults_true_for_existing_configs(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("project: {}\n", encoding="utf-8")
+
+    config = Config(str(config_path))
+
+    assert config.outline_locked is True
+
+
+def test_outline_lock_can_be_disabled_for_new_project_flow(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  outline_locked: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.outline_locked is False
+
+
+def test_outline_generation_role_file_resolves_from_config_dir(tmp_path: Path):
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    role_file = roles_dir / "标书架构师.md"
+    role_file.write_text("架构师角色", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.outline_generation_role_file == str(role_file)
+
+
+def test_outline_model_settings_prefer_outline_env_and_fallback_to_generation(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_API_BASE_URL",
+        "BID_WRITER_API_KEY",
+        "BID_WRITER_MODEL",
+        "BID_WRITER_TEMPERATURE",
+        "BID_WRITER_MAX_TOKENS",
+        "BID_WRITER_TIMEOUT_SECONDS",
+        "BID_WRITER_MAX_RETRIES",
+        "BID_WRITER_TOP_P",
+        "BID_WRITER_SEED",
+        "BID_WRITER_OUTLINE_API_BASE_URL",
+        "BID_WRITER_OUTLINE_API_KEY",
+        "BID_WRITER_OUTLINE_MODEL",
+        "BID_WRITER_OUTLINE_TEMPERATURE",
+        "BID_WRITER_OUTLINE_MAX_TOKENS",
+        "BID_WRITER_OUTLINE_TIMEOUT_SECONDS",
+        "BID_WRITER_OUTLINE_MAX_RETRIES",
+        "BID_WRITER_OUTLINE_TOP_P",
+        "BID_WRITER_OUTLINE_SEED",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("project: {}\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text(
+        "\n".join(
+            [
+                "BID_WRITER_API_BASE_URL=https://generation.example/v1",
+                "BID_WRITER_API_KEY=generation-key",
+                "BID_WRITER_MODEL=generation-model",
+                "BID_WRITER_TEMPERATURE=0.7",
+                "BID_WRITER_MAX_TOKENS=10000",
+                "BID_WRITER_TIMEOUT_SECONDS=120",
+                "BID_WRITER_MAX_RETRIES=3",
+                "BID_WRITER_TOP_P=0.9",
+                "BID_WRITER_SEED=100",
+                "BID_WRITER_OUTLINE_MODEL=outline-model",
+                "BID_WRITER_OUTLINE_TEMPERATURE=0.25",
+                "BID_WRITER_OUTLINE_MAX_TOKENS=4321",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.outline_api_base_url == "https://generation.example/v1"
+    assert config.outline_api_key == "generation-key"
+    assert config.outline_model == "outline-model"
+    assert config.outline_temperature == 0.25
+    assert config.outline_max_tokens == 4321
+    assert config.outline_timeout_seconds == 120
+    assert config.outline_max_retries == 3
+    assert config.outline_top_p == 0.9
+    assert config.outline_seed == 100

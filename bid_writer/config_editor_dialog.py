@@ -265,6 +265,8 @@ class ConfigEditorDialog(tk.Toplevel):
 
         add_var("project.root_dir", tk.StringVar())
         add_var("project.bidder_name", tk.StringVar())
+        add_var("project.outline_locked", tk.BooleanVar())
+        add_var("project.outline_generation.role_file", tk.StringVar())
         add_var("project.outline_file", tk.StringVar())
         add_var("project.bid_requirements_mode", tk.StringVar())
         add_var("project.bid_requirements_file", tk.StringVar())
@@ -447,6 +449,19 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_path_row(basic, 0, "项目根目录", "project.root_dir", browse_kind="dir", relative_to="config")
         self._add_entry_row(basic, 1, "投标主体名称", "project.bidder_name")
         self._add_path_row(basic, 2, "输出目录", "project.output_dir", browse_kind="dir", relative_to="project")
+
+        outline = ttk.LabelFrame(content, text="大纲准备", padding=12)
+        outline.pack(fill=tk.X, pady=(0, 12))
+        self._add_check_row(outline, 0, "大纲已锁定", "project.outline_locked")
+        self._add_path_row(
+            outline,
+            1,
+            "大纲生成角色文件",
+            "project.outline_generation.role_file",
+            browse_kind="file",
+            relative_to="config",
+        )
+        outline.columnconfigure(1, weight=1)
 
         inputs = ttk.LabelFrame(content, text="输入资源", padding=12)
         inputs.pack(fill=tk.X, pady=(0, 12))
@@ -882,6 +897,8 @@ class ConfigEditorDialog(tk.Toplevel):
         data = {
             "project.root_dir": model["project"]["root_dir"],
             "project.bidder_name": model["project"]["bidder_name"],
+            "project.outline_locked": model["project"]["outline_locked"],
+            "project.outline_generation.role_file": model["project"]["outline_generation"]["role_file"],
             "project.outline_file": model["project"]["outline_file"],
             "project.bid_requirements_mode": model["project"]["bid_requirements_mode"],
             "project.bid_requirements_file": model["project"]["bid_requirements_file"],
@@ -960,6 +977,10 @@ class ConfigEditorDialog(tk.Toplevel):
             "project": {
                 "root_dir": self.vars["project.root_dir"].get().strip(),
                 "bidder_name": self.vars["project.bidder_name"].get().strip(),
+                "outline_locked": bool(self.vars["project.outline_locked"].get()),
+                "outline_generation": {
+                    "role_file": self.vars["project.outline_generation.role_file"].get().strip(),
+                },
                 "outline_file": self.vars["project.outline_file"].get().strip(),
                 "bid_requirements_mode": self.vars["project.bid_requirements_mode"].get().strip() or "file",
                 "bid_requirements_file": self.vars["project.bid_requirements_file"].get().strip(),

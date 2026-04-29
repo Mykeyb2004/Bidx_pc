@@ -114,6 +114,10 @@ def build_default_editor_model() -> dict[str, Any]:
         "project": {
             "root_dir": ".",
             "bidder_name": "",
+            "outline_locked": False,
+            "outline_generation": {
+                "role_file": "./roles/标书架构师.md",
+            },
             "outline_file": "./outline.md",
             "bid_requirements_mode": "file",
             "bid_requirements_file": "./项目要求/项目采购需求.md",
@@ -342,6 +346,19 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     default="",
                 )
             ),
+            "outline_locked": _coerce_bool(
+                _first_defined(raw_config, ("project", "outline_locked"), default=True),
+                default=True,
+            ),
+            "outline_generation": {
+                "role_file": _coerce_str(
+                    _first_defined(
+                        raw_config,
+                        ("project", "outline_generation", "role_file"),
+                        default="./roles/标书架构师.md",
+                    )
+                ).strip() or "./roles/标书架构师.md",
+            },
             "outline_file": _coerce_str(
                 _first_defined(
                     raw_config,
@@ -689,6 +706,13 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
         "project": {
             "root_dir": model["project"]["root_dir"].strip() or ".",
             "bidder_name": model["project"]["bidder_name"],
+            "outline_locked": bool(model["project"]["outline_locked"]),
+            "outline_generation": {
+                "role_file": (
+                    model["project"]["outline_generation"]["role_file"].strip()
+                    or "./roles/标书架构师.md"
+                ),
+            },
             "inputs": project_inputs,
             "output_dir": model["project"]["output_dir"].strip() or "./output",
         },
@@ -763,7 +787,10 @@ def validate_editor_model(
 
     outline_path = _resolve_path(model["project"]["outline_file"] or "./outline.md", root_dir)
     if not outline_path.exists():
-        messages.append(ValidationMessage("error", f"大纲文件不存在：{outline_path}"))
+        if bool(model["project"].get("outline_locked", True)):
+            messages.append(ValidationMessage("error", f"大纲文件不存在：{outline_path}"))
+        else:
+            messages.append(ValidationMessage("warning", f"大纲文件暂不存在，将在大纲准备阶段创建：{outline_path}"))
 
     for source_key, label in (("bid_requirements", "采购需求"), ("scoring_criteria", "评分标准")):
         mode = model["project"][f"{source_key}_mode"]
@@ -787,6 +814,13 @@ def validate_editor_model(
         role_path = _resolve_path(model["writing"]["role_file"] or "./roles/example_role.md", config_path.parent)
         if not role_path.exists():
             messages.append(ValidationMessage("warning", f"role_file 当前不存在：{role_path}"))
+
+    outline_role_file = _coerce_str(
+        model["project"].get("outline_generation", {}).get("role_file", "./roles/标书架构师.md")
+    ).strip() or "./roles/标书架构师.md"
+    outline_role_path = _resolve_path(outline_role_file, config_path.parent)
+    if not outline_role_path.exists():
+        messages.append(ValidationMessage("warning", f"大纲生成角色文件当前不存在：{outline_role_path}"))
 
     min_value = _coerce_int(model["writing"]["target_words_min"], default=100)
     default_value = _coerce_int(model["writing"]["target_words_default"], default=500)
@@ -838,6 +872,7 @@ def _add_cross_platform_path_warnings(messages: list[ValidationMessage], model: 
     path_items = [
         ("project.root_dir", model["project"].get("root_dir", "")),
         ("project.outline_file", model["project"].get("outline_file", "")),
+        ("project.outline_generation.role_file", model["project"].get("outline_generation", {}).get("role_file", "")),
         ("project.bid_requirements_file", model["project"].get("bid_requirements_file", "")),
         ("project.scoring_criteria_file", model["project"].get("scoring_criteria_file", "")),
         ("project.output_dir", model["project"].get("output_dir", "")),
@@ -880,6 +915,7 @@ def summarize_model(model: dict[str, Any], env_status: dict[str, ConnectionStatu
             else "章节写作计划 = 不适用"
         ),
         f"投标主体 = {model['project']['bidder_name'] or '（未填写）'}",
+        f"大纲状态 = {'已锁定' if model['project']['outline_locked'] else '待确认'}",
         f"角色模式 = {'内嵌文本' if model['writing']['role_mode'] == 'inline' else 'role_file'}",
         f"流式输出 = {'开启' if model['runtime']['stream']['enabled'] else '关闭'}",
         f"trace = {'开启' if model['runtime']['trace']['enabled'] else '关闭'}",
@@ -1204,6 +1240,10 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
     "project": {
         "root_dir": True,
         "bidder_name": True,
+        "outline_locked": True,
+        "outline_generation": {
+            "role_file": True,
+        },
         "inputs": {
             "outline_file": True,
             "bid_requirements": True,

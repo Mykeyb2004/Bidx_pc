@@ -38,6 +38,14 @@ class StubVar:
         return self.value
 
 
+class StubText:
+    def __init__(self, value: str):
+        self.value = value
+
+    def get(self, *_args):
+        return self.value
+
+
 def test_scrollable_section_mousewheel_ignores_destroyed_widget():
     section = ScrollableSection.__new__(ScrollableSection)
     calls: list[str] = []
@@ -762,3 +770,79 @@ def test_config_editor_display_relative_path_uses_posix_separators_for_yaml():
     )
 
     assert result == "项目要求/采购需求.md"
+
+
+def test_config_editor_project_section_collects_outline_generation_fields():
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.document = SimpleNamespace(model={"models": {}})
+    dialog.vars = {
+        "project.root_dir": StubVar("."),
+        "project.bidder_name": StubVar("测试投标主体"),
+        "project.outline_locked": StubVar(False),
+        "project.outline_generation.role_file": StubVar("./roles/标书架构师.md"),
+        "project.outline_file": StubVar("./outline.md"),
+        "project.bid_requirements_mode": StubVar("file"),
+        "project.bid_requirements_file": StubVar("./bid_requirements.md"),
+        "project.scoring_criteria_mode": StubVar("file"),
+        "project.scoring_criteria_file": StubVar("./scoring_criteria.md"),
+        "project.output_dir": StubVar("./output"),
+        "writing.role_mode": StubVar("file"),
+        "writing.role_file": StubVar("./roles/通用投标角色.md"),
+        "writing.target_words.default": StubVar("1500"),
+        "writing.target_words.min": StubVar("100"),
+        "writing.target_words.max": StubVar("12000"),
+        "writing.target_words.step": StubVar("100"),
+        "writing.target_words.upper_ratio": StubVar("1.15"),
+        "writing.max_tables_per_section": StubVar("2"),
+        "writing.max_mermaid_flowcharts_per_section": StubVar("1"),
+        "processing.path": StubVar("auto"),
+        "processing.scoring.enabled": StubVar(True),
+        "processing.project_background.enabled": StubVar(True),
+        "processing.project_background.max_chars": StubVar("800"),
+        "processing.project_background.h2.precompute_on_batch": StubVar(True),
+        "processing.project_background.h2.generate_missing_on_single": StubVar(True),
+        "processing.project_background.h2.max_evidence_blocks": StubVar("6"),
+        "processing.project_background.h2.max_evidence_chars": StubVar("2400"),
+        "processing.project_background.h2.content_mode": StubVar("excerpts"),
+        "processing.project_background.h2.min_evidence_blocks": StubVar("1"),
+        "processing.project_background.h2.fallback": StubVar("raw_evidence"),
+        "processing.project_background.h2.cache_dir": StubVar("./caches/project_background_h2"),
+        "processing.full_context.chapter_writing_plan.enabled": StubVar(False),
+        "processing.full_context.chapter_writing_plan.max_chars": StubVar("320"),
+        "processing.auto.scoring_parse_mode": StubVar("auto"),
+        "processing.auto.scoring_max_rows": StubVar("4"),
+        "processing.auto.retrieval.lexical_enabled": StubVar(True),
+        "processing.auto.retrieval.vector_enabled": StubVar(False),
+        "processing.auto.retrieval.top_k_lexical": StubVar("20"),
+        "processing.auto.retrieval.top_k_fused": StubVar("30"),
+        "processing.auto.retrieval.top_k_final": StubVar("8"),
+        "processing.auto.retrieval.min_fused_score": StubVar("0.0"),
+        "runtime.stream.enabled": StubVar(True),
+        "runtime.stream.idle_timeout_seconds": StubVar("12"),
+        "runtime.trace.enabled": StubVar(True),
+        "runtime.trace.directory": StubVar("./log/generation_traces"),
+        "runtime.trace.mode": StubVar("full"),
+        "runtime.trace.write_prompt": StubVar(True),
+        "runtime.trace.write_output": StubVar(True),
+        "runtime.trace.write_context": StubVar(True),
+        "runtime.trace.write_summary": StubVar(True),
+        "runtime.trace.redact_sensitive": StubVar(True),
+        "runtime.debug.context_pruning_dump": StubVar(True),
+        "runtime.output.prefix": StubVar(""),
+        "runtime.output.include_title_header": StubVar(True),
+        "runtime.output.overwrite_existing": StubVar(True),
+        "runtime.output.filename_max_length": StubVar("100"),
+        "runtime.output.empty_filename_fallback": StubVar("未命名"),
+        "runtime.merge.normalize_soft_line_breaks": StubVar(True),
+    }
+    dialog.text_widgets = {
+        "project.bid_requirements_text": StubText(""),
+        "project.scoring_criteria_text": StubText(""),
+        "writing.role_text": StubText(""),
+        "writing.extra_rules_text": StubText(""),
+    }
+
+    model = ConfigEditorDialog._collect_model(dialog)
+
+    assert model["project"]["outline_locked"] is False
+    assert model["project"]["outline_generation"]["role_file"] == "./roles/标书架构师.md"

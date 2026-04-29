@@ -420,6 +420,94 @@ class Config:
                 candidates.append(branch_path)
         return self._get_first_defined(*candidates, default=default)
 
+    def _get_outline_env_str(self, outline_key: str, fallback_key: str, default: str = "") -> str:
+        value = self._get_env_str(outline_key)
+        if value is not None:
+            return value
+        fallback = self._get_env_str(fallback_key)
+        if fallback is not None:
+            return fallback
+        return default
+
+    def _get_outline_env_int(self, outline_key: str, fallback_key: str, default: int) -> int:
+        value = self._get_env_int(outline_key)
+        if value is not None:
+            return value
+        fallback = self._get_env_int(fallback_key)
+        return fallback if fallback is not None else default
+
+    def _get_outline_env_float(self, outline_key: str, fallback_key: str, default: float) -> float:
+        value = self._get_env_float(outline_key)
+        if value is not None:
+            return value
+        fallback = self._get_env_float(fallback_key)
+        return fallback if fallback is not None else default
+
+    @property
+    def outline_locked(self) -> bool:
+        """大纲是否已确认并进入扩写阶段；旧配置默认视为已锁定。"""
+        return self._get_bool(('project', 'outline_locked'), default=True)
+
+    @property
+    def outline_generation_role_file(self) -> str:
+        """大纲生成专用角色文件路径。"""
+        value = self._get_first_defined(
+            ('project', 'outline_generation', 'role_file'),
+            default='./roles/标书架构师.md',
+        )
+        return str(self._resolve_path(str(value).strip() or './roles/标书架构师.md'))
+
+    @property
+    def outline_api_base_url(self) -> str:
+        """大纲生成 API 基础 URL，未配置时回退正文扩写。"""
+        return self._get_outline_env_str(
+            'BID_WRITER_OUTLINE_API_BASE_URL',
+            'BID_WRITER_API_BASE_URL',
+            'https://api.openai.com/v1',
+        )
+
+    @property
+    def outline_api_key(self) -> str:
+        """大纲生成 API Key，未配置时回退正文扩写。"""
+        return self._get_outline_env_str('BID_WRITER_OUTLINE_API_KEY', 'BID_WRITER_API_KEY', '')
+
+    @property
+    def outline_model(self) -> str:
+        """大纲生成模型，未配置时回退正文扩写模型。"""
+        return self._get_outline_env_str('BID_WRITER_OUTLINE_MODEL', 'BID_WRITER_MODEL', 'gpt-5.4')
+
+    @property
+    def outline_temperature(self) -> float:
+        """大纲生成温度，默认比正文扩写更收敛。"""
+        return self._get_outline_env_float('BID_WRITER_OUTLINE_TEMPERATURE', 'BID_WRITER_TEMPERATURE', 0.3)
+
+    @property
+    def outline_max_tokens(self) -> int:
+        """大纲生成最大 token 数。"""
+        return self._get_outline_env_int('BID_WRITER_OUTLINE_MAX_TOKENS', 'BID_WRITER_MAX_TOKENS', 6000)
+
+    @property
+    def outline_timeout_seconds(self) -> int:
+        """大纲生成 API 超时时间。"""
+        return self._get_outline_env_int('BID_WRITER_OUTLINE_TIMEOUT_SECONDS', 'BID_WRITER_TIMEOUT_SECONDS', 120)
+
+    @property
+    def outline_max_retries(self) -> int:
+        """大纲生成 API 最大重试次数。"""
+        return self._get_outline_env_int('BID_WRITER_OUTLINE_MAX_RETRIES', 'BID_WRITER_MAX_RETRIES', 3)
+
+    @property
+    def outline_top_p(self) -> Optional[float]:
+        """大纲生成 top_p，未配置时回退正文扩写。"""
+        value = self._get_env_float('BID_WRITER_OUTLINE_TOP_P')
+        return value if value is not None else self.api_top_p
+
+    @property
+    def outline_seed(self) -> Optional[int]:
+        """大纲生成随机种子，未配置时回退正文扩写。"""
+        value = self._get_env_int('BID_WRITER_OUTLINE_SEED')
+        return value if value is not None else self.api_seed
+
     @property
     def api_base_url(self) -> str:
         """API基础URL。"""

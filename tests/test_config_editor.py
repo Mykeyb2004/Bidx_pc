@@ -445,6 +445,10 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     assert payload["project"] == {
         "root_dir": ".",
         "bidder_name": "",
+        "outline_locked": False,
+        "outline_generation": {
+            "role_file": "./roles/标书架构师.md",
+        },
         "inputs": {
             "outline_file": "./outline.md",
             "bid_requirements_file": "./项目要求/项目采购需求.md",
@@ -593,3 +597,99 @@ def test_new_config_editor_document_validation_can_use_config_path_override(tmp_
     messages = document.validate(model, config_path=target_dir / "config_新项目.yaml")
 
     assert not [message for message in messages if message.level == "error"]
+
+
+def test_new_config_defaults_to_unlocked_outline_generation_role(tmp_path: Path):
+    document = create_new_config_editor_document(tmp_path / "config_新项目.yaml")
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.model["project"]["outline_locked"] is False
+    assert document.model["project"]["outline_generation"]["role_file"] == "./roles/标书架构师.md"
+    assert payload["project"]["outline_locked"] is False
+    assert payload["project"]["outline_generation"]["role_file"] == "./roles/标书架构师.md"
+
+
+def test_config_editor_preserves_outline_generation_fields(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  bidder_name: "测试投标主体"
+  outline_locked: true
+  outline_generation:
+    role_file: "./roles/custom_architect.md"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.model["project"]["outline_locked"] is True
+    assert document.model["project"]["outline_generation"]["role_file"] == "./roles/custom_architect.md"
+    assert payload["project"]["outline_locked"] is True
+    assert payload["project"]["outline_generation"]["role_file"] == "./roles/custom_architect.md"
+
+
+def test_unlocked_outline_config_allows_missing_outline_file(tmp_path: Path):
+    (tmp_path / "bid_requirements.md").write_text("采购需求正文", encoding="utf-8")
+    (tmp_path / "scoring_criteria.md").write_text("评分标准正文", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  outline_locked: false
+  inputs:
+    outline_file: "./missing_outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+writing:
+  role: "你是一位专业的标书撰写专家。"
+
+processing:
+  path: "full_context"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate()
+
+    assert not any(item.level == "error" and "大纲文件不存在" in item.text for item in messages)
+
+
+def test_locked_outline_config_requires_existing_outline_file(tmp_path: Path):
+    (tmp_path / "bid_requirements.md").write_text("采购需求正文", encoding="utf-8")
+    (tmp_path / "scoring_criteria.md").write_text("评分标准正文", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  outline_locked: true
+  inputs:
+    outline_file: "./missing_outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+writing:
+  role: "你是一位专业的标书撰写专家。"
+
+processing:
+  path: "full_context"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate()
+
+    assert any(item.level == "error" and "大纲文件不存在" in item.text for item in messages)
