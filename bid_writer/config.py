@@ -808,6 +808,15 @@ class Config:
         return self._legacy_context_pruning_enabled()
 
     @property
+    def processing_scoring_enabled(self) -> bool:
+        """是否启用评分标准处理与注入链路。"""
+        return self._get_bool(
+            ('processing', 'scoring', 'enabled'),
+            ('context_pruning', 'scoring', 'enabled'),
+            default=True,
+        )
+
+    @property
     def context_pruning_debug_dump(self) -> bool:
         """是否输出裁剪调试信息。"""
         return self._get_bool(
@@ -840,8 +849,8 @@ class Config:
     def context_pruning_scoring_enabled(self) -> bool:
         """是否启用评分项路由。"""
         if self._using_new_processing_schema():
-            return self.context_pruning_enabled
-        return self._get_bool(('context_pruning', 'scoring', 'enabled'), default=True)
+            return self.context_pruning_enabled and self.processing_scoring_enabled
+        return self.processing_scoring_enabled
 
     @property
     def context_pruning_scoring_mode(self) -> str:

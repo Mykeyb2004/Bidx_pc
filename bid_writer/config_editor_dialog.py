@@ -283,6 +283,7 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("writing.max_mermaid_flowcharts_per_section", tk.StringVar())
 
         add_var("processing.path", tk.StringVar())
+        add_var("processing.scoring.enabled", tk.BooleanVar())
         add_var("processing.project_background.enabled", tk.BooleanVar())
         add_var("processing.project_background.max_chars", tk.StringVar())
         add_var("processing.project_background.h2.precompute_on_batch", tk.BooleanVar())
@@ -545,11 +546,21 @@ class ConfigEditorDialog(tk.Toplevel):
         self.processing_path_frame.columnconfigure(1, weight=1)
         self._register_tooltip(helper, "processing.path")
 
+        self.processing_global_frame = ttk.LabelFrame(content, text="全局开关", padding=12)
+        self._add_check_row(
+            self.processing_global_frame,
+            0,
+            "启用评分标准链路",
+            "processing.scoring.enabled",
+        )
+        self.processing_global_frame.columnconfigure(1, weight=1)
+
         self.processing_full_context_frame = ttk.LabelFrame(content, text="full_context 说明", padding=12)
         full_context_label = ttk.Label(
             self.processing_full_context_frame,
             text=(
-                "当前模式不会做章节级摘录或检索，而是把采购需求全文和评分标准全文直接拼入提示词。"
+                "当前模式不会做章节级摘录或检索，而是把采购需求全文直接拼入提示词；"
+                "启用评分标准链路时同时注入评分标准全文。"
                 " 因完整材料已进入提示词，项目背景提炼在此模式下不再生效。"
             ),
             justify=tk.LEFT,
@@ -887,6 +898,7 @@ class ConfigEditorDialog(tk.Toplevel):
             "writing.max_tables_per_section": str(model["writing"]["max_tables_per_section"]),
             "writing.max_mermaid_flowcharts_per_section": str(model["writing"]["max_mermaid_flowcharts_per_section"]),
             "processing.path": model["processing"]["path"],
+            "processing.scoring.enabled": model["processing"]["scoring"]["enabled"],
             "processing.project_background.enabled": model["processing"]["project_background"]["enabled"],
             "processing.project_background.max_chars": str(model["processing"]["project_background"]["max_chars"]),
             "processing.project_background.h2.precompute_on_batch": model["processing"]["project_background"]["h2"]["precompute_on_batch"],
@@ -972,6 +984,9 @@ class ConfigEditorDialog(tk.Toplevel):
             },
             "processing": {
                 "path": self.vars["processing.path"].get().strip() or "auto",
+                "scoring": {
+                    "enabled": bool(self.vars["processing.scoring.enabled"].get()),
+                },
                 "project_background": {
                     "enabled": bool(self.vars["processing.project_background.enabled"].get()),
                     "max_chars": self.vars["processing.project_background.max_chars"].get().strip(),
@@ -1158,6 +1173,7 @@ class ConfigEditorDialog(tk.Toplevel):
         path = self.vars["processing.path"].get().strip().lower()
 
         for frame in (
+            self.processing_global_frame,
             self.processing_full_context_frame,
             self.processing_project_background_frame,
             self.processing_chapter_plan_frame,
@@ -1166,6 +1182,7 @@ class ConfigEditorDialog(tk.Toplevel):
         ):
             frame.pack_forget()
 
+        self.processing_global_frame.pack(fill=tk.X, pady=(0, 12))
         if path == "full_context":
             self.processing_full_context_frame.pack(fill=tk.X, pady=(0, 12))
             self.processing_chapter_plan_frame.pack(fill=tk.X, pady=(0, 12))

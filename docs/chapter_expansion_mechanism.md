@@ -183,7 +183,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 6. `additional_requirements`
 7. `task_card`
 
-`full_context` 已经把完整采购需求和评分标准放入 prompt，因此不会再生成或注入 `project_background` 摘要。
+`full_context` 已经把完整采购需求放入 prompt，并在 `processing.scoring.enabled=true` 时放入评分标准全文，因此不会再生成或注入 `project_background` 摘要。
 
 这里不会把 `scope_reference` 放进共享前缀，因为它包含当前标题、上级标题和同级标题，属于章节动态信息；若放在最前面，反而会降低跨 h3/h4 调用的前缀复用率。
 

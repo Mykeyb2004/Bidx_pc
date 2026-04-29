@@ -94,3 +94,25 @@ def test_auto_scoring_classification_cache_is_shared_by_h2(tmp_path: Path):
     cache_files = list((tmp_path / "cache" / "scoring-classify").glob("h2_*.json"))
     assert len(cache_files) == 1
     assert not list((tmp_path / "cache" / "scoring-classify").glob("h4_*.json"))
+
+
+def test_auto_scoring_disabled_skips_retrieval_classification_and_cache(tmp_path: Path):
+    config = _write_auto_config(tmp_path)
+    config._config.setdefault("processing", {}).setdefault("scoring", {})["enabled"] = False
+    parser = parse_outline(config.get_outline_content())
+    heading = parser.find_heading_by_title("儿童福利政策")
+    assert heading is not None
+    pruner = ChapterContextPruner(config)
+    classifier = FakeClassifier()
+    pruner.llm_verifier = classifier
+
+    context = pruner.build_context(heading)
+
+    assert context.retrieval_mode == "path=auto;scoring=off"
+    assert context.scoring_items == []
+    assert context.scoring_candidates == []
+    assert context.scoring_must_respond == []
+    assert context.scoring_reference == []
+    assert context.selected_scoring_unit_ids == []
+    assert classifier.calls == []
+    assert not (tmp_path / "cache" / "scoring-classify").exists()

@@ -138,6 +138,9 @@ def build_default_editor_model() -> dict[str, Any]:
         },
         "processing": {
             "path": "auto",
+            "scoring": {
+                "enabled": True,
+            },
             "project_background": {
                 "enabled": False,
                 "max_chars": 800,
@@ -264,7 +267,10 @@ def build_editor_notes(model: dict[str, Any], raw_config: dict[str, Any]) -> lis
             "编辑器当前仅支持 auto / full_context，若直接保存将按 auto 模式导出。"
         )
     elif processing_path == "full_context":
-        notes.append("full_context 模式会把采购需求和评分标准全文直接拼入提示词，不做章节级摘录或项目背景提炼。")
+        notes.append(
+            "full_context 模式会把采购需求全文直接拼入提示词；"
+            "启用评分标准链路时同时注入评分标准全文，不做章节级摘录或项目背景提炼。"
+        )
 
     if "context_pruning" in raw_config or "prompt" in raw_config or "api" in raw_config:
         notes.append("当前文件包含旧 schema 字段，保存后会按 canonical schema 标准化。")
@@ -429,6 +435,17 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
         },
         "processing": {
             "path": processing_path,
+            "scoring": {
+                "enabled": _coerce_bool(
+                    _first_defined(
+                        raw_config,
+                        ("processing", "scoring", "enabled"),
+                        ("context_pruning", "scoring", "enabled"),
+                        default=True,
+                    ),
+                    default=True,
+                ),
+            },
             "project_background": {
                 "enabled": _coerce_bool(
                     _first_defined(raw_config, ("processing", "project_background", "enabled"), default=True),
@@ -628,7 +645,12 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
     else:
         writing_payload["role_file"] = model["writing"]["role_file"].strip() or "./roles/通用投标角色.md"
 
-    processing_payload: dict[str, Any] = {"path": processing_path}
+    processing_payload: dict[str, Any] = {
+        "path": processing_path,
+        "scoring": {
+            "enabled": bool(model["processing"]["scoring"]["enabled"]),
+        },
+    }
     if processing_path == "auto":
         processing_payload["project_background"] = {
             "enabled": bool(model["processing"]["project_background"]["enabled"]),

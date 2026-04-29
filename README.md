@@ -163,7 +163,7 @@ runtime:
 
 处理路径说明：
 
-- `full_context`：把采购需求和评分标准全文直接送入 prompt
+- `full_context`：把采购需求全文直接送入 prompt；`processing.scoring.enabled=true` 时同时注入评分标准全文
 - `legacy_rule`：使用规则链路提炼评分标准和采购需求
 - `hybrid_extract`：使用检索摘录链路，可叠加 lexical / vector / verify
 - `auto`：当前代码支持的组合路径，偏向 GUI 配置编辑器使用；运行时需要 pruning 连接配置

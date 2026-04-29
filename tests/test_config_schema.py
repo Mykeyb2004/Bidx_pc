@@ -85,6 +85,58 @@ runtime:
     assert config.build_target_word_range(1500).to_dict() == {"baseline": 1500, "lower": 1500, "upper": 1800}
 
 
+def test_processing_scoring_enabled_defaults_to_true(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  path: "auto"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.processing_scoring_enabled is True
+    assert config.context_pruning_scoring_enabled is True
+
+
+def test_processing_scoring_enabled_can_disable_auto_scoring(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+processing:
+  path: "auto"
+  scoring:
+    enabled: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.processing_scoring_enabled is False
+    assert config.context_pruning_scoring_enabled is False
+
+
+def test_processing_scoring_enabled_uses_legacy_fallback(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+context_pruning:
+  enabled: true
+  scoring:
+    enabled: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.processing_scoring_enabled is False
+    assert config.context_pruning_scoring_enabled is False
+
+
 def test_model_settings_are_loaded_from_env_local_and_not_yaml(monkeypatch, tmp_path: Path):
     for key in (
         "BID_WRITER_API_BASE_URL",

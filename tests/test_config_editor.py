@@ -106,6 +106,57 @@ processing:
     assert payload["processing"]["full_context"]["chapter_writing_plan"]["max_chars"] == 280
 
 
+def test_config_editor_preserves_processing_scoring_switch(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "auto.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "auto"
+  scoring:
+    enabled: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.model["processing"]["scoring"]["enabled"] is False
+    assert payload["processing"]["scoring"]["enabled"] is False
+
+
+def test_config_editor_reads_legacy_scoring_switch(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "legacy.yaml"
+    config_path.write_text(
+        """
+outline_file: "./outline.md"
+bid_requirements_file: "./bid_requirements.md"
+scoring_criteria_file: "./scoring_criteria.md"
+
+context_pruning:
+  enabled: true
+  scoring:
+    enabled: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.model["processing"]["scoring"]["enabled"] is False
+    assert payload["processing"]["scoring"]["enabled"] is False
+
+
 def test_config_editor_preserves_h2_project_background_settings(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "auto.yaml"
@@ -416,6 +467,7 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
     assert "allow_english_terms" not in payload["writing"]
     assert "summary_title" not in payload["writing"]
     assert payload["processing"]["path"] == "auto"
+    assert payload["processing"]["scoring"]["enabled"] is True
     assert "context_view" not in payload["processing"]
     assert payload["processing"]["project_background"] == {
         "enabled": False,

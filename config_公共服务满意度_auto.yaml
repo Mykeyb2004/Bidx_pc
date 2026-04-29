@@ -24,6 +24,8 @@ writing:
   role_file: ./roles/公共服务满意度_role.md
 processing:
   path: auto
+  scoring:
+    enabled: true
   project_background:
     enabled: true
     max_chars: 800

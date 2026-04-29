@@ -19,6 +19,8 @@ writing:
   role_file: ./roles/通用投标角色.md
 processing:
   path: full_context
+  scoring:
+    enabled: true
   full_context:
     chapter_writing_plan:
       enabled: false

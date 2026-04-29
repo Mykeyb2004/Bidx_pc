@@ -27,6 +27,8 @@ writing:
     \    *   若评分强调“团队配置”：着重描写社工师资质、督导体系与培训计划。"
 processing:
   path: auto
+  scoring:
+    enabled: true
   project_background:
     enabled: true
     max_chars: 800

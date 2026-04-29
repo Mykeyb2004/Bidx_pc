@@ -61,11 +61,13 @@ verifier 只负责选片段 ID，不负责生成或改写评分内容。
 
 ### 3.3 auto 下的 H2 评分分类缓存
 
-`auto` 模式命中评分项后，会把评分项进一步分为 `scoring_must_respond` 与 `scoring_reference`。该分类结果按当前章节所属 H2 缓存，同一个 H2 下的 H3/H4/H5 章节共享一次辅助模型分类结果。
+`auto` 模式在 `processing.scoring.enabled=true` 时命中评分项后，会把评分项进一步分为 `scoring_must_respond` 与 `scoring_reference`。该分类结果按当前章节所属 H2 缓存，同一个 H2 下的 H3/H4/H5 章节共享一次辅助模型分类结果。
 
 缓存文件位于 `processing.scoring_classify.cache_dir`，未配置时默认写入项目根目录下的 `./caches/scoring_classify`。新缓存文件名前缀为 `h2_`，缓存 key 包含评分标准全文、H2 完整路径和 H2 子树结构；评分标准或 H2 子树变化会自动生成新缓存。
 
 注意：H2 评分分类缓存只负责“必需响应/参考”的分组。每个叶子章节仍会先执行自己的评分项检索，然后只对本章节命中的评分项套用 H2 分类结果。
+
+当 `processing.scoring.enabled=false` 时，auto 会跳过评分标准解析、检索、分类和 H2 分类缓存写入，最终 prompt 也不会出现 `## 评分关注`。
 
 ## 4. H2 项目背景处理
 
@@ -92,7 +94,7 @@ processing:
 
 - H2 项目背景只提供章级项目语境
 - 当前叶子章节不再另行拼接采购需求要点区块
-- `full_context` 已经完整注入采购需求和评分标准，因此不再额外生成项目背景
+- `full_context` 已经完整注入采购需求，并在 `processing.scoring.enabled=true` 时注入评分标准全文，因此不再额外生成项目背景
 - 证据不足时按 `processing.project_background.h2.fallback` 回退；完全无命中时不会拿采购需求第一段兜底
 
 ## 5. 关键配置
@@ -122,6 +124,7 @@ processing:
 
 | 参数路径 | 默认值 | 作用 |
 |---|---:|---|
+| `processing.scoring.enabled` | `true` | 是否启用评分标准处理链路；关闭后 auto 跳过评分检索/分类，full_context 不注入评分标准全文 |
 | `processing.hybrid_extract.scoring_parse_mode` | `auto` | 评分标准解析方式：`auto` / `table_only` / `text_only` |
 | `processing.hybrid_extract.scoring_max_rows` | `4` | 最终进入 `## 评分关注` 的评分项数量 |
 | `processing.hybrid_extract.retrieval.lexical_enabled` | `true` | 是否启用 lexical retrieval |

@@ -448,6 +448,7 @@ def test_config_editor_full_context_hides_project_background_frame():
             self.actions.append("pack")
 
     dialog.processing_full_context_frame = FakeFrame("full_context")
+    dialog.processing_global_frame = FakeFrame("global")
     dialog.processing_project_background_frame = FakeFrame("project_background")
     dialog.processing_chapter_plan_frame = FakeFrame("chapter_plan")
     dialog.processing_req_frame = FakeFrame("requirements")
@@ -455,6 +456,7 @@ def test_config_editor_full_context_hides_project_background_frame():
 
     dialog._update_processing_visibility()
 
+    assert dialog.processing_global_frame.actions == ["forget", "pack"]
     assert dialog.processing_full_context_frame.actions == ["forget", "pack"]
     assert dialog.processing_project_background_frame.actions == ["forget"]
     assert dialog.processing_chapter_plan_frame.actions == ["forget", "pack"]
@@ -480,6 +482,7 @@ def test_config_editor_auto_hides_requirements_retrieval_frame():
             self.actions.append("pack")
 
     dialog.processing_full_context_frame = FakeFrame("full_context")
+    dialog.processing_global_frame = FakeFrame("global")
     dialog.processing_project_background_frame = FakeFrame("project_background")
     dialog.processing_chapter_plan_frame = FakeFrame("chapter_plan")
     dialog.processing_req_frame = FakeFrame("requirements")
@@ -487,6 +490,7 @@ def test_config_editor_auto_hides_requirements_retrieval_frame():
 
     dialog._update_processing_visibility()
 
+    assert dialog.processing_global_frame.actions == ["forget", "pack"]
     assert dialog.processing_project_background_frame.actions == ["forget", "pack"]
     assert dialog.processing_req_frame.actions == ["forget"]
     assert dialog.processing_scoring_frame.actions == ["forget", "pack"]
@@ -746,6 +750,7 @@ def test_config_editor_dialog_does_not_register_deprecated_context_view_vars(mon
     ConfigEditorDialog._create_variables(dialog)
 
     assert not any(key.startswith("processing.context_view.") for key in dialog.vars)
+    assert "processing.scoring.enabled" in dialog.vars
 
 
 def test_config_editor_display_relative_path_uses_posix_separators_for_yaml():

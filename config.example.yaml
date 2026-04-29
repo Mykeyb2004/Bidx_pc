@@ -21,6 +21,8 @@ writing:
 
 processing:
   path: "auto"
+  scoring:
+    enabled: true
   project_background:
     enabled: true
     max_chars: 800

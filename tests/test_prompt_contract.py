@@ -220,6 +220,49 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     assert result.prompt.index("## 章节边界参考") < result.prompt.index("## 章节任务卡")
 
 
+def test_full_context_prompt_omits_scoring_when_processing_scoring_disabled(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "full_context"
+    config._config.setdefault("processing", {}).setdefault("scoring", {})["enabled"] = False
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+    block_map = {block["id"]: block for block in result.prompt_contract_blocks}
+
+    assert "## 招标需求参考" in result.prompt
+    assert "## 评分标准参考" not in result.prompt
+    assert "评分标准正文" not in result.prompt
+    assert block_map["scoring_context"]["section_names"] == []
+    assert result.full_context_stats["scoring_criteria_chars"] == 0
+
+
+def test_auto_prompt_omits_scoring_focus_and_task_basis_when_scoring_disabled(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "auto"
+    config._config.setdefault("processing", {}).setdefault("scoring", {})["enabled"] = False
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    monkeypatch.setattr(
+        writer.context_pruner,
+        "build_context",
+        lambda _: ChapterContext(
+            chapter_focus_terms=["质量保障措施"],
+            retrieval_mode="path=auto;scoring=off",
+        ),
+    )
+    monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+    block_map = {block["id"]: block for block in result.prompt_contract_blocks}
+
+    assert "## 评分关注" not in result.prompt
+    assert "评分关注" not in result.prompt
+    assert "- 写作依据：优先根据前文项目背景和章节边界组织内容。" in result.prompt
+    assert block_map["scoring_context"]["section_names"] == []
+
+
 def test_prompt_ignores_deprecated_output_format_and_first_line_template(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     config._config.setdefault("writing", {})["output_format"] = "Markdown格式"

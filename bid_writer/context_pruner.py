@@ -170,6 +170,11 @@ class ChapterContextPruner:
         scoring_focus_terms: list[str],
     ) -> ChapterContext:
         """auto 模式：hybrid 检索 + H2 级评分分类。"""
+        if not self.config.processing_scoring_enabled:
+            context.retrieval_mode = "path=auto;scoring=off"
+            context.fallback_reason = ""
+            return context
+
         fallback_reasons: list[str] = []
 
         # 评分：hybrid_extract 检索

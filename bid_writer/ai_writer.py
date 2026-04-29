@@ -163,6 +163,8 @@ class AIWriter:
         full_context_has_scoring_criteria: bool = False,
     ) -> str:
         if pruned_context is not None:
+            if not self.config.processing_scoring_enabled:
+                return "- 写作依据：优先根据前文项目背景和章节边界组织内容。"
             return "- 写作依据：优先根据前文项目背景、评分关注和章节边界组织内容。"
 
         references: list[str] = []
@@ -573,7 +575,11 @@ class AIWriter:
                 )
             )
 
-        scoring_criteria = self.config.scoring_criteria.strip()
+        scoring_criteria = (
+            self.config.scoring_criteria.strip()
+            if self.config.processing_scoring_enabled
+            else ""
+        )
         full_context_stats["scoring_criteria_chars"] = len(scoring_criteria)
         if scoring_criteria:
             sections.append(

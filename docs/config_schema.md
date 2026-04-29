@@ -125,6 +125,8 @@ writing:
 ```yaml
 processing:
   path: "auto"
+  scoring:
+    enabled: true
   project_background:
     enabled: true
     max_chars: 800
@@ -157,7 +159,8 @@ processing:
 说明：
 
 - `processing.path` 决定当前项目跑哪条链路
-- `processing.project_background.*` 只服务 `processing.path: auto` 链路；`full_context` 会直接注入完整采购需求和评分标准，不再额外提炼或注入项目背景摘要
+- `processing.scoring.enabled` 控制评分标准链路是否启用，默认 `true`；设为 `false` 时，`auto` 不解析、检索、分类评分标准，也不写 H2 评分分类缓存，`full_context` 不注入完整 `评分标准参考`
+- `processing.project_background.*` 只服务 `processing.path: auto` 链路；`full_context` 会直接注入完整采购需求，并在 `processing.scoring.enabled=true` 时注入评分标准全文，不再额外提炼或注入项目背景摘要
 - `processing.project_background.enabled` 控制 auto 链路是否注入 H2 级项目背景
 - `processing.project_background.scope` 已废弃；auto 链路只支持 H2 级项目背景，旧值 `global` 会被运行时拒绝
 - `processing.project_background.max_chars` 是 `summary` 模式下项目背景摘要的目标长度上限；配置编辑器仅在 `summary` 模式下启用该输入
