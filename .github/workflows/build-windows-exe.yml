@@ -46,13 +46,32 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          New-Item -ItemType Directory -Force -Path artifact/roles | Out-Null
+          New-Item -ItemType Directory -Force -Path artifact/项目要求 | Out-Null
+          New-Item -ItemType Directory -Force -Path artifact/output | Out-Null
+          New-Item -ItemType Directory -Force -Path artifact/log | Out-Null
+          New-Item -ItemType Directory -Force -Path artifact/caches | Out-Null
+
           Copy-Item dist/bid-writer.exe artifact/
           Copy-Item config.example.yaml artifact/
+          Copy-Item config.example.yaml artifact/config.yaml
+          Copy-Item outline.md artifact/
+          Copy-Item roles/system_gate_rules.md artifact/roles/
+          Copy-Item roles/通用投标角色.md artifact/roles/
+          Copy-Item roles/example_role.md artifact/roles/
+          Copy-Item 项目要求/项目采购需求.md artifact/项目要求/
+          Copy-Item 项目要求/评分标准.md artifact/项目要求/
           if (Test-Path .env.example) {
             Copy-Item .env.example artifact/
           }
           if (Test-Path README.md) {
             Copy-Item README.md artifact/
+          }
+          if (Test-Path 软件说明书.md) {
+            Copy-Item 软件说明书.md artifact/
+          }
+          if (Test-Path 启动命令.txt) {
+            Copy-Item 启动命令.txt artifact/
           }
 
       - name: Upload EXE artifact
