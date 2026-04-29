@@ -1,5 +1,8 @@
 project:
   bidder_name: "测试投标主体"
+  outline_locked: true
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
   inputs:
     outline_file: "./outline.md"
     bid_requirements_file: "./bid_requirements.md"

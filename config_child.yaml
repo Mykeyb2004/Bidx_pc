@@ -1,6 +1,9 @@
 project:
   root_dir: /Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/蕲春民政困境儿童
   bidder_name: 菲尔德咨询
+  outline_locked: true
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
   inputs:
     outline_file: 投标大纲.md
     bid_requirements_file: 项目需求.md

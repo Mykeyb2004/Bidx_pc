@@ -61,6 +61,9 @@ processing:
 project:
   root_dir: "."
   bidder_name: "示例投标主体名称"
+  outline_locked: true
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
   inputs:
     outline_file: "./outline.md"
     bid_requirements_file: "./采购需求.md"
@@ -94,6 +97,17 @@ project:
 - 不建议在共享配置中写入 `/Users/...`、`/home/...`、`C:/Users/...` 这类绑定本机或操作系统的绝对路径
 - 如果必须写 Windows 绝对路径，建议使用 `C:/Users/example/project`，或使用单引号包裹反斜杠路径：`'C:\Users\example\project'`
 - 配置编辑器选择项目内文件时，会优先保存为相对路径并使用 `/` 分隔符，便于跨系统迁移
+
+### 3.1.2 大纲准备与锁定
+
+`project.outline_locked` 表示当前配置是否已经完成大纲确认：
+
+- `false`：新建配置的大纲准备阶段，GUI 会先打开“大纲准备”窗口。
+- `true`：大纲已固定，GUI 直接加载章节树并允许扩写。
+
+旧配置缺少该字段时按 `true` 处理，避免历史项目被强制带入新流程。
+
+`project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。
 
 ### 3.2 `writing`
 
@@ -241,6 +255,16 @@ BID_WRITER_MAX_TOKENS=10000
 BID_WRITER_TIMEOUT_SECONDS=120
 BID_WRITER_MAX_RETRIES=3
 
+BID_WRITER_OUTLINE_API_BASE_URL=https://api.openai.com/v1
+BID_WRITER_OUTLINE_API_KEY=your-api-key
+BID_WRITER_OUTLINE_MODEL=gpt-5.4
+BID_WRITER_OUTLINE_TEMPERATURE=0.3
+BID_WRITER_OUTLINE_MAX_TOKENS=6000
+BID_WRITER_OUTLINE_TIMEOUT_SECONDS=120
+BID_WRITER_OUTLINE_MAX_RETRIES=3
+BID_WRITER_OUTLINE_TOP_P=0.95
+BID_WRITER_OUTLINE_SEED=42
+
 BID_WRITER_PRUNING_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_PRUNING_API_KEY=your-api-key
 BID_WRITER_PRUNING_MODEL=gpt-5.4
@@ -260,6 +284,7 @@ BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 
 - `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
 - 外部 shell 中已设置的环境变量优先级最高，其次是配置文件同目录下的 `.env.local`，再其次是 `.env`
+- 大纲生成参数读取优先级为 `BID_WRITER_OUTLINE_*`、对应的 `BID_WRITER_*`、代码默认值。
 - `embedding_cache` 默认创建在执行入口文件同级目录，不再通过 YAML 配置
 
 ### 3.6 `runtime`

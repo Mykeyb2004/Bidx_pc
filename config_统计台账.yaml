@@ -1,6 +1,9 @@
 project:
   root_dir: /Users/zhangqijin/Documents/Field/项目数据库/2026/投标项目/2026年浙江省文化广电和旅游统计名录库维护、基层报表审核及数据处理项目
   bidder_name: 杭州菲尔德咨询
+  outline_locked: true
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
   inputs:
     outline_file: 投标大纲 v02.md
     bid_requirements_file: 采购需求.md

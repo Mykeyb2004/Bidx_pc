@@ -1,6 +1,9 @@
 project:
   root_dir: "."
   bidder_name: "示例投标主体名称"
+  outline_locked: true
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
   inputs:
     outline_file: "./outline.md"
     bid_requirements_file: "./项目要求/项目采购需求.md"
