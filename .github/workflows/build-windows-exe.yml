@@ -51,6 +51,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifact/output | Out-Null
           New-Item -ItemType Directory -Force -Path artifact/log | Out-Null
           New-Item -ItemType Directory -Force -Path artifact/caches | Out-Null
+          New-Item -ItemType File -Force -Path artifact/output/.gitkeep | Out-Null
+          New-Item -ItemType File -Force -Path artifact/log/.gitkeep | Out-Null
+          New-Item -ItemType File -Force -Path artifact/caches/.gitkeep | Out-Null
 
           Copy-Item dist/bid-writer.exe artifact/
           Copy-Item config.example.yaml artifact/
@@ -80,6 +83,7 @@ jobs:
           name: bid-writer-windows-exe
           path: artifact/
           if-no-files-found: error
+          include-hidden-files: true
 
       - name: Create release package
         if: github.ref_type == 'tag'
