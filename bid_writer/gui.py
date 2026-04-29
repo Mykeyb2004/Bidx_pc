@@ -3079,12 +3079,13 @@ class MainWindow(tk.Tk):
 
     def _prompt_merge_output_title(self) -> Optional[str]:
         """提示用户输入整合标书文件名。"""
+        default_title = self.bid_writer.get_default_merge_output_title()
         while True:
             value = simpledialog.askstring(
                 "整合标书",
                 "请输入整合标书文件名（无需填写 .md）：",
                 parent=self,
-                initialvalue="整合标书"
+                initialvalue=default_title
             )
             if value is None:
                 return None

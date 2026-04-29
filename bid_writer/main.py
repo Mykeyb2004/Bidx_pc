@@ -260,10 +260,19 @@ class BidWriter:
         normalized = "\n".join(line.rstrip(" \t") for line in normalized.split("\n"))
         return normalized.replace("\n", "\r\n")
 
-    def merge_generated_sections(self, output_title: str = "整合标书") -> MergedBidResult:
+    def get_default_merge_output_title(self) -> str:
+        """返回整合标书默认文件名标题。"""
+        if self.parser and self.parser.root_headings:
+            title = self.parser.root_headings[0].title.strip()
+            if title:
+                return title
+        return "整合标书"
+
+    def merge_generated_sections(self, output_title: Optional[str] = None) -> MergedBidResult:
         """按大纲顺序整合所有已生成章节正文。"""
         if self.parser is None:
             raise RuntimeError("请先加载大纲后再整合标书")
+        output_title = (output_title or "").strip() or self.get_default_merge_output_title()
 
         leaf_headings = self.parser.get_deepest_headings()
         if not leaf_headings:
