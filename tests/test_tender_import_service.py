@@ -166,6 +166,39 @@ def test_import_service_accepts_explicit_import_dir_and_reports_created_paths(tm
     )
 
 
+def test_import_service_normalizes_explicit_relative_import_dir(tmp_path: Path, monkeypatch):
+    source = tmp_path / "source" / "tender.docx"
+    source.parent.mkdir()
+    source.write_text("fake", encoding="utf-8")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    relative_import_dir = Path("relative") / ".bid_writer" / "imports" / "fixed-id"
+    expected_import_dir = (cwd / relative_import_dir).resolve()
+    conversion = type("Conversion", (), {"output_dir": expected_import_dir})()
+    extraction = TenderSectionExtraction(
+        requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "需求", "r1", "r1", 0.92),
+        scoring=TenderExtractionResult("scoring_criteria", "评分标准", "评分", "s1", "s1", 0.92),
+    )
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "ignored-id",
+    )
+    monkeypatch.chdir(cwd)
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path / "项目",
+        import_dir=relative_import_dir,
+        confirm_overwrite=lambda _path: True,
+        confirm_low_confidence=lambda _extraction: True,
+    )
+
+    assert service.converter.calls[0] == (source, expected_import_dir)
+    assert result.import_dir == expected_import_dir
+    assert result.extraction_report_path == expected_import_dir / "extraction_report.json"
+
+
 def test_import_service_cancelled_low_confidence_reports_only_report_path(tmp_path: Path):
     source = tmp_path / "tender.docx"
     source.write_text("fake", encoding="utf-8")
