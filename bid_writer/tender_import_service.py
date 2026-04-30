@@ -23,6 +23,7 @@ class TenderImportResult:
     extraction_report_path: Path
     extraction: TenderSectionExtraction
     cancelled: bool = False
+    created_paths: tuple[Path, ...] = ()
 
 
 class TenderImportError(RuntimeError):
@@ -48,9 +49,10 @@ class TenderImportService:
         project_root: Path,
         confirm_overwrite: Callable[[Path], bool],
         confirm_low_confidence: Callable[[TenderSectionExtraction], bool],
+        import_dir: Path | None = None,
     ) -> TenderImportResult:
         project_root = Path(project_root).expanduser().resolve()
-        import_dir = project_root / ".bid_writer" / "imports" / self.import_id_factory()
+        import_dir = Path(import_dir) if import_dir is not None else project_root / ".bid_writer" / "imports" / self.import_id_factory()
         import_dir.mkdir(parents=True, exist_ok=True)
         try:
             conversion = self.converter(Path(source_path), import_dir)
@@ -77,6 +79,7 @@ class TenderImportService:
                 extraction_report_path=report_path,
                 extraction=extraction,
                 cancelled=True,
+                created_paths=(report_path,),
             )
 
         target_dir = project_root / "项目要求"
@@ -93,6 +96,7 @@ class TenderImportService:
             import_dir=import_dir,
             extraction_report_path=report_path,
             extraction=extraction,
+            created_paths=(report_path, requirements_path, scoring_path),
         )
 
     def _write_target(

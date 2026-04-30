@@ -133,6 +133,64 @@ def test_import_service_stops_when_low_confidence_not_confirmed(tmp_path: Path):
     assert not (tmp_path / "项目要求" / "项目采购需求.md").exists()
 
 
+def test_import_service_accepts_explicit_import_dir_and_reports_created_paths(tmp_path: Path):
+    source = tmp_path / "source" / "tender.docx"
+    source.parent.mkdir()
+    source.write_text("fake", encoding="utf-8")
+    explicit_import_dir = tmp_path / "项目" / ".bid_writer" / "imports" / "fixed-id"
+    conversion = type("Conversion", (), {"output_dir": explicit_import_dir})()
+    extraction = TenderSectionExtraction(
+        requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "需求", "r1", "r1", 0.92),
+        scoring=TenderExtractionResult("scoring_criteria", "评分标准", "评分", "s1", "s1", 0.92),
+    )
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "ignored-id",
+    )
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path / "项目",
+        import_dir=explicit_import_dir,
+        confirm_overwrite=lambda _path: True,
+        confirm_low_confidence=lambda _extraction: True,
+    )
+
+    assert service.converter.calls[0] == (source, explicit_import_dir)
+    assert result.import_dir == explicit_import_dir
+    assert result.created_paths == (
+        result.extraction_report_path,
+        result.requirements_path,
+        result.scoring_path,
+    )
+
+
+def test_import_service_cancelled_low_confidence_reports_only_report_path(tmp_path: Path):
+    source = tmp_path / "tender.docx"
+    source.write_text("fake", encoding="utf-8")
+    conversion = type("Conversion", (), {"output_dir": tmp_path / ".bid_writer" / "imports" / "fixed-id"})()
+    extraction = TenderSectionExtraction(
+        requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "需求", "r1", "r1", 0.50),
+        scoring=TenderExtractionResult("scoring_criteria", "评分标准", "评分", "s1", "s1", 0.92),
+    )
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "fixed-id",
+    )
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path,
+        confirm_overwrite=lambda _path: True,
+        confirm_low_confidence=lambda _extraction: False,
+    )
+
+    assert result.cancelled is True
+    assert result.created_paths == (result.extraction_report_path,)
+
+
 def test_import_service_wraps_converter_errors_for_ui(tmp_path: Path):
     source = tmp_path / "tender.wps"
     source.write_text("fake", encoding="utf-8")
