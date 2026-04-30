@@ -58,7 +58,7 @@ class OutlinePrepareDialog(tk.Toplevel):
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
         ttk.Label(header, text="大纲准备", style="SectionTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(header, text=f"大纲文件：{self.config.outline_file}", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(header, text=f"大纲保存位置 / 已有大纲文件：{self.config.outline_file}", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
         ttk.Label(header, textvariable=self.status_var, style="Muted.TLabel").grid(row=0, column=1, rowspan=2, sticky="e")
 
         body = ttk.Frame(self, padding=(16, 0, 16, 10))
@@ -96,12 +96,13 @@ class OutlinePrepareDialog(tk.Toplevel):
             command=self._generate_outline,
             **_bootstyle_kwargs("secondary"),
         ).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(
+        self.confirm_button = ttk.Button(
             footer,
             text="确认大纲并进入扩写",
             command=self._confirm,
             **_bootstyle_kwargs("primary"),
-        ).grid(row=0, column=2, padx=(8, 0))
+        )
+        self.confirm_button.grid(row=0, column=2, padx=(8, 0))
         ttk.Button(
             footer,
             text="取消",
@@ -149,7 +150,10 @@ class OutlinePrepareDialog(tk.Toplevel):
         messages = validate_outline_text(self._current_text())
         prefix = {"error": "[错误]", "warning": "[警告]", "info": "[信息]"}
         self.validation_var.set("\n".join(f"{prefix.get(item.level, '[信息]')} {item.text}" for item in messages))
-        return not any(item.level == "error" for item in messages)
+        is_valid = not any(item.level == "error" for item in messages)
+        if hasattr(self, "confirm_button"):
+            self.confirm_button.configure(state="normal" if is_valid else "disabled")
+        return is_valid
 
     def _confirm(self) -> None:
         if not self._validate_current_text():

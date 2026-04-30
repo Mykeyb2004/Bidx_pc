@@ -29,6 +29,14 @@ class FakeVar:
         return self.value
 
 
+class FakeButton:
+    def __init__(self):
+        self.states: list[str] = []
+
+    def configure(self, **kwargs):
+        self.states.append(kwargs["state"])
+
+
 def _write_config(tmp_path: Path) -> Path:
     (tmp_path / "outline.md").write_text("# 项目\n## 章\n### 节\n#### 单元\n", encoding="utf-8")
     (tmp_path / "requirements.md").write_text("采购需求", encoding="utf-8")
@@ -56,6 +64,7 @@ def _dialog(config: Config) -> OutlinePrepareDialog:
     dialog.outline_text = FakeText()
     dialog.status_var = FakeVar()
     dialog.validation_var = FakeVar()
+    dialog.confirm_button = FakeButton()
     dialog.destroy = lambda: None
     return dialog
 
@@ -79,6 +88,18 @@ def test_validate_current_text_reports_h4_error(tmp_path: Path):
 
     assert ok is False
     assert "至少包含 1 个 H4" in dialog.validation_var.get()
+    assert dialog.confirm_button.states[-1] == "disabled"
+
+
+def test_validate_current_text_enables_confirm_for_valid_h4_outline(tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+    dialog = _dialog(config)
+    dialog.outline_text.insert("1.0", "# 项目\n## 章\n### 节\n#### 单元\n")
+
+    ok = OutlinePrepareDialog._validate_current_text(dialog)
+
+    assert ok is True
+    assert dialog.confirm_button.states[-1] == "normal"
 
 
 def test_confirm_writes_outline_and_marks_result(tmp_path: Path):
