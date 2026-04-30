@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import openpyxl
@@ -20,6 +21,12 @@ class TenderConversionError(RuntimeError):
 
 UNSUPPORTED_WPS_SUFFIXES = {".wps", ".et"}
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".xlsx", ".doc", ".xls"} | UNSUPPORTED_WPS_SUFFIXES
+
+
+@dataclass(frozen=True)
+class SheetTable:
+    rows: list[list[str]]
+    cell_range: str
 
 
 def convert_tender_document(path: Path, output_dir: Path) -> TenderConversionResult:
@@ -181,11 +188,10 @@ def _convert_xlsx(path: Path, source_name: str) -> list[ConvertedBlock]:
                 sheet_name=sheet.title,
             )
         )
-        rows = _sheet_rows(sheet)
-        if rows:
+        table = _sheet_table(sheet)
+        if table.rows:
             order += 1
-            cell_range = f"A1:{sheet.cell(row=sheet.max_row, column=sheet.max_column).coordinate}"
-            markdown = _markdown_table(rows)
+            markdown = _markdown_table(table.rows)
             blocks.append(
                 ConvertedBlock(
                     block_id=f"xlsx:{sheet.title}:table1",
@@ -196,7 +202,7 @@ def _convert_xlsx(path: Path, source_name: str) -> list[ConvertedBlock]:
                     text=markdown,
                     order_index=order,
                     sheet_name=sheet.title,
-                    cell_range=cell_range,
+                    cell_range=table.cell_range,
                     table_index=1,
                 )
             )
@@ -235,8 +241,9 @@ def _try_convert_xls_with_calamine(path: Path, source_name: str) -> list[Convert
             )
         )
         if rows:
+            rows = _normalize_rows(rows)
             order += 1
-            markdown = _markdown_table(_normalize_rows(rows))
+            markdown = _markdown_table(rows)
             blocks.append(
                 ConvertedBlock(
                     block_id=f"xls:{sheet_name}:table1",
@@ -247,23 +254,55 @@ def _try_convert_xls_with_calamine(path: Path, source_name: str) -> list[Convert
                     text=markdown,
                     order_index=order,
                     sheet_name=sheet_name,
+                    cell_range=_a1_range(1, 1, len(rows), max(len(row) for row in rows)),
                     table_index=1,
                 )
             )
     return blocks
 
 
-def _sheet_rows(sheet) -> list[list[str]]:
-    rows: list[list[str]] = []
+def _sheet_table(sheet) -> SheetTable:
+    merged_lookup = _merged_cell_value_lookup(sheet)
+    rows: list[tuple[int, list[tuple[int, str]]]] = []
+    min_row: int | None = None
+    max_row: int | None = None
+    min_col: int | None = None
+    max_col: int | None = None
     for row in sheet.iter_rows():
-        values = ["" if cell.value is None else str(cell.value).strip() for cell in row]
-        while values and not values[-1]:
-            values.pop()
-        if any(values):
-            rows.append(values)
-    if not rows:
-        return []
-    return _normalize_rows(rows)
+        values: list[tuple[int, str]] = []
+        for cell in row:
+            value = merged_lookup.get((cell.row, cell.column), cell.value)
+            text = "" if value is None else str(value).strip()
+            values.append((cell.column, text))
+            if text:
+                min_row = cell.row if min_row is None else min(min_row, cell.row)
+                max_row = cell.row if max_row is None else max(max_row, cell.row)
+                min_col = cell.column if min_col is None else min(min_col, cell.column)
+                max_col = cell.column if max_col is None else max(max_col, cell.column)
+        if any(text for _column, text in values):
+            rows.append((row[0].row, values))
+    if min_row is None or max_row is None or min_col is None or max_col is None:
+        return SheetTable(rows=[], cell_range="")
+
+    table_rows: list[list[str]] = []
+    by_row = {row_number: dict(values) for row_number, values in rows}
+    for row_number in range(min_row, max_row + 1):
+        row_values = by_row.get(row_number, {})
+        table_rows.append([row_values.get(column, "") for column in range(min_col, max_col + 1)])
+    return SheetTable(
+        rows=table_rows,
+        cell_range=_a1_range(min_row, min_col, max_row, max_col),
+    )
+
+
+def _merged_cell_value_lookup(sheet) -> dict[tuple[int, int], object]:
+    lookup: dict[tuple[int, int], object] = {}
+    for cell_range in sheet.merged_cells.ranges:
+        value = sheet.cell(cell_range.min_row, cell_range.min_col).value
+        for row in range(cell_range.min_row, cell_range.max_row + 1):
+            for column in range(cell_range.min_col, cell_range.max_col + 1):
+                lookup[(row, column)] = value
+    return lookup
 
 
 def _normalize_rows(rows: list[list[str]]) -> list[list[str]]:
@@ -284,26 +323,46 @@ def _convert_pdf(path: Path, source_name: str) -> list[ConvertedBlock]:
     extracted_text = "\n".join(page.get_text("text") for page in doc)
     if _visible_text_length(extracted_text) < max(80, len(doc) * 20):
         raise TenderConversionError("该 PDF 可能没有可复制文本层；当前版本暂不支持 OCR。")
-    markdown = pymupdf4llm.to_markdown(str(path))
+    page_chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, use_ocr=False)
     blocks: list[ConvertedBlock] = []
     order = 0
-    for chunk in _split_markdown_blocks(markdown):
-        order += 1
-        heading_level, heading_title = _markdown_heading(chunk)
-        blocks.append(
-            ConvertedBlock(
-                block_id=f"pdf:b{order:04d}",
-                source_file=source_name,
-                source_type="pdf",
-                block_type="heading" if heading_level else ("table" if "|" in chunk else "paragraph"),
-                markdown=chunk,
-                text=re.sub(r"^#+\s*", "", chunk).strip(),
-                order_index=order,
-                heading_level=heading_level,
-                heading_title=heading_title,
+    for page_index, page_chunk in enumerate(_iter_pdf_page_chunks(page_chunks), start=1):
+        page_number = _page_number(page_chunk, page_index)
+        markdown = str(page_chunk.get("text", "")).strip()
+        for chunk in _split_markdown_blocks(markdown):
+            order += 1
+            heading_level, heading_title = _markdown_heading(chunk)
+            blocks.append(
+                ConvertedBlock(
+                    block_id=f"pdf:p{page_number:04d}:b{order:04d}",
+                    source_file=source_name,
+                    source_type="pdf",
+                    block_type="heading" if heading_level else ("table" if "|" in chunk else "paragraph"),
+                    markdown=chunk,
+                    text=re.sub(r"^#+\s*", "", chunk).strip(),
+                    order_index=order,
+                    heading_level=heading_level,
+                    heading_title=heading_title,
+                    page_number=page_number,
+                )
             )
-        )
     return blocks
+
+
+def _iter_pdf_page_chunks(page_chunks) -> list[dict]:
+    if isinstance(page_chunks, list):
+        return [chunk for chunk in page_chunks if isinstance(chunk, dict)]
+    return [{"metadata": {"page": 1}, "text": str(page_chunks)}]
+
+
+def _page_number(page_chunk: dict, fallback: int) -> int:
+    metadata = page_chunk.get("metadata") or {}
+    raw = metadata.get("page") or metadata.get("page_number") or fallback
+    try:
+        page_number = int(raw)
+    except (TypeError, ValueError):
+        page_number = fallback
+    return max(1, page_number)
 
 
 def _split_markdown_blocks(markdown: str) -> list[str]:
@@ -341,6 +400,18 @@ def _markdown_table(rows: list[list[str]]) -> str:
 
 def _escape_cell(value: str) -> str:
     return str(value).replace("\n", "<br>").replace("|", "\\|")
+
+
+def _a1_range(min_row: int, min_col: int, max_row: int, max_col: int) -> str:
+    return f"{_column_letter(min_col)}{min_row}:{_column_letter(max_col)}{max_row}"
+
+
+def _column_letter(index: int) -> str:
+    letters = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters or "A"
 
 
 def _join_blocks(blocks: list[ConvertedBlock]) -> str:

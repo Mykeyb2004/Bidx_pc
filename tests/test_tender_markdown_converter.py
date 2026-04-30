@@ -85,6 +85,47 @@ def test_pdf_without_text_layer_raises_clear_error(monkeypatch, tmp_path: Path):
     assert "暂不支持 OCR" in str(exc.value)
 
 
+def test_pdf_conversion_disables_ocr_and_records_page_numbers(monkeypatch, tmp_path: Path):
+    pdf_path = tmp_path / "text.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    captured = {}
+
+    class FakePage:
+        def __init__(self, text: str):
+            self.text = text
+
+        def get_text(self, _kind):
+            return self.text
+
+    class FakeDoc(list):
+        def __init__(self):
+            super().__init__(
+                [
+                    FakePage("项目采购需求 " + "服务内容" * 20),
+                    FakePage("评分标准 " + "评审分值" * 20),
+                ]
+            )
+
+    def fake_to_markdown(path, **kwargs):
+        captured["path"] = path
+        captured["kwargs"] = kwargs
+        return [
+            {"metadata": {"page": 1}, "text": "# 项目采购需求\n\n服务内容。"},
+            {"metadata": {"page": 2}, "text": "# 评分标准\n\n| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |"},
+        ]
+
+    monkeypatch.setitem(__import__("sys").modules, "fitz", SimpleNamespace(open=lambda _path: FakeDoc()))
+    monkeypatch.setitem(__import__("sys").modules, "pymupdf4llm", SimpleNamespace(to_markdown=fake_to_markdown))
+
+    result = convert_tender_document(pdf_path, tmp_path / "out")
+
+    assert captured["path"] == str(pdf_path.resolve())
+    assert captured["kwargs"]["use_ocr"] is False
+    assert captured["kwargs"]["page_chunks"] is True
+    assert {block.page_number for block in result.blocks} == {1, 2}
+    assert any(block.heading_title == "项目采购需求" for block in result.blocks)
+
+
 def test_doc_requires_libreoffice_when_no_converter_available(monkeypatch, tmp_path: Path):
     doc_path = tmp_path / "old.doc"
     doc_path.write_text("fake", encoding="utf-8")
@@ -130,3 +171,43 @@ def test_xls_uses_calamine_before_libreoffice(monkeypatch, tmp_path: Path):
     assert "## 工作表：技术商务评分表" in markdown
     assert "| 评分项 | 评分标准 | 分值 |" in markdown
     assert result.warnings == ("已通过 python-calamine 读取 .xls。",)
+    assert any(block.cell_range == "A1:C2" for block in result.blocks)
+
+
+def test_xlsx_expands_merged_cells_and_records_actual_cell_range(tmp_path: Path):
+    workbook_path = tmp_path / "merged.xlsx"
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "评分表"
+    sheet.merge_cells("B2:D2")
+    sheet["B2"] = "评分标准"
+    sheet["B3"] = "评分项"
+    sheet["C3"] = "评审内容"
+    sheet["D3"] = "分值"
+    sheet["B4"] = "服务方案"
+    sheet["C4"] = "完整得20分"
+    sheet["D4"] = "20分"
+    workbook.save(workbook_path)
+
+    result = convert_tender_document(workbook_path, tmp_path / "out")
+
+    markdown = result.converted_markdown_path.read_text(encoding="utf-8")
+    table_block = next(block for block in result.blocks if block.block_type == "table")
+    assert "评分标准" in markdown
+    assert table_block.cell_range == "B2:D4"
+
+
+def test_libreoffice_conversion_reports_subprocess_failure(monkeypatch, tmp_path: Path):
+    doc_path = tmp_path / "old.doc"
+    doc_path.write_text("fake", encoding="utf-8")
+
+    monkeypatch.setattr("bid_writer.tender_markdown_converter.shutil.which", lambda _name: "/usr/bin/soffice")
+    monkeypatch.setattr(
+        "bid_writer.tender_markdown_converter.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr="bad input", stdout=""),
+    )
+
+    with pytest.raises(TenderConversionError) as exc:
+        convert_tender_document(doc_path, tmp_path / "out")
+
+    assert "LibreOffice 转换失败：bad input" in str(exc.value)
