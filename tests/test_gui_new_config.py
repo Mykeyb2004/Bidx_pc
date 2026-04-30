@@ -81,6 +81,7 @@ def test_update_action_states_configures_project_menu_commands_only(tmp_path):
     fake_window = _fake_window(tmp_path / "config.yaml")
     fake_window.bid_writer.parser = object()
     fake_window.is_generating = True
+    fake_window.is_modal_workflow_active = False
     fake_window.visible_leaf_count = 0
     fake_window.generated_leaf_count = 0
     fake_window.selection_text = _FakeVar()
@@ -111,6 +112,37 @@ def test_update_action_states_configures_project_menu_commands_only(tmp_path):
     ]
 
 
+def test_update_action_states_disables_old_project_during_modal_workflow(tmp_path):
+    fake_window = _fake_window(tmp_path / "config.yaml")
+    fake_window.bid_writer.parser = object()
+    fake_window.is_generating = False
+    fake_window.is_modal_workflow_active = True
+    fake_window.visible_leaf_count = 3
+    fake_window.generated_leaf_count = 2
+    fake_window.selection_text = _FakeVar()
+    fake_window.btn_generate = _FakeWidget()
+    fake_window.btn_merge = _FakeWidget()
+    fake_window.btn_selection_menu = _FakeWidget()
+    fake_window.btn_stop_generation = _FakeWidget()
+    fake_window.selection_tools_menu = _FakeSelectionToolsMenu()
+    fake_window.search_entry = _FakeWidget()
+    fake_window.status_filter_combo = _FakeWidget()
+    fake_window._get_selected_leaf_headings = lambda: [object()]
+    fake_window.schedule_responsive_layout = lambda: None
+
+    project_menu = _FakeMenu()
+    MainWindow._populate_project_menu(fake_window, project_menu)
+    fake_window.project_menu = project_menu
+
+    MainWindow.update_action_states(fake_window)
+
+    assert fake_window.btn_generate.config_calls[-1]["state"] == tk.DISABLED
+    assert fake_window.btn_merge.config_calls[-1]["state"] == tk.DISABLED
+    assert fake_window.search_entry.config_calls[-1]["state"] == tk.DISABLED
+    assert fake_window.status_filter_combo.config_calls[-1]["state"] == "disabled"
+    assert all(state == tk.DISABLED for _label, state in project_menu.configured_entries)
+
+
 def test_open_new_config_editor_uses_default_path_next_to_current_config(monkeypatch, tmp_path):
     current_path = tmp_path / "config.yaml"
     expected_path = tmp_path / "config_新项目.yaml"
@@ -126,6 +158,15 @@ def test_open_new_config_editor_uses_default_path_next_to_current_config(monkeyp
             self.result = {"apply_path": expected_path}
 
     fake_window = _fake_window(current_path)
+    fake_window.status_text = _FakeVar()
+    fake_window.is_modal_workflow_active = False
+    state_updates: list[bool] = []
+    fake_window.update_action_states = lambda: state_updates.append(fake_window.is_modal_workflow_active)
+    fake_window._set_modal_workflow_active = lambda active, status_text=None: MainWindow._set_modal_workflow_active(
+        fake_window,
+        active,
+        status_text,
+    )
     fake_window.wait_window = lambda dialog: waited.append(dialog)
     fake_window._switch_to_config_path = lambda path, *, force_reload=False: switches.append(
         {"path": path, "force_reload": force_reload}
@@ -139,6 +180,7 @@ def test_open_new_config_editor_uses_default_path_next_to_current_config(monkeyp
     ]
     assert len(waited) == 1
     assert switches == [{"path": expected_path, "force_reload": False}]
+    assert state_updates == [True, False]
 
 
 def test_open_new_config_editor_forces_reload_when_applying_current_path(monkeypatch, tmp_path):
@@ -151,6 +193,15 @@ def test_open_new_config_editor_forces_reload_when_applying_current_path(monkeyp
             self.result = {"apply_path": current_path}
 
     fake_window = _fake_window(current_path)
+    fake_window.status_text = _FakeVar()
+    fake_window.is_modal_workflow_active = False
+    state_updates: list[bool] = []
+    fake_window.update_action_states = lambda: state_updates.append(fake_window.is_modal_workflow_active)
+    fake_window._set_modal_workflow_active = lambda active, status_text=None: MainWindow._set_modal_workflow_active(
+        fake_window,
+        active,
+        status_text,
+    )
     fake_window.wait_window = lambda _dialog: None
     fake_window._switch_to_config_path = lambda path, *, force_reload=False: switches.append(
         {"path": path, "force_reload": force_reload}
@@ -172,6 +223,15 @@ def test_open_new_config_editor_ignores_cancelled_dialog(monkeypatch, tmp_path):
             self.result = {"apply_path": None}
 
     fake_window = _fake_window(current_path)
+    fake_window.status_text = _FakeVar()
+    fake_window.is_modal_workflow_active = False
+    state_updates: list[bool] = []
+    fake_window.update_action_states = lambda: state_updates.append(fake_window.is_modal_workflow_active)
+    fake_window._set_modal_workflow_active = lambda active, status_text=None: MainWindow._set_modal_workflow_active(
+        fake_window,
+        active,
+        status_text,
+    )
     fake_window.wait_window = lambda _dialog: None
     fake_window._switch_to_config_path = lambda path, *, force_reload=False: switches.append(
         {"path": path, "force_reload": force_reload}
@@ -181,6 +241,8 @@ def test_open_new_config_editor_ignores_cancelled_dialog(monkeypatch, tmp_path):
     MainWindow.open_new_config_editor(fake_window)
 
     assert switches == []
+    assert state_updates == [True, False]
+    assert fake_window.status_text.value == "已取消新建配置，仍在使用：config.yaml"
 
 
 def test_switch_to_config_prepares_unlocked_outline_before_applying(monkeypatch, tmp_path):
@@ -252,6 +314,7 @@ def test_switch_to_config_cancelled_outline_prepare_keeps_current_config(monkeyp
 
     assert result is False
     assert fake_window.bid_writer is original_writer
+    assert fake_window.status_text.value == "大纲准备已取消，仍在使用：config.yaml"
 
 
 def test_unlock_and_prepare_outline_sets_lock_false_then_reopens_dialog(monkeypatch, tmp_path):

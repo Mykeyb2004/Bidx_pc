@@ -1473,6 +1473,7 @@ class MainWindow(tk.Tk):
         self._action_layout_mode = ""
         self._control_layout_mode = ""
         self._preserve_workspace_on_sync = False
+        self.is_modal_workflow_active = False
         self._outline_tree_tooltips: dict[str, str] = {}
 
         # 树节点到HeadingNode的映射
@@ -2632,24 +2633,25 @@ class MainWindow(tk.Tk):
         selected_headings = self._get_selected_leaf_headings()
         selected_count = len(selected_headings)
         single_selection = selected_count == 1
-        tool_button_state = tk.DISABLED if self.is_generating else tk.NORMAL
+        actions_locked = self.is_generating or getattr(self, "is_modal_workflow_active", False)
+        tool_button_state = tk.DISABLED if actions_locked else tk.NORMAL
         selection_menu_state = (
             tk.DISABLED
-            if self.is_generating or (self.visible_leaf_count == 0 and selected_count == 0)
+            if actions_locked or (self.visible_leaf_count == 0 and selected_count == 0)
             else tk.NORMAL
         )
         chapter_tools_state = (
             tk.DISABLED
-            if self.is_generating or self.bid_writer.parser is None
+            if actions_locked or self.bid_writer.parser is None
             else tk.NORMAL
         )
         self.selection_text.set(str(selected_count))
         self.btn_generate.config(
             text=f"生成所选 {selected_count}",
-            state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL)
+            state=(tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL)
         )
         self.btn_merge.config(
-            state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL)
+            state=(tk.DISABLED if actions_locked or self.generated_leaf_count == 0 else tk.NORMAL)
         )
         self.btn_selection_menu.config(state=selection_menu_state)
 
@@ -2679,44 +2681,50 @@ class MainWindow(tk.Tk):
             self.chapter_menu.entryconfigure(
                 0,
                 label=f"生成所选 {selected_count}",
-                state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL),
+                state=(tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL),
             )
             self.chapter_menu.entryconfigure(
                 1,
-                state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
+                state=(tk.DISABLED if actions_locked or not single_selection else tk.NORMAL),
             )
             self.chapter_menu.entryconfigure(
                 2,
-                state=(tk.DISABLED if self.is_generating or self.bid_writer.parser is None else tk.NORMAL),
+                state=(tk.DISABLED if actions_locked or self.bid_writer.parser is None else tk.NORMAL),
             )
             self.chapter_menu.entryconfigure(
                 CHAPTER_MENU_FACT_CARD_INDEX,
                 label=self._selected_fact_card_action_label(selected_headings),
-                state=(tk.DISABLED if self.is_generating or not single_selection else tk.NORMAL),
+                state=(tk.DISABLED if actions_locked or not single_selection else tk.NORMAL),
             )
             self.chapter_menu.entryconfigure(2, state=chapter_tools_state)
             self.chapter_menu.entryconfigure(3, state=chapter_tools_state)
             self.chapter_menu.entryconfigure(
                 5,
-                state=(tk.DISABLED if self.is_generating or self.generated_leaf_count == 0 else tk.NORMAL),
+                state=(tk.DISABLED if actions_locked or self.generated_leaf_count == 0 else tk.NORMAL),
             )
 
         self.selection_tools_menu.entryconfigure(
             "全选四级标题",
-            state=(tk.DISABLED if self.is_generating or self.visible_leaf_count == 0 else tk.NORMAL),
+            state=(tk.DISABLED if actions_locked or self.visible_leaf_count == 0 else tk.NORMAL),
         )
         self.selection_tools_menu.entryconfigure(
             "清空选择",
-            state=(tk.DISABLED if self.is_generating or selected_count == 0 else tk.NORMAL),
+            state=(tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL),
         )
 
-        self.search_entry.config(state=(tk.DISABLED if self.is_generating else tk.NORMAL))
-        self.status_filter_combo.config(state=("disabled" if self.is_generating else "readonly"))
+        self.search_entry.config(state=(tk.DISABLED if actions_locked else tk.NORMAL))
+        self.status_filter_combo.config(state=("disabled" if actions_locked else "readonly"))
 
         self.btn_stop_generation.config(
             state=(tk.NORMAL if self.is_generating else tk.DISABLED)
         )
         self.schedule_responsive_layout()
+
+    def _set_modal_workflow_active(self, active: bool, status_text: str | None = None) -> None:
+        self.is_modal_workflow_active = active
+        if status_text:
+            self.status_text.set(status_text)
+        self.update_action_states()
 
     def on_tree_select(self, event):
         """当选择树节点时 - 只允许选择四级标题（叶子节点）"""
@@ -2876,6 +2884,7 @@ class MainWindow(tk.Tk):
 
         if not next_bid_writer.config.outline_locked:
             if not self._prepare_unlocked_outline(next_bid_writer):
+                self.status_text.set(f"大纲准备已取消，仍在使用：{current_path.name}")
                 return False
 
         if not next_bid_writer.load_outline():
@@ -2932,11 +2941,16 @@ class MainWindow(tk.Tk):
 
         current_config_path = self.bid_writer.config.config_path.resolve()
         default_path = current_config_path.parent / "config_新项目.yaml"
-        dialog = ConfigEditorDialog(self, default_path, new_config=True)
-        self.wait_window(dialog)
+        self._set_modal_workflow_active(True, "正在新建配置，当前项目暂未切换")
+        try:
+            dialog = ConfigEditorDialog(self, default_path, new_config=True)
+            self.wait_window(dialog)
+        finally:
+            self._set_modal_workflow_active(False)
 
         apply_path = dialog.result.get("apply_path")
         if not apply_path:
+            self.status_text.set(f"已取消新建配置，仍在使用：{current_config_path.name}")
             return
 
         apply_resolved = Path(apply_path).expanduser().resolve()
