@@ -23,7 +23,7 @@ class NewConfigWizardState:
     manual_inputs: bool = False
 
 
-_MATERIALS_DIR_NAMES = {"招标文件", "采购文件", "招采文件", "投标资料", "项目资料"}
+_MATERIALS_DIR_NAMES = {"招标文件", "采购文件", "招采文件", "投标资料", "项目资料", "资料"}
 _TRANSIENT_DIR_NAMES = {
     "downloads",
     "download",
@@ -35,13 +35,15 @@ _TRANSIENT_DIR_NAMES = {
     "temporaryitems",
 }
 _TENDER_SUFFIXES = (
-    "招标文件",
-    "采购文件",
+    "公开招标文件",
     "竞争性磋商文件",
     "竞争性谈判文件",
+    "招标文件",
+    "采购文件",
     "询价文件",
     "比选文件",
     "采购需求",
+    "采购公告",
     "招标公告",
     "投标文件",
 )
@@ -52,16 +54,17 @@ def build_initial_state_from_source(
 ) -> NewConfigWizardState:
     source = Path(source_path)
     current_config = Path(current_config_path)
+    config_dir = current_config.parent
     project_name = derive_project_name(source.name)
-    project_root = infer_project_root(source, current_config.parent, project_name)
+    project_root = infer_project_root(source, config_dir, project_name)
     copy_source = should_copy_source_file(source, project_root)
     source_copy_path = project_root / "招标文件" / source.name if copy_source else None
 
     return NewConfigWizardState(
         source_path=source,
         project_root=project_root,
-        config_path=project_root / f"config_{project_name}.yaml",
-        import_dir=source.parent,
+        config_path=config_dir / f"config_{project_name}.yaml",
+        import_dir=project_root / ".bid_writer" / "imports" / "pending",
         should_copy_source=copy_source,
         source_copy_path=source_copy_path,
         copied_source_path=None,
@@ -107,7 +110,7 @@ def infer_project_root(source_path: str | Path, config_dir: str | Path, project_
 
 def derive_project_name(filename: str | Path) -> str:
     name = Path(filename).stem.strip()
-    for suffix in _TENDER_SUFFIXES:
+    for suffix in sorted(_TENDER_SUFFIXES, key=len, reverse=True):
         if name.endswith(suffix):
             name = name[: -len(suffix)].strip()
             break

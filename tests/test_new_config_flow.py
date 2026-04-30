@@ -3,10 +3,14 @@ from pathlib import Path
 from bid_writer.new_config_flow import (
     NewConfigWizardState,
     build_initial_state_from_source,
+    build_manual_state,
     copy_source_file_if_needed,
     cleanup_created_paths,
     derive_project_name,
     format_relative_path,
+    infer_project_root,
+    is_transient_location,
+    register_created_path,
     should_copy_source_file,
 )
 
@@ -27,9 +31,48 @@ def test_regular_tender_directory_becomes_project_root(tmp_path: Path):
     assert state.should_copy_source is False
 
 
+def test_initial_state_config_path_uses_current_config_directory(tmp_path: Path):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    source = source_dir / "公共服务满意度招标文件.docx"
+    source.write_text("fake", encoding="utf-8")
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+
+    state = build_initial_state_from_source(
+        source,
+        current_config_path=config_dir / "config.yaml",
+    )
+
+    assert state.project_root == source_dir
+    assert state.config_path == config_dir / "config_公共服务满意度.yaml"
+
+
+def test_initial_state_import_dir_uses_project_pending_import_area(tmp_path: Path):
+    source = tmp_path / "公共服务满意度招标文件.docx"
+    source.write_text("fake", encoding="utf-8")
+
+    state = build_initial_state_from_source(source, current_config_path=tmp_path / "config.yaml")
+
+    assert state.import_dir == tmp_path / ".bid_writer" / "imports" / "pending"
+
+
 def test_materials_directory_uses_parent_as_project_root(tmp_path: Path):
     project = tmp_path / "公共服务项目"
     source_dir = project / "招标文件"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "采购文件.pdf"
+    source.write_text("fake", encoding="utf-8")
+
+    state = build_initial_state_from_source(source, current_config_path=tmp_path / "config.yaml")
+
+    assert state.project_root == project
+    assert state.should_copy_source is False
+
+
+def test_materials_directory_includes_plain_materials_name(tmp_path: Path):
+    project = tmp_path / "公共服务项目"
+    source_dir = project / "资料"
     source_dir.mkdir(parents=True)
     source = source_dir / "采购文件.pdf"
     source.write_text("fake", encoding="utf-8")
@@ -57,7 +100,45 @@ def test_downloads_source_suggests_new_project_folder(tmp_path: Path):
 
 def test_project_name_strips_common_tender_suffixes():
     assert derive_project_name("公共服务满意度项目招标文件.pdf") == "公共服务满意度项目"
+    assert derive_project_name("公共服务满意度项目采购公告.pdf") == "公共服务满意度项目"
+    assert derive_project_name("某项目公开招标文件.pdf") == "某项目"
     assert derive_project_name("采购文件") == "新项目"
+
+
+def test_build_manual_state_uses_manual_paths(tmp_path: Path):
+    project = tmp_path / "项目"
+    config = tmp_path / "configs" / "config_项目.yaml"
+
+    state = build_manual_state(project_root=project, config_path=config)
+
+    assert state.source_path is None
+    assert state.project_root == project
+    assert state.config_path == config
+    assert state.import_dir is None
+    assert state.should_copy_source is False
+    assert state.requirements_path == project / "项目要求" / "项目采购需求.md"
+    assert state.scoring_path == project / "项目要求" / "评分标准.md"
+    assert state.outline_path == project / "投标大纲.md"
+    assert state.output_dir == project / "output"
+    assert state.manual_inputs is True
+
+
+def test_infer_project_root_uses_material_parent_transient_config_or_source_parent(tmp_path: Path):
+    project = tmp_path / "项目"
+    materials = project / "资料" / "采购文件.pdf"
+    downloads = tmp_path / "Downloads" / "项目招标文件.pdf"
+    regular = tmp_path / "regular" / "项目招标文件.pdf"
+    config_dir = tmp_path / "configs"
+
+    assert infer_project_root(materials, config_dir, "项目") == project
+    assert infer_project_root(downloads, config_dir, "项目") == config_dir / "项目"
+    assert infer_project_root(regular, config_dir, "项目") == regular.parent
+
+
+def test_is_transient_location_detects_common_temporary_locations(tmp_path: Path):
+    assert is_transient_location(tmp_path / "Downloads" / "采购文件.pdf") is True
+    assert is_transient_location(tmp_path / "桌面" / "采购文件.pdf") is True
+    assert is_transient_location(tmp_path / "项目" / "采购文件.pdf") is False
 
 
 def test_format_relative_path_prefers_project_relative(tmp_path: Path):
@@ -110,6 +191,31 @@ def test_cleanup_created_paths_removes_only_recorded_files_and_empty_dirs(tmp_pa
     assert created_dir.exists()
     assert nested_keep.exists()
     assert keep.exists()
+
+
+def test_register_created_path_records_each_path_once(tmp_path: Path):
+    state = NewConfigWizardState(
+        source_path=None,
+        project_root=tmp_path,
+        config_path=tmp_path / "config.yaml",
+        import_dir=None,
+        should_copy_source=False,
+        source_copy_path=None,
+        copied_source_path=None,
+        requirements_path=None,
+        scoring_path=None,
+        outline_path=tmp_path / "投标大纲.md",
+        output_dir=tmp_path / "output",
+        bidder_name="",
+        created_paths=[],
+        manual_inputs=False,
+    )
+    created = tmp_path / "created.md"
+
+    register_created_path(state, created)
+    register_created_path(state, created)
+
+    assert state.created_paths == [created]
 
 
 def test_copy_source_file_if_needed_copies_external_source_and_records_path(tmp_path: Path):
