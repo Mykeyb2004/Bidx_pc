@@ -851,6 +851,8 @@ def test_config_editor_project_section_collects_outline_generation_fields():
 def test_new_config_project_section_hides_outline_lock_and_role(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     dialog.is_new_config = True
+    dialog._tooltips = []
+    dialog.tender_import_status_var = StubVar("")
     path_rows = []
     check_rows = []
 
@@ -874,15 +876,61 @@ def test_new_config_project_section_hides_outline_lock_and_role(monkeypatch):
     dialog._add_text_block = lambda *_args, **_kwargs: None
     dialog._add_check_row = lambda _parent, _row, label, key: check_rows.append((label, key))
     dialog._add_path_row = lambda _parent, _row, label, key, **kwargs: path_rows.append((label, key, kwargs))
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
 
     monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
     monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Button", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
 
     dialog._build_project_section()
 
     assert ("大纲已锁定", "project.outline_locked") not in check_rows
     assert not any(key == "project.outline_generation.role_file" for _label, key, _kwargs in path_rows)
     assert any(label == "大纲保存位置 / 已有大纲文件" and key == "project.outline_file" for label, key, _kwargs in path_rows)
+
+
+def test_new_config_project_section_adds_tender_import_button(monkeypatch):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.is_new_config = True
+    dialog.tender_import_status_var = StubVar("")
+    buttons = []
+
+    class FakeWidget:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        def pack(self, **_kwargs):
+            return None
+
+        def grid(self, **_kwargs):
+            return None
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+    class FakeButton(FakeWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            buttons.append(self)
+
+    dialog._create_section_page = lambda _name: SimpleNamespace(content=FakeWidget())
+    dialog._add_entry_row = lambda *_args, **_kwargs: None
+    dialog._add_mode_selector = lambda *_args, **_kwargs: None
+    dialog._add_text_block = lambda *_args, **_kwargs: None
+    dialog._add_check_row = lambda *_args, **_kwargs: None
+    dialog._add_path_row = lambda *_args, **_kwargs: None
+    dialog._register_tooltip = lambda *_args, **_kwargs: None
+
+    monkeypatch.setattr(config_editor_dialog.ttk, "LabelFrame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Frame", FakeWidget)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Button", FakeButton)
+    monkeypatch.setattr(config_editor_dialog.ttk, "Label", FakeWidget)
+
+    dialog._build_project_section()
+
+    assert any(button.kwargs["text"] == "从招标文件导入..." for button in buttons)
 
 
 def test_existing_config_project_section_keeps_outline_advanced_fields(monkeypatch):

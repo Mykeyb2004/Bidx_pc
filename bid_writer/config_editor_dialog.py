@@ -29,6 +29,8 @@ from .gui import (
     style_canvas_widget,
     style_text_widget,
 )
+from .tender_import_dialog import confirm_low_confidence
+from .tender_import_service import TenderImportError, TenderImportService
 
 
 CONFIG_EDITOR_DEFAULT_WIDTH = 1120
@@ -246,6 +248,7 @@ class ConfigEditorDialog(tk.Toplevel):
 
         self.current_file_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="正在载入配置...")
+        self.tender_import_status_var = tk.StringVar(value="")
         self.section_var = tk.StringVar(value="project")
         self.connection_text_var = tk.StringVar(value="")
 
@@ -466,15 +469,33 @@ class ConfigEditorDialog(tk.Toplevel):
 
         inputs = ttk.LabelFrame(content, text="输入资源", padding=12)
         inputs.pack(fill=tk.X, pady=(0, 12))
+        row_offset = 0
+        if self.is_new_config:
+            import_frame = ttk.Frame(inputs)
+            import_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+            import_button = ttk.Button(
+                import_frame,
+                text="从招标文件导入...",
+                command=self._import_tender_document,
+                **_bootstyle_kwargs("secondary"),
+            )
+            import_button.pack(side=tk.LEFT)
+            self._register_tooltip(import_button, "project.tender_import")
+            ttk.Label(
+                import_frame,
+                textvariable=self.tender_import_status_var,
+                style="Muted.TLabel",
+            ).pack(side=tk.LEFT, padx=(10, 0))
+            row_offset = 1
         outline_file_label = "大纲保存位置 / 已有大纲文件" if self.is_new_config else "大纲文件"
-        self._add_path_row(inputs, 0, outline_file_label, "project.outline_file", browse_kind="file", relative_to="project")
+        self._add_path_row(inputs, 0 + row_offset, outline_file_label, "project.outline_file", browse_kind="file", relative_to="project")
 
-        self._add_mode_selector(inputs, 1, "采购需求", "project.bid_requirements_mode")
+        self._add_mode_selector(inputs, 1 + row_offset, "采购需求", "project.bid_requirements_mode")
         self.project_bid_file_frame = ttk.Frame(inputs)
-        self.project_bid_file_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_bid_file_frame.grid(row=2 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_path_row(self.project_bid_file_frame, 0, "采购需求文件", "project.bid_requirements_file", browse_kind="file", relative_to="project")
         self.project_bid_text_frame = ttk.Frame(inputs)
-        self.project_bid_text_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_bid_text_frame.grid(row=3 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_text_block(
             self.project_bid_text_frame,
             "采购需求正文",
@@ -482,12 +503,12 @@ class ConfigEditorDialog(tk.Toplevel):
             help_text="兼容旧配置；推荐迁移为独立文件。",
         )
 
-        self._add_mode_selector(inputs, 4, "评分标准", "project.scoring_criteria_mode")
+        self._add_mode_selector(inputs, 4 + row_offset, "评分标准", "project.scoring_criteria_mode")
         self.project_score_file_frame = ttk.Frame(inputs)
-        self.project_score_file_frame.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_score_file_frame.grid(row=5 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_path_row(self.project_score_file_frame, 0, "评分标准文件", "project.scoring_criteria_file", browse_kind="file", relative_to="project")
         self.project_score_text_frame = ttk.Frame(inputs)
-        self.project_score_text_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_score_text_frame.grid(row=6 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_text_block(
             self.project_score_text_frame,
             "评分标准正文",
@@ -878,6 +899,63 @@ class ConfigEditorDialog(tk.Toplevel):
             return
         selected_path = Path(selected).resolve()
         self.vars[key].set(self._display_relative_path(selected_path, base_dir))
+
+    def _can_import_tender_document(self) -> bool:
+        return bool(getattr(self, "is_new_config", False))
+
+    def _import_tender_document(self) -> None:
+        if not self._can_import_tender_document():
+            messagebox.showwarning("不可用", "招标文件导入仅支持新建配置流程。", parent=self)
+            return
+        selected = filedialog.askopenfilename(
+            parent=self,
+            title="选择招标文件",
+            filetypes=[
+                ("招标文件", "*.pdf *.docx *.doc *.xlsx *.xls"),
+                ("PDF", "*.pdf"),
+                ("Word", "*.docx *.doc"),
+                ("Excel", "*.xlsx *.xls"),
+                ("全部文件", "*.*"),
+            ],
+        )
+        if not selected:
+            return
+        service = TenderImportService()
+        try:
+            result = service.import_document(
+                source_path=Path(selected),
+                project_root=self._current_project_root(),
+                confirm_overwrite=self._confirm_tender_overwrite,
+                confirm_low_confidence=lambda extraction: confirm_low_confidence(self, extraction),
+            )
+        except TenderImportError as exc:
+            messagebox.showerror("导入失败", str(exc), parent=self)
+            return
+        except Exception as exc:
+            messagebox.showerror("导入失败", f"{type(exc).__name__}: {exc}", parent=self)
+            return
+        if result.cancelled:
+            self.tender_import_status_var.set("已取消写入，未修改配置路径。")
+            return
+        self._apply_tender_import_result(result)
+        messagebox.showinfo("导入完成", "已抽取项目采购需求和评分标准，并填入当前新建配置。", parent=self)
+
+    def _confirm_tender_overwrite(self, path: Path) -> bool:
+        return messagebox.askyesno(
+            "确认覆盖",
+            f"{path.name} 已存在且非空。是否覆盖并生成 .bak 备份？",
+            parent=self,
+        )
+
+    def _apply_tender_import_result(self, result) -> None:
+        self.vars["project.bid_requirements_mode"].set("file")
+        self.vars["project.scoring_criteria_mode"].set("file")
+        self.vars["project.bid_requirements_file"].set(result.relative_requirements_path)
+        self.vars["project.scoring_criteria_file"].set(result.relative_scoring_path)
+        if hasattr(self, "project_bid_file_frame"):
+            self._update_mode_visibility()
+        self.tender_import_status_var.set(f"导入完成：{result.import_dir.name}")
+        self._schedule_refresh()
 
     def _load_document(self, config_path: Path) -> None:
         self.document = load_config_editor_document(config_path)

@@ -13,6 +13,7 @@ FIELD_TOOLTIPS: dict[str, str] = {
     "project.root_dir": "项目资料根目录。大纲、采购需求、评分标准和输出目录通常都相对这个目录解析；换项目时优先检查这里。",
     "project.bidder_name": "投标主体名称。会进入提示词和部分输出内容，用来让正文更贴近当前投标主体。",
     "project.outline_file": "大纲保存位置或已有大纲文件路径。新项目可以先保留默认路径，系统会在大纲准备阶段写入 Markdown 大纲。",
+    "project.tender_import": "从单个 Word、Excel 或可复制文字 PDF 招标文件中抽取项目采购需求和评分标准，并写入项目要求 Markdown 文件。暂不支持 OCR、.wps 或 .et。",
     "project.bid_requirements_mode": "决定采购需求是引用外部文件，还是直接把正文写进 YAML。长期维护更推荐文件模式。",
     "project.bid_requirements_file": "采购需求源文件路径。通常指向招标文件中整理出的采购需求 Markdown。",
     "project.bid_requirements_text": "内嵌采购需求正文。只适合临时配置或小型样例，正式项目更建议拆到独立文件。",
