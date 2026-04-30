@@ -144,3 +144,69 @@ def test_low_confidence_when_requirements_content_is_too_short():
     assert result.requirements is not None
     assert result.requirements.confidence < 0.80
     assert result.needs_confirmation is True
+
+
+def test_plain_title_paragraphs_stop_at_following_plain_section_title():
+    conversion = _conversion(
+        [
+            _paragraph("req_title", "项目采购需求", 1),
+            _paragraph("r1", "服务内容包括调查、技术支持、成果提交和验收。", 2),
+            _paragraph("score_title", "评分标准", 3),
+            _table("s1", "| 评分项 | 评分标准 | 分值 |\n| --- | --- | --- |\n| 服务 | 优得20分 | 20分 |", 4),
+            _paragraph("contract_title", "合同条款", 5),
+            _paragraph("c1", "合同正文不得进入评分标准摘录。", 6),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.requirements is not None
+    assert result.requirements.start_block_id == "req_title"
+    assert "评分标准" not in result.requirements.markdown
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "score_title"
+    assert "合同正文" not in result.scoring.markdown
+
+
+def test_plain_toc_rows_without_dotted_leaders_are_ignored():
+    conversion = _conversion(
+        [
+            _heading("toc", "目录", 1),
+            _paragraph("toc_req", "项目采购需求 12", 2),
+            _paragraph("toc_score", "评分标准 26", 3),
+            _heading("real_req", "项目采购需求", 4),
+            _paragraph("r1", "采购服务内容包括范围、技术要求、成果提交和验收。", 5),
+            _heading("real_score", "评分标准", 6),
+            _table("s1", "| 评分项 | 评分标准 | 分值 |\n| --- | --- | --- |\n| 团队 | 人员配置得10分 | 10分 |", 7),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.requirements is not None
+    assert result.requirements.start_block_id == "real_req"
+    assert "项目采购需求 12" not in result.requirements.markdown
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "real_score"
+
+
+def test_table_scoring_candidate_expands_back_to_preceding_scoring_title_and_intro():
+    conversion = _conversion(
+        [
+            _heading("req", "采购内容及要求", 1),
+            _paragraph("r1", "采购服务内容包括调查、成果提交和验收。", 2),
+            _paragraph("score_title", "评分因素与分值", 3),
+            _paragraph("intro", "本项目采用综合评分法，满分100分。", 4),
+            _table("score_table", "| 评分项 | 评审内容 | 分值 |\n| --- | --- | --- |\n| 服务方案 | 完整得30分 | 30分 |", 5),
+            _heading("contract", "合同条款", 6),
+            _paragraph("c1", "合同正文", 7),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "score_title"
+    assert "本项目采用综合评分法" in result.scoring.markdown
+    assert "完整得30分" in result.scoring.markdown
+    assert "合同正文" not in result.scoring.markdown

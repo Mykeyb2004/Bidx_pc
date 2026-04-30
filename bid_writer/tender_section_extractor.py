@@ -50,6 +50,7 @@ SCORING_TERMS = ("评分", "评审", "分值", "满分", "权重", "得分", "�
 SCORING_TABLE_TERMS = ("评审因素", "评分项", "评分标准", "评审内容", "分值", "权重", "得分")
 STRONG_STOP_TITLES = ("合同条款", "投标人须知", "响应文件格式", "开标评标定标")
 TOC_DOTTED_RE = re.compile(r"\.{3,}|…{2,}|[.．·]{2,}\s*\d+\s*$")
+TOC_PAGE_RE = re.compile(r"^.{2,80}\s+\d{1,4}\s*$")
 
 
 def extract_tender_sections(conversion: TenderConversionResult) -> TenderSectionExtraction:
@@ -74,8 +75,14 @@ def extract_tender_sections(conversion: TenderConversionResult) -> TenderSection
 
 def _collect_candidates(blocks: list[ConvertedBlock]) -> list[SectionCandidate]:
     candidates: list[SectionCandidate] = []
+    in_toc_region = False
     for block in blocks:
-        if _is_toc_like(block):
+        if _is_toc_header(block):
+            in_toc_region = True
+            continue
+        if in_toc_region and block.heading_level is not None:
+            in_toc_region = False
+        if _is_toc_like(block, in_toc_region=in_toc_region):
             continue
         title = _candidate_title(block)
         if not title and block.block_type != "table":
@@ -83,6 +90,8 @@ def _collect_candidates(blocks: list[ConvertedBlock]) -> list[SectionCandidate]:
 
         requirement_score, requirement_reason = _alias_score(title, REQUIREMENT_ALIASES)
         if requirement_score > 0:
+            if block.block_type == "heading":
+                requirement_score += 5.0
             candidates.append(
                 SectionCandidate(
                     section_key="bid_requirements",
@@ -165,9 +174,16 @@ def _scoring_table_bonus(block: ConvertedBlock) -> float:
     return 0.0
 
 
-def _is_toc_like(block: ConvertedBlock) -> bool:
+def _is_toc_header(block: ConvertedBlock) -> bool:
     text = block.text.strip()
-    if block.heading_title.strip() == "目录":
+    return _normalize_title(block.heading_title or text) == "目录"
+
+
+def _is_toc_like(block: ConvertedBlock, *, in_toc_region: bool = False) -> bool:
+    text = block.text.strip()
+    if _is_toc_header(block):
+        return True
+    if in_toc_region and TOC_PAGE_RE.search(text):
         return True
     return bool(TOC_DOTTED_RE.search(text)) and len(text) <= 80
 
@@ -181,8 +197,9 @@ def _build_result(
     if candidate is None:
         return None
     index_by_id = {block.block_id: idx for idx, block in enumerate(blocks)}
-    start_index = index_by_id[candidate.block_id]
-    end_index = _find_end_index(blocks, start_index)
+    candidate_index = index_by_id[candidate.block_id]
+    start_index = _adjust_start_index(section_key, blocks, candidate_index)
+    end_index = _find_end_index(section_key, blocks, start_index)
     selected = blocks[start_index:end_index]
     markdown = _join_markdown(selected)
     confidence, warnings = _confidence(section_key, candidate.score, markdown, selected)
@@ -197,7 +214,22 @@ def _build_result(
     )
 
 
-def _find_end_index(blocks: list[ConvertedBlock], start_index: int) -> int:
+def _adjust_start_index(section_key: str, blocks: list[ConvertedBlock], candidate_index: int) -> int:
+    candidate = blocks[candidate_index]
+    if candidate.block_type == "heading":
+        return candidate_index
+    for index in range(candidate_index - 1, -1, -1):
+        block = blocks[index]
+        if _is_opposite_section_boundary(section_key, block) or _is_strong_stop_boundary(block):
+            break
+        if _is_start_marker_for_key(section_key, block):
+            return index
+        if block.heading_level is not None:
+            break
+    return candidate_index
+
+
+def _find_end_index(section_key: str, blocks: list[ConvertedBlock], start_index: int) -> int:
     start_block = blocks[start_index]
     start_level = start_block.heading_level or 2
     for index in range(start_index + 1, len(blocks)):
@@ -205,9 +237,44 @@ def _find_end_index(blocks: list[ConvertedBlock], start_index: int) -> int:
         title = block.heading_title or block.text
         if block.heading_level is not None and block.heading_level <= start_level:
             return index
-        if block.block_type == "heading" and any(term in title for term in STRONG_STOP_TITLES):
+        if _is_strong_stop_boundary(block):
+            return index
+        if _is_opposite_section_boundary(section_key, block):
             return index
     return len(blocks)
+
+
+def _is_start_marker_for_key(section_key: str, block: ConvertedBlock) -> bool:
+    if block.block_type == "table":
+        return False
+    title = _candidate_title(block)
+    if not title:
+        return False
+    aliases = REQUIREMENT_ALIASES if section_key == "bid_requirements" else SCORING_ALIASES
+    score, _reason = _alias_score(title, aliases)
+    if score > 0:
+        return True
+    if section_key == "scoring_criteria":
+        return "评分" in title and ("分值" in title or "因素" in title or "细则" in title)
+    return False
+
+
+def _is_opposite_section_boundary(section_key: str, block: ConvertedBlock) -> bool:
+    if block.block_type == "table":
+        return False
+    title = _candidate_title(block)
+    if not title:
+        return False
+    aliases = SCORING_ALIASES if section_key == "bid_requirements" else REQUIREMENT_ALIASES
+    score, _reason = _alias_score(title, aliases)
+    return score > 0
+
+
+def _is_strong_stop_boundary(block: ConvertedBlock) -> bool:
+    if block.block_type == "table":
+        return False
+    title = _candidate_title(block) or block.text
+    return any(term in title for term in STRONG_STOP_TITLES)
 
 
 def _join_markdown(blocks: list[ConvertedBlock]) -> str:
