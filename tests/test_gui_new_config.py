@@ -150,10 +150,10 @@ def test_open_new_config_editor_uses_default_path_next_to_current_config(monkeyp
     switches: list[dict[str, object]] = []
     waited: list[object] = []
 
-    class FakeConfigEditorDialog:
-        def __init__(self, parent, config_path, *, new_config):
+    class FakeNewConfigWizardDialog:
+        def __init__(self, parent, config_path):
             created.append(
-                {"parent": parent, "config_path": config_path, "new_config": new_config}
+                {"parent": parent, "config_path": config_path}
             )
             self.result = {"apply_path": expected_path}
 
@@ -171,12 +171,12 @@ def test_open_new_config_editor_uses_default_path_next_to_current_config(monkeyp
     fake_window._switch_to_config_path = lambda path, *, force_reload=False: switches.append(
         {"path": path, "force_reload": force_reload}
     )
-    monkeypatch.setattr(config_editor_dialog, "ConfigEditorDialog", FakeConfigEditorDialog)
+    monkeypatch.setattr("bid_writer.new_config_wizard.NewConfigWizardDialog", FakeNewConfigWizardDialog)
 
     MainWindow.open_new_config_editor(fake_window)
 
     assert created == [
-        {"parent": fake_window, "config_path": expected_path, "new_config": True}
+        {"parent": fake_window, "config_path": expected_path}
     ]
     assert len(waited) == 1
     assert switches == [{"path": expected_path, "force_reload": False}]
@@ -187,9 +187,8 @@ def test_open_new_config_editor_forces_reload_when_applying_current_path(monkeyp
     current_path = tmp_path / "config_新项目.yaml"
     switches: list[dict[str, object]] = []
 
-    class FakeConfigEditorDialog:
-        def __init__(self, _parent, _config_path, *, new_config):
-            assert new_config is True
+    class FakeNewConfigWizardDialog:
+        def __init__(self, _parent, _config_path):
             self.result = {"apply_path": current_path}
 
     fake_window = _fake_window(current_path)
@@ -206,7 +205,7 @@ def test_open_new_config_editor_forces_reload_when_applying_current_path(monkeyp
     fake_window._switch_to_config_path = lambda path, *, force_reload=False: switches.append(
         {"path": path, "force_reload": force_reload}
     )
-    monkeypatch.setattr(config_editor_dialog, "ConfigEditorDialog", FakeConfigEditorDialog)
+    monkeypatch.setattr("bid_writer.new_config_wizard.NewConfigWizardDialog", FakeNewConfigWizardDialog)
 
     MainWindow.open_new_config_editor(fake_window)
 
@@ -217,9 +216,8 @@ def test_open_new_config_editor_ignores_cancelled_dialog(monkeypatch, tmp_path):
     current_path = tmp_path / "config.yaml"
     switches: list[dict[str, object]] = []
 
-    class FakeConfigEditorDialog:
-        def __init__(self, _parent, _config_path, *, new_config):
-            assert new_config is True
+    class FakeNewConfigWizardDialog:
+        def __init__(self, _parent, _config_path):
             self.result = {"apply_path": None}
 
     fake_window = _fake_window(current_path)
@@ -236,7 +234,7 @@ def test_open_new_config_editor_ignores_cancelled_dialog(monkeypatch, tmp_path):
     fake_window._switch_to_config_path = lambda path, *, force_reload=False: switches.append(
         {"path": path, "force_reload": force_reload}
     )
-    monkeypatch.setattr(config_editor_dialog, "ConfigEditorDialog", FakeConfigEditorDialog)
+    monkeypatch.setattr("bid_writer.new_config_wizard.NewConfigWizardDialog", FakeNewConfigWizardDialog)
 
     MainWindow.open_new_config_editor(fake_window)
 

@@ -2936,14 +2936,14 @@ class MainWindow(tk.Tk):
         self._switch_to_config_path(current_path, force_reload=True)
 
     def open_new_config_editor(self):
-        """打开新配置创建编辑器。"""
-        from .config_editor_dialog import ConfigEditorDialog
+        """打开新配置创建向导。"""
+        from .new_config_wizard import NewConfigWizardDialog
 
         current_config_path = self.bid_writer.config.config_path.resolve()
         default_path = current_config_path.parent / "config_新项目.yaml"
         self._set_modal_workflow_active(True, "正在新建配置，当前项目暂未切换")
         try:
-            dialog = ConfigEditorDialog(self, default_path, new_config=True)
+            dialog = NewConfigWizardDialog(self, default_path)
             self.wait_window(dialog)
         finally:
             self._set_modal_workflow_active(False)
