@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import ttk
 
 from bid_writer.gui import (
     _bootstyle_kwargs,
@@ -82,12 +82,6 @@ class NewConfigWizardDialog(tk.Toplevel):
             text=f"目标配置：{self.state.config_path}",
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
-        ttk.Label(header, textvariable=self.status_var, style="Muted.TLabel").grid(
-            row=0,
-            column=1,
-            rowspan=2,
-            sticky="e",
-        )
 
         body = ttk.Frame(self, padding=(16, 0, 16, 12))
         body.grid(row=1, column=0, sticky="nsew")

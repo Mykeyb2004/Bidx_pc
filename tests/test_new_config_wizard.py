@@ -1,5 +1,8 @@
 from pathlib import Path
+import tkinter as tk
 from types import SimpleNamespace
+
+import pytest
 
 from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS
 
@@ -60,6 +63,30 @@ def test_wizard_defines_five_steps():
         "basics",
         "review",
     ]
+
+
+def test_constructor_builds_initial_wizard_shell(tmp_path: Path):
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        config_path = tmp_path / "config_test.yaml"
+
+        dialog = NewConfigWizardDialog(root, config_path=config_path)
+
+        assert dialog.result == {"saved_path": None, "apply_path": None}
+        assert dialog.current_step_index == 0
+        assert dialog.max_completed_step_index == 0
+        assert dialog.state.config_path == config_path.resolve()
+        assert set(dialog.step_frames) == {step.key for step in WIZARD_STEPS}
+    finally:
+        if dialog is not None:
+            dialog.destroy()
+        root.destroy()
 
 
 def test_go_next_advances_when_current_step_valid(tmp_path: Path):
