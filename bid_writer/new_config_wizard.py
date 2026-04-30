@@ -438,6 +438,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._sync_source_hint()
 
     def _sync_state_from_fields(self, *, silent: bool = False) -> None:
+        previous_project_root = self.state.project_root
         try:
             source_value = self.vars["source_path"].get().strip()
             source_path = Path(source_value).expanduser().resolve() if source_value else None
@@ -455,6 +456,12 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.state.source_path = source_path
         self.state.project_root = project_root
         self.state.config_path = config_path
+        requirements_path, scoring_path = self._rebase_default_material_paths(
+            previous_project_root=previous_project_root,
+            project_root=project_root,
+            requirements_path=requirements_path,
+            scoring_path=scoring_path,
+        )
         self.state.requirements_path = requirements_path
         self.state.scoring_path = scoring_path
         self.state.outline_path = outline_path
@@ -473,6 +480,30 @@ class NewConfigWizardDialog(tk.Toplevel):
             else None
         )
         self._sync_source_hint()
+
+    def _rebase_default_material_paths(
+        self,
+        *,
+        previous_project_root: Path,
+        project_root: Path,
+        requirements_path: Path | None,
+        scoring_path: Path | None,
+    ) -> tuple[Path | None, Path | None]:
+        if previous_project_root == project_root:
+            return requirements_path, scoring_path
+
+        old_requirements = previous_project_root / "项目要求" / "项目采购需求.md"
+        old_scoring = previous_project_root / "项目要求" / "评分标准.md"
+        new_requirements = project_root / "项目要求" / "项目采购需求.md"
+        new_scoring = project_root / "项目要求" / "评分标准.md"
+
+        if requirements_path == old_requirements:
+            requirements_path = new_requirements
+            self.vars["requirements_path"].set(str(new_requirements))
+        if scoring_path == old_scoring:
+            scoring_path = new_scoring
+            self.vars["scoring_path"].set(str(new_scoring))
+        return requirements_path, scoring_path
 
     def _path_from_var(self, key: str) -> Path:
         raw = self.vars[key].get().strip()

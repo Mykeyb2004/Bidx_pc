@@ -183,6 +183,46 @@ def test_sync_fields_updates_header_config_summary(tmp_path: Path):
     assert dialog.config_summary_var.get() == f"目标配置：{tmp_path / 'config_推导项目.yaml'}"
 
 
+def test_project_root_change_rebases_default_material_paths(tmp_path: Path):
+    old_root = tmp_path / "旧项目"
+    new_root = tmp_path / "706-15号楼研究"
+    dialog = _dialog(old_root)
+    dialog.current_step_index = 1
+    dialog.state.project_root = old_root
+    dialog.state.requirements_path = old_root / "项目要求" / "项目采购需求.md"
+    dialog.state.scoring_path = old_root / "项目要求" / "评分标准.md"
+    dialog.vars["project_root"].set(str(new_root))
+    dialog.vars["requirements_path"].set(str(old_root / "项目要求" / "项目采购需求.md"))
+    dialog.vars["scoring_path"].set(str(old_root / "项目要求" / "评分标准.md"))
+
+    NewConfigWizardDialog._go_next(dialog)
+
+    assert dialog.current_step_index == 2
+    assert dialog.state.requirements_path == new_root / "项目要求" / "项目采购需求.md"
+    assert dialog.state.scoring_path == new_root / "项目要求" / "评分标准.md"
+    assert dialog.vars["requirements_path"].get() == str(new_root / "项目要求" / "项目采购需求.md")
+    assert dialog.vars["scoring_path"].get() == str(new_root / "项目要求" / "评分标准.md")
+
+
+def test_project_root_change_preserves_custom_material_paths(tmp_path: Path):
+    old_root = tmp_path / "旧项目"
+    new_root = tmp_path / "706-15号楼研究"
+    custom_requirements = tmp_path / "客户资料" / "采购需求.md"
+    custom_scoring = tmp_path / "客户资料" / "评分标准.md"
+    dialog = _dialog(old_root)
+    dialog.state.project_root = old_root
+    dialog.vars["project_root"].set(str(new_root))
+    dialog.vars["requirements_path"].set(str(custom_requirements))
+    dialog.vars["scoring_path"].set(str(custom_scoring))
+
+    NewConfigWizardDialog._sync_state_from_fields(dialog)
+
+    assert dialog.state.requirements_path == custom_requirements
+    assert dialog.state.scoring_path == custom_scoring
+    assert dialog.vars["requirements_path"].get() == str(custom_requirements)
+    assert dialog.vars["scoring_path"].get() == str(custom_scoring)
+
+
 def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["bidder_name"].set("测试公司")
