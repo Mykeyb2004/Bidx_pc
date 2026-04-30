@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from bid_writer.tender_import_models import TenderExtractionResult, TenderSectionExtraction
-from bid_writer.tender_import_service import TenderImportService
+from bid_writer.tender_import_service import TenderImportError, TenderImportService
 
 
 class FakeConverter:
@@ -131,3 +131,29 @@ def test_import_service_stops_when_low_confidence_not_confirmed(tmp_path: Path):
 
     assert result.cancelled is True
     assert not (tmp_path / "项目要求" / "项目采购需求.md").exists()
+
+
+def test_import_service_wraps_converter_errors_for_ui(tmp_path: Path):
+    source = tmp_path / "tender.wps"
+    source.write_text("fake", encoding="utf-8")
+
+    def broken_converter(_path, _output_dir):
+        raise RuntimeError("暂不支持 WPS 原生格式")
+
+    service = TenderImportService(
+        converter=broken_converter,
+        extractor=FakeExtractor(TenderSectionExtraction()),
+        import_id_factory=lambda: "import-test",
+    )
+
+    try:
+        service.import_document(
+            source_path=source,
+            project_root=tmp_path,
+            confirm_overwrite=lambda _path: True,
+            confirm_low_confidence=lambda _extraction: True,
+        )
+    except TenderImportError as exc:
+        assert str(exc) == "暂不支持 WPS 原生格式"
+    else:
+        raise AssertionError("TenderImportError was not raised")

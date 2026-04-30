@@ -52,8 +52,13 @@ class TenderImportService:
         project_root = Path(project_root).expanduser().resolve()
         import_dir = project_root / ".bid_writer" / "imports" / self.import_id_factory()
         import_dir.mkdir(parents=True, exist_ok=True)
-        conversion = self.converter(Path(source_path), import_dir)
-        extraction = self.extractor(conversion)
+        try:
+            conversion = self.converter(Path(source_path), import_dir)
+            extraction = self.extractor(conversion)
+        except TenderImportError:
+            raise
+        except Exception as exc:
+            raise TenderImportError(str(exc)) from exc
         report_path = import_dir / "extraction_report.json"
         report_path.write_text(
             json.dumps(dump_extraction_report(extraction), ensure_ascii=False, indent=2),
