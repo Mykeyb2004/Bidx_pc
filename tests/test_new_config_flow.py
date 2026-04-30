@@ -149,12 +149,27 @@ def test_format_relative_path_prefers_project_relative(tmp_path: Path):
     assert format_relative_path(target, project) == "./项目要求/评分标准.md"
 
 
+def test_format_relative_path_does_not_treat_dotdot_escape_as_project_relative(tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    escaped = project / ".." / "Downloads" / "tender.pdf"
+
+    assert format_relative_path(escaped, project) == str(escaped)
+
+
 def test_should_copy_source_file_only_for_project_external_sources(tmp_path: Path):
     project = tmp_path / "项目"
     project.mkdir()
 
     assert should_copy_source_file(project / "招标文件" / "a.pdf", project) is False
     assert should_copy_source_file(tmp_path / "Downloads" / "a.pdf", project) is True
+
+
+def test_should_copy_source_file_treats_dotdot_escape_as_external(tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+
+    assert should_copy_source_file(project / ".." / "Downloads" / "tender.pdf", project) is True
 
 
 def test_cleanup_created_paths_removes_only_recorded_files_and_empty_dirs(tmp_path: Path):
@@ -247,6 +262,39 @@ def test_copy_source_file_if_needed_copies_external_source_and_records_path(tmp_
     assert copied.read_text(encoding="utf-8") == "source"
     assert state.copied_source_path == copied
     assert copied in state.created_paths
+
+
+def test_copy_source_file_if_needed_records_new_parent_dir_for_cleanup(tmp_path: Path):
+    source = tmp_path / "Downloads" / "tender.pdf"
+    source.parent.mkdir()
+    source.write_text("source", encoding="utf-8")
+    project = tmp_path / "项目"
+    project.mkdir()
+    target_dir = project / "招标文件"
+    state = NewConfigWizardState(
+        source_path=source,
+        project_root=project,
+        config_path=tmp_path / "config.yaml",
+        import_dir=None,
+        should_copy_source=True,
+        source_copy_path=target_dir / "tender.pdf",
+        copied_source_path=None,
+        requirements_path=None,
+        scoring_path=None,
+        outline_path=project / "投标大纲.md",
+        output_dir=project / "output",
+        bidder_name="",
+        created_paths=[],
+        manual_inputs=False,
+    )
+
+    copied = copy_source_file_if_needed(state)
+    failures = cleanup_created_paths(state)
+
+    assert copied == target_dir / "tender.pdf"
+    assert failures == []
+    assert not copied.exists()
+    assert not target_dir.exists()
 
 
 def test_copy_source_file_if_needed_skips_project_internal_source(tmp_path: Path):

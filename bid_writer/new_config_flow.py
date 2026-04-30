@@ -123,14 +123,16 @@ def is_transient_location(path: str | Path) -> bool:
 
 
 def should_copy_source_file(source_path: str | Path, project_root: str | Path) -> bool:
-    return not _is_relative_to(Path(source_path), Path(project_root))
+    return not _is_relative_to_normalized(Path(source_path), Path(project_root))
 
 
 def format_relative_path(path: str | Path, base_dir: str | Path) -> str:
     target = Path(path)
     base = Path(base_dir)
-    if _is_relative_to(target, base):
-        return f"./{target.relative_to(base).as_posix()}"
+    normalized_target = _normalize_path(target)
+    normalized_base = _normalize_path(base)
+    if _is_relative_to(normalized_target, normalized_base):
+        return f"./{normalized_target.relative_to(normalized_base).as_posix()}"
     return str(target)
 
 
@@ -157,11 +159,23 @@ def copy_source_file_if_needed(state: NewConfigWizardState) -> Path | None:
     if not state.should_copy_source or state.source_path is None or state.source_copy_path is None:
         return None
 
-    state.source_copy_path.parent.mkdir(parents=True, exist_ok=True)
+    parent_dir = state.source_copy_path.parent
+    created_parent_dir = not parent_dir.exists()
+    parent_dir.mkdir(parents=True, exist_ok=True)
     copied = Path(shutil.copy2(state.source_path, state.source_copy_path))
     state.copied_source_path = copied
+    if created_parent_dir:
+        register_created_path(state, parent_dir)
     register_created_path(state, copied)
     return copied
+
+
+def _is_relative_to_normalized(path: Path, base: Path) -> bool:
+    return _is_relative_to(_normalize_path(path), _normalize_path(base))
+
+
+def _normalize_path(path: Path) -> Path:
+    return path.resolve(strict=False)
 
 
 def _is_relative_to(path: Path, base: Path) -> bool:
