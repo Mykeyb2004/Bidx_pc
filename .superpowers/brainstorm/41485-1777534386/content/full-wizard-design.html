@@ -1,0 +1,56 @@
+<h2>完整向导方向：新建配置</h2>
+<p class="subtitle">独立的新建流程，旧配置编辑器只作为“高级配置”入口保留。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Preview: NewConfigWizardDialog</div>
+  <div class="mockup-body">
+    <div style="display:grid; grid-template-columns: 220px 1fr; gap:18px; min-height:560px;">
+      <div class="mock-sidebar">
+        <div style="font-weight:700; margin-bottom:14px;">新建配置</div>
+        <div style="padding:11px 10px; border-left:4px solid #2563eb; background:#edf4ff;"><b>1. 招标文件</b><br><span style="font-size:12px;color:#556;">选择来源</span></div>
+        <div style="padding:11px 10px;"><b>2. 项目位置</b><br><span style="font-size:12px;color:#556;">确认根目录</span></div>
+        <div style="padding:11px 10px;"><b>3. 资料抽取</b><br><span style="font-size:12px;color:#556;">采购需求 / 评分</span></div>
+        <div style="padding:11px 10px;"><b>4. 基础信息</b><br><span style="font-size:12px;color:#556;">投标主体 / 大纲</span></div>
+        <div style="padding:11px 10px;"><b>5. 保存应用</b><br><span style="font-size:12px;color:#556;">检查并进入项目</span></div>
+      </div>
+
+      <div class="mock-content">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:16px;">
+          <div>
+            <div class="label">Step 1</div>
+            <h3>从招标文件开始</h3>
+            <p>选择招标文件后，系统推导项目根目录、配置文件名、资料输出目录，并判断是否需要复制原文件。</p>
+          </div>
+          <button class="mock-button" style="background:#f3f6fb;color:#1f2937;">高级配置</button>
+        </div>
+
+        <div style="border:1px dashed #9db2d0; border-radius:8px; padding:22px; text-align:center; margin:20px 0; background:#fbfdff;">
+          <p style="font-weight:700; margin-top:0;">尚未选择招标文件</p>
+          <button class="mock-button">选择 PDF / Word / Excel...</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+          <div style="background:#fff;border:1px solid #d9e1ef;border-radius:8px;padding:12px;">
+            <div class="label">目录推导</div>
+            <p>常规目录自动使用所在目录；Downloads/Desktop 等位置建议创建项目文件夹。</p>
+          </div>
+          <div style="background:#fff;border:1px solid #d9e1ef;border-radius:8px;padding:12px;">
+            <div class="label">资料纳管</div>
+            <p>项目外来源会复制原文件到 <b>招标文件/</b>，项目内来源不重复复制。</p>
+          </div>
+          <div style="background:#fff;border:1px solid #d9e1ef;border-radius:8px;padding:12px;">
+            <div class="label">取消清理</div>
+            <p>关闭向导时可选择保留已整理资料，或清理本次生成内容。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:16px;border-top:1px solid #dde5f0;padding-top:14px;">
+      <button class="mock-button" style="background:#f3f6fb;color:#1f2937;">上一步</button>
+      <div>
+        <button class="mock-button" style="background:#f3f6fb;color:#1f2937;">取消</button>
+        <button class="mock-button">下一步</button>
+      </div>
+    </div>
+  </div>
+</div>

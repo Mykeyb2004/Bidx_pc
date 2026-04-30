@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>新建配置向导原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --line: #d9e1ef;
+      --muted: #617089;
+      --text: #172033;
+      --blue: #2563eb;
+      --blue-soft: #edf4ff;
+      --green: #15803d;
+      --amber: #b45309;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 28px auto;
+      padding: 0 18px;
+    }
+    .topbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin: 4px 0 0;
+      color: var(--muted);
+    }
+    .dialog {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 18px 45px rgba(23, 32, 51, .12);
+      overflow: hidden;
+    }
+    .main {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      min-height: 620px;
+    }
+    .steps {
+      border-right: 1px solid var(--line);
+      padding: 18px 14px;
+      background: #fbfcff;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      padding: 11px 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 6px;
+    }
+    .step.active {
+      background: var(--blue-soft);
+      box-shadow: inset 4px 0 0 var(--blue);
+    }
+    .step.done .num {
+      background: #dcfce7;
+      color: var(--green);
+      border-color: #bbf7d0;
+    }
+    .num {
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      background: #fff;
+    }
+    .step-title { font-weight: 700; }
+    .step-note { color: var(--muted); font-size: 12px; }
+    .content {
+      padding: 22px 24px 18px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .screen { display: none; flex: 1; }
+    .screen.active { display: block; }
+    .screen-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    h2 { margin: 0; font-size: 22px; letter-spacing: 0; }
+    h3 { margin: 0 0 8px; font-size: 15px; letter-spacing: 0; }
+    p { margin: 0 0 10px; }
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+    .drop {
+      border: 1px dashed #9db2d0;
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 26px;
+      text-align: center;
+      margin: 16px 0;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    .field label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 9px 10px;
+      color: var(--text);
+      font: inherit;
+      background: #fff;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .callout {
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 12px 0;
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+    }
+    .warn {
+      border-color: #fed7aa;
+      background: #fff7ed;
+      color: #7c2d12;
+    }
+    .ok {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+      color: #14532d;
+    }
+    .split-preview {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .preview {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .preview-head {
+      padding: 9px 11px;
+      background: #f3f6fb;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+    .preview-body {
+      padding: 12px;
+      color: #344054;
+      min-height: 145px;
+      font-size: 13px;
+    }
+    .summary-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid #edf1f7;
+    }
+    .summary-row b { color: #344054; }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #fff;
+      margin-top: 14px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--line);
+      padding: 14px 18px;
+      background: #fbfcff;
+    }
+    .btns { display: flex; gap: 10px; }
+    button {
+      border: 1px solid transparent;
+      border-radius: 7px;
+      padding: 9px 15px;
+      font-weight: 700;
+      font: inherit;
+      cursor: pointer;
+      background: var(--blue);
+      color: #fff;
+    }
+    button.secondary {
+      background: #fff;
+      color: #23304a;
+      border-color: var(--line);
+    }
+    button.ghost {
+      background: #f3f6fb;
+      color: #23304a;
+      border-color: #e3e9f3;
+    }
+    button:disabled {
+      opacity: .45;
+      cursor: default;
+    }
+    .tiny { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div>
+        <h1>新建配置向导</h1>
+        <p class="sub">可点击原型：用“下一步 / 上一步”查看 5 个步骤的页面布置。</p>
+      </div>
+      <div class="tiny">Mockup v2</div>
+    </div>
+
+    <div class="dialog">
+      <div class="main">
+        <aside class="steps" id="steps"></aside>
+
+        <section class="content">
+          <div class="screen active" data-screen="0">
+            <div class="screen-head">
+              <div>
+                <div class="label">Step 1</div>
+                <h2>选择招标文件</h2>
+                <p class="sub">默认从招标文件开始；也保留手动配置资料文件的入口。</p>
+              </div>
+              <button class="ghost">跳过导入，手动填写</button>
+            </div>
+
+            <div class="drop">
+              <h3>尚未选择招标文件</h3>
+              <p class="sub">支持可复制文字 PDF、Word、Excel。选择后进入目录推导。</p>
+              <button>选择招标文件...</button>
+            </div>
+
+            <div class="grid3">
+              <div class="card">
+                <h3>从位置推导目录</h3>
+                <p class="sub">根据文件所在目录、常见资料目录名、文件名提取项目名称。</p>
+              </div>
+              <div class="card">
+                <h3>判断是否纳管原文件</h3>
+                <p class="sub">项目外来源会复制到 <b>招标文件/</b>，项目内来源不重复复制。</p>
+              </div>
+              <div class="card">
+                <h3>提前发现格式问题</h3>
+                <p class="sub">扫描件 PDF、WPS 原生格式等在本步直接提示。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="screen" data-screen="1">
+            <div class="screen-head">
+              <div>
+                <div class="label">Step 2</div>
+                <h2>确认项目位置</h2>
+                <p class="sub">系统先猜测，用户确认或调整。Downloads、Desktop、临时目录会建议创建正式项目文件夹。</p>
+              </div>
+              <button class="ghost">重新选择招标文件</button>
+            </div>
+
+            <div class="callout warn">
+              检测到招标文件来自 Downloads，建议创建项目目录：<b>公共服务满意度项目/</b>
+            </div>
+
+            <div class="grid2">
+              <div class="card">
+                <div class="field">
+                  <label>项目根目录</label>
+                  <input value="/Users/zhangqijin/PycharmProjects/BidX_simple/公共服务满意度项目" />
+                  <div class="hint">所有项目资料、输出和导入报告默认放在这里。</div>
+                </div>
+                <div class="field">
+                  <label>配置文件保存位置</label>
+                  <input value="/Users/zhangqijin/PycharmProjects/BidX_simple/config_公共服务满意度.yaml" />
+                </div>
+                <div class="field">
+                  <label>资料目录</label>
+                  <input value="./项目要求" />
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="field">
+                  <label>原始招标文件</label>
+                  <input value="./招标文件/公共服务满意度项目招标文件.pdf" />
+                  <div class="hint">来自项目外目录，保存时会复制进项目。</div>
+                </div>
+                <div class="field">
+                  <label>输出目录</label>
+                  <input value="./output" />
+                </div>
+                <div class="field">
+                  <label>导入报告目录</label>
+                  <input value="./.bid_writer/imports/20260430-001" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="screen" data-screen="2">
+            <div class="screen-head">
+              <div>
+                <div class="label">Step 3</div>
+                <h2>抽取采购需求与评分标准</h2>
+                <p class="sub">低置信度必须预览确认；失败时提供手动选择资料文件的兜底。</p>
+              </div>
+              <button class="ghost">手动选择资料文件</button>
+            </div>
+
+            <div class="callout ok">
+              已转换为 Markdown，采购需求置信度 0.91；评分标准置信度 0.73，需要确认。
+            </div>
+
+            <div class="split-preview">
+              <div class="preview">
+                <div class="preview-head">项目采购需求.md</div>
+                <div class="preview-body">
+                  <p><b>三、采购需求</b></p>
+                  <p>本项目服务内容包括满意度调查、数据采集、质量复核、分析报告编制...</p>
+                  <p class="tiny">来源：第 12-18 页</p>
+                </div>
+              </div>
+              <div class="preview">
+                <div class="preview-head">评分标准.md</div>
+                <div class="preview-body">
+                  <p><b>评审因素及评分标准</b></p>
+                  <p>技术方案、项目团队、实施进度、质量保障、类似业绩...</p>
+                  <p class="tiny">来源：第 29-33 页。标题边界低置信度。</p>
+                </div>
+              </div>
+            </div>
+
+            <details open>
+              <summary>抽取失败时的手动兜底</summary>
+              <div class="grid2" style="margin-top:12px;">
+                <div class="field">
+                  <label>采购需求文件</label>
+                  <input value="./项目要求/项目采购需求.md" />
+                </div>
+                <div class="field">
+                  <label>评分标准文件</label>
+                  <input value="./项目要求/评分标准.md" />
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="screen" data-screen="3">
+            <div class="screen-head">
+              <div>
+                <div class="label">Step 4</div>
+                <h2>填写基础信息</h2>
+                <p class="sub">只放新项目必须确认的字段；写作参数、处理路径、运行配置折叠为高级配置。</p>
+              </div>
+              <button class="ghost">打开完整配置编辑器</button>
+            </div>
+
+            <div class="grid2">
+              <div class="card">
+                <div class="field">
+                  <label>投标主体名称</label>
+                  <input placeholder="例如：某某科技有限公司" />
+                </div>
+                <div class="field">
+                  <label>大纲保存位置 / 已有大纲文件</label>
+                  <input value="./投标大纲.md" />
+                  <div class="hint">保存应用后，可打开现有“大纲准备”窗口生成或编辑大纲。</div>
+                </div>
+                <div class="field">
+                  <label>写作角色</label>
+                  <select>
+                    <option>./roles/通用投标角色.md</option>
+                    <option>内嵌角色正文</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>高级配置</h3>
+                <p class="sub">默认使用推荐值；需要时展开修改。</p>
+                <details>
+                  <summary>写作参数</summary>
+                  <div class="field" style="margin-top:10px;"><label>默认目标基准</label><input value="1500" /></div>
+                </details>
+                <details>
+                  <summary>处理路径</summary>
+                  <div class="field" style="margin-top:10px;"><label>processing.path</label><select><option>auto</option><option>full_context</option></select></div>
+                </details>
+                <details>
+                  <summary>运行与 Trace</summary>
+                  <div class="field" style="margin-top:10px;"><label>trace</label><select><option>关闭</option><option>开启</option></select></div>
+                </details>
+              </div>
+            </div>
+          </div>
+
+          <div class="screen" data-screen="4">
+            <div class="screen-head">
+              <div>
+                <div class="label">Step 5</div>
+                <h2>检查并保存应用</h2>
+                <p class="sub">保存前展示将要写入、复制、应用的内容。取消时可选择清理本次生成内容。</p>
+              </div>
+              <button class="ghost">返回修改</button>
+            </div>
+
+            <div class="callout ok">
+              校验通过。保存配置后将切换到新项目；大纲未锁定，将提示打开“大纲准备”窗口。
+            </div>
+
+            <div class="card">
+              <div class="summary-row"><b>配置文件</b><span>config_公共服务满意度.yaml</span></div>
+              <div class="summary-row"><b>项目根目录</b><span>公共服务满意度项目/</span></div>
+              <div class="summary-row"><b>复制原文件</b><span>招标文件/公共服务满意度项目招标文件.pdf</span></div>
+              <div class="summary-row"><b>资料文件</b><span>项目要求/项目采购需求.md；项目要求/评分标准.md</span></div>
+              <div class="summary-row"><b>大纲状态</b><span>待准备：保存后打开现有大纲准备窗口</span></div>
+              <div class="summary-row"><b>取消清理</b><span>可清理本次创建的资料文件、原文件副本和导入报告</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="footer">
+        <span class="tiny" id="status">第 1 步，共 5 步</span>
+        <div class="btns">
+          <button class="secondary" id="back">上一步</button>
+          <button class="secondary">取消</button>
+          <button id="next">下一步</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const items = [
+      ["招标文件", "选择来源"],
+      ["项目位置", "确认根目录"],
+      ["资料抽取", "采购需求 / 评分"],
+      ["基础信息", "主体 / 大纲"],
+      ["保存应用", "检查并进入项目"],
+    ];
+    let current = 0;
+    const steps = document.getElementById("steps");
+    const screens = [...document.querySelectorAll(".screen")];
+    const back = document.getElementById("back");
+    const next = document.getElementById("next");
+    const status = document.getElementById("status");
+
+    function renderSteps() {
+      steps.innerHTML = items.map((item, index) => `
+        <div class="step ${index === current ? "active" : ""} ${index < current ? "done" : ""}" data-step="${index}">
+          <div class="num">${index < current ? "✓" : index + 1}</div>
+          <div>
+            <div class="step-title">${item[0]}</div>
+            <div class="step-note">${item[1]}</div>
+          </div>
+        </div>
+      `).join("");
+      [...steps.querySelectorAll(".step")].forEach(step => {
+        step.addEventListener("click", () => {
+          current = Number(step.dataset.step);
+          render();
+        });
+      });
+    }
+
+    function render() {
+      screens.forEach((screen, index) => screen.classList.toggle("active", index === current));
+      renderSteps();
+      back.disabled = current === 0;
+      next.textContent = current === items.length - 1 ? "保存并应用" : "下一步";
+      status.textContent = `第 ${current + 1} 步，共 ${items.length} 步`;
+    }
+
+    back.addEventListener("click", () => {
+      if (current > 0) {
+        current -= 1;
+        render();
+      }
+    });
+    next.addEventListener("click", () => {
+      if (current < items.length - 1) {
+        current += 1;
+        render();
+      }
+    });
+    render();
+  </script>
+</body>
+</html>

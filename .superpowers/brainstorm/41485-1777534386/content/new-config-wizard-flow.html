@@ -1,0 +1,53 @@
+<h2>新建配置向导：推荐骨架</h2>
+<p class="subtitle">默认从招标文件开始，自动推导目录；高级配置保留但折叠。</p>
+
+<div class="mockup">
+  <div class="mockup-header">Preview: 新建配置</div>
+  <div class="mockup-body">
+    <div style="display:grid; grid-template-columns: 190px 1fr; gap:18px; min-height:520px;">
+      <div class="mock-sidebar">
+        <div style="font-weight:700; margin-bottom:14px;">步骤</div>
+        <div style="padding:10px 8px; border-left:4px solid #3b82f6; background:#eef4ff;">1. 招标文件</div>
+        <div style="padding:10px 8px; color:#556;">2. 项目目录</div>
+        <div style="padding:10px 8px; color:#556;">3. 资料抽取</div>
+        <div style="padding:10px 8px; color:#556;">4. 大纲准备</div>
+        <div style="padding:10px 8px; color:#556;">5. 保存应用</div>
+      </div>
+
+      <div class="mock-content">
+        <div class="section">
+          <div class="label">Step 1</div>
+          <h3>选择招标文件</h3>
+          <p>选择 PDF / Word / Excel 招标文件。系统会根据文件位置推导项目根目录，并准备资料输出路径。</p>
+          <button class="mock-button">选择招标文件...</button>
+        </div>
+
+        <div class="section" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+          <div>
+            <div class="label">推导结果</div>
+            <input class="mock-input" value="项目根目录：/项目/公共服务满意度" />
+            <input class="mock-input" value="配置文件：config_公共服务满意度.yaml" />
+            <input class="mock-input" value="资料目录：项目要求/" />
+          </div>
+          <div>
+            <div class="label">用户确认</div>
+            <input class="mock-input" value="投标主体名称" />
+            <input class="mock-input" value="输出目录：output/" />
+            <input class="mock-input" value="大纲：投标大纲.md" />
+          </div>
+        </div>
+
+        <details open style="border:1px solid #d9e1ef; border-radius:8px; padding:12px; background:#fff;">
+          <summary style="font-weight:700;">高级配置</summary>
+          <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px;">
+            <button class="mock-button" style="background:#f3f6fb; color:#1f2937;">写作参数</button>
+            <button class="mock-button" style="background:#f3f6fb; color:#1f2937;">处理路径</button>
+            <button class="mock-button" style="background:#f3f6fb; color:#1f2937;">运行与 Trace</button>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">先看看这个骨架：左侧是流程，右侧每步只放当前任务；高级项折叠在当前窗口里，不再压在第一屏。</p>
