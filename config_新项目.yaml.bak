@@ -1,13 +1,13 @@
 project:
-  root_dir: /Users/zhangqijin/Documents/Temp/
+  root_dir: /Users/zhangqijin/Documents/Temp/标书生成
   bidder_name: 叉叉德
-  outline_locked: false
+  outline_locked: true
   outline_generation:
     role_file: ./roles/标书架构师.md
   inputs:
-    outline_file: ./投标大纲.md
-    bid_requirements_file: 标书生成/采购需求.md
-    scoring_criteria_file: 标书生成/评分标准.md
+    outline_file: /Users/zhangqijin/Documents/Temp/投标大纲.md
+    bid_requirements_file: 采购需求.md
+    scoring_criteria_file: 评分标准.md
   output_dir: ./output
 writing:
   target_words:
@@ -73,4 +73,13 @@ runtime:
 fact_cards:
   enabled: true
   cards: []
-  chapter_defaults: {}
+  chapter_defaults:
+    中国科学院上海光学精密机械研究所15号楼研究生公寓配套家具项目 > 6. 设计深化方案：空间场景效果图、产品配置与走线布置深化设计 > 6.3 3人间宿舍设计深化方案 > 6.3.1 3人间宿舍家具空间布局与产品配置方案:
+      should_reference: false
+      selections: []
+    中国科学院上海光学精密机械研究所15号楼研究生公寓配套家具项目 > 6. 设计深化方案：空间场景效果图、产品配置与走线布置深化设计 > 6.3 3人间宿舍设计深化方案 > 6.3.2 3人间宿舍效果图方案一与视角一展示:
+      should_reference: false
+      selections: []
+    中国科学院上海光学精密机械研究所15号楼研究生公寓配套家具项目 > 6. 设计深化方案：空间场景效果图、产品配置与走线布置深化设计 > 6.2 双人间宿舍设计深化方案 > 6.2.2 双人间宿舍效果图方案一与视角一展示:
+      should_reference: false
+      selections: []
