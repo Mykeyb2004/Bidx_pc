@@ -65,7 +65,7 @@ project:
   outline_generation:
     role_file: "./roles/标书架构师.md"
   inputs:
-    outline_file: "./outline.md"
+    outline_file: "./投标大纲.md"
     bid_requirements_file: "./采购需求.md"
     scoring_criteria_file: "./评分标准.md"
   output_dir: "./output"
@@ -75,6 +75,7 @@ project:
 
 - `project.root_dir` 用于声明项目资料根目录
 - `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
+- 新建配置默认使用 `./投标大纲.md` 作为大纲保存位置；如果已有大纲，也可以把 `project.inputs.outline_file` 指向现有 Markdown 文件
 - `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
 
 ### 3.1.1 跨平台路径规范
@@ -107,7 +108,7 @@ project:
 
 旧配置缺少该字段时按 `true` 处理，避免历史项目被强制带入新流程。
 
-`project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。
+`project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。GUI 新建配置时会隐藏 `outline_locked` 和 `outline_generation.role_file`，让用户先完成项目材料准备；编辑已有配置时仍可看到这些高级字段。
 
 ### 3.2 `writing`
 

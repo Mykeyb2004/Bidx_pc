@@ -124,12 +124,12 @@ uv run python run.py --config config_公共服务满意度_auto.yaml
 
 - 当前界面文案主要按“四级标题”组织批量生成，但代码层面的实际生成单元是“叶子节点”
 - “扫描输出状态”会重新扫描输出目录，刷新树上的完成情况
-- “新建配置...”会打开默认模板，需要填写项目根目录、投标主体名称，并选择大纲、采购需求、评分标准文件；保存后可切换到新保存的配置，并在大纲未锁定时进入“大纲准备”窗口
+- “新建配置...”会打开面向项目准备的简化表单，需要填写项目根目录、投标主体名称、采购需求、评分标准，并确认“大纲保存位置 / 已有大纲文件”；保存后会在大纲未锁定时进入“大纲准备”窗口
 - “编辑当前配置”已可使用，但对 `legacy_rule / hybrid_extract / mixed` 配置的可视化编辑仍不完整；这类配置若在编辑器中直接保存，当前会按 `auto` 路径标准化导出，因此更适合继续直接维护 YAML
 
 ### 新建配置后的大纲准备
 
-GUI 中点击“新建配置...”保存并应用后，若 `project.outline_locked: false`，系统会进入“大纲准备”窗口。用户可以读取已有 `outline_file`，也可以根据采购需求和评分标准生成 H4 Markdown 大纲，并在文本框中手动调整。点击“确认大纲并进入扩写”后，系统会写入大纲文件并把配置更新为 `project.outline_locked: true`。
+GUI 中点击“新建配置...”保存并应用后，若 `project.outline_locked: false`，系统会进入“大纲准备”窗口。新建配置默认把大纲保存到 `./投标大纲.md`，用户可以保留默认路径，也可以指向已有大纲文件。进入“大纲准备”后，用户可以读取已有大纲，也可以根据采购需求和评分标准生成 H4 Markdown 大纲，并在文本框中手动调整。只有大纲校验通过后，才能点击“确认大纲并进入扩写”；确认后系统会写入大纲文件并把配置更新为 `project.outline_locked: true`。
 
 ## 配置说明
 
@@ -148,7 +148,7 @@ GUI 中点击“新建配置...”保存并应用后，若 `project.outline_lock
 project:
   root_dir: "/path/to/bid-project"
   inputs:
-    outline_file: "./outline.md"
+    outline_file: "./投标大纲.md"
     bid_requirements_file: "./采购需求.md"
     scoring_criteria_file: "./评分标准.md"
   output_dir: "./output"

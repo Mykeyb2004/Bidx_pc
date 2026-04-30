@@ -5,7 +5,7 @@ project:
   outline_generation:
     role_file: "./roles/标书架构师.md"
   inputs:
-    outline_file: "./outline.md"
+    outline_file: "./投标大纲.md"
     bid_requirements_file: "./项目要求/项目采购需求.md"
     scoring_criteria_file: "./项目要求/评分标准.md"
   output_dir: "./output"
