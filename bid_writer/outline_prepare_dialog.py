@@ -120,11 +120,20 @@ class OutlinePrepareDialog(tk.Toplevel):
     def _load_existing_outline(self) -> None:
         content = load_existing_outline(self.config)
         self._set_text(content)
-        self.status_var.set("已读取已有大纲" if content.strip() else "当前大纲文件不存在或为空")
-        self._validate_current_text()
+        if content.strip():
+            self.status_var.set("已读取已有大纲")
+            self._validate_current_text()
+            return
+        self.status_var.set("尚未准备大纲，可点击“生成大纲”或粘贴已有大纲")
+        self.validation_var.set("")
+        if hasattr(self, "confirm_button"):
+            self.confirm_button.configure(state="disabled")
 
     def _generate_outline(self) -> None:
         self.status_var.set("正在生成大纲...")
+        self.validation_var.set("")
+        if hasattr(self, "confirm_button"):
+            self.confirm_button.configure(state="disabled")
         thread = threading.Thread(target=self._run_generate_outline, daemon=True)
         thread.start()
 

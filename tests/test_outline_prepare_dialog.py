@@ -79,6 +79,21 @@ def test_load_existing_outline_sets_text(tmp_path: Path):
     assert "已读取已有大纲" in dialog.status_var.get()
 
 
+def test_load_missing_outline_shows_neutral_prompt_without_error(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    (tmp_path / "outline.md").unlink()
+    config = Config(str(config_path))
+    dialog = _dialog(config)
+
+    OutlinePrepareDialog._load_existing_outline(dialog)
+
+    assert dialog.outline_text.get("1.0", "end") == ""
+    assert "尚未准备大纲" in dialog.status_var.get()
+    assert "错误" not in dialog.validation_var.get()
+    assert "Markdown 标题" not in dialog.validation_var.get()
+    assert dialog.confirm_button.states[-1] == "disabled"
+
+
 def test_validate_current_text_reports_h4_error(tmp_path: Path):
     config = Config(str(_write_config(tmp_path)))
     dialog = _dialog(config)
