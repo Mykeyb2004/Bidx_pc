@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import copy
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from bid_writer.config_editor import ConfigEditorDocument, create_new_config_editor_document
 
 
 @dataclass
@@ -47,6 +50,8 @@ _TENDER_SUFFIXES = (
     "招标公告",
     "投标文件",
 )
+DEFAULT_REQUIREMENTS_RELATIVE = "./项目要求/项目采购需求.md"
+DEFAULT_SCORING_RELATIVE = "./项目要求/评分标准.md"
 
 
 def build_initial_state_from_source(
@@ -96,6 +101,31 @@ def build_manual_state(*, project_root: str | Path, config_path: str | Path) -> 
         created_paths=[],
         manual_inputs=True,
     )
+
+
+def build_editor_document_from_state(state: NewConfigWizardState) -> ConfigEditorDocument:
+    document = create_new_config_editor_document(state.config_path)
+    model = copy.deepcopy(document.model)
+    model["project"]["root_dir"] = format_relative_path(state.project_root, state.config_path.parent)
+    model["project"]["bidder_name"] = state.bidder_name.strip()
+    model["project"]["outline_locked"] = False
+    model["project"]["outline_file"] = format_relative_path(state.outline_path, state.project_root)
+    model["project"]["bid_requirements_mode"] = "file"
+    model["project"]["bid_requirements_file"] = (
+        format_relative_path(state.requirements_path, state.project_root)
+        if state.requirements_path is not None
+        else DEFAULT_REQUIREMENTS_RELATIVE
+    )
+    model["project"]["scoring_criteria_mode"] = "file"
+    model["project"]["scoring_criteria_file"] = (
+        format_relative_path(state.scoring_path, state.project_root)
+        if state.scoring_path is not None
+        else DEFAULT_SCORING_RELATIVE
+    )
+    model["project"]["output_dir"] = format_relative_path(state.output_dir, state.project_root)
+    document.model = model
+    document.require_project_identity = True
+    return document
 
 
 def infer_project_root(source_path: str | Path, config_dir: str | Path, project_name: str) -> Path:

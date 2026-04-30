@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import yaml
+
 from bid_writer.new_config_flow import (
     NewConfigWizardState,
+    build_editor_document_from_state,
     build_initial_state_from_source,
     build_manual_state,
     copy_source_file_if_needed,
@@ -121,6 +124,66 @@ def test_build_manual_state_uses_manual_paths(tmp_path: Path):
     assert state.outline_path == project / "投标大纲.md"
     assert state.output_dir == project / "output"
     assert state.manual_inputs is True
+
+
+def test_build_editor_document_uses_relative_project_paths(tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    config_path = tmp_path / "config_项目.yaml"
+    requirements = project / "项目要求" / "项目采购需求.md"
+    scoring = project / "项目要求" / "评分标准.md"
+    requirements.parent.mkdir()
+    requirements.write_text("需求", encoding="utf-8")
+    scoring.write_text("评分", encoding="utf-8")
+
+    state = NewConfigWizardState(
+        source_path=None,
+        project_root=project,
+        config_path=config_path,
+        import_dir=None,
+        should_copy_source=False,
+        source_copy_path=None,
+        copied_source_path=None,
+        requirements_path=requirements,
+        scoring_path=scoring,
+        outline_path=project / "投标大纲.md",
+        output_dir=project / "output",
+        bidder_name="测试公司",
+        created_paths=[],
+        manual_inputs=True,
+    )
+
+    document = build_editor_document_from_state(state)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert document.config_path == config_path.resolve()
+    assert payload["project"]["root_dir"] == "./项目"
+    assert payload["project"]["bidder_name"] == "测试公司"
+    assert payload["project"]["outline_locked"] is False
+    assert payload["project"]["inputs"]["outline_file"] == "./投标大纲.md"
+    assert payload["project"]["inputs"]["bid_requirements_file"] == "./项目要求/项目采购需求.md"
+    assert payload["project"]["inputs"]["scoring_criteria_file"] == "./项目要求/评分标准.md"
+    assert payload["project"]["output_dir"] == "./output"
+
+
+def test_build_editor_document_requires_bidder_identity(tmp_path: Path):
+    state = build_manual_state(project_root=tmp_path, config_path=tmp_path / "config.yaml")
+    document = build_editor_document_from_state(state)
+
+    messages = document.validate(document.model, config_path=state.config_path)
+
+    assert any(item.level == "error" and "投标主体名称不能为空" in item.text for item in messages)
+
+
+def test_build_editor_document_preserves_default_runtime_and_processing(tmp_path: Path):
+    state = build_manual_state(project_root=tmp_path, config_path=tmp_path / "config.yaml")
+    state.bidder_name = "测试公司"
+    document = build_editor_document_from_state(state)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert payload["processing"]["path"] == "auto"
+    assert payload["runtime"]["stream"]["enabled"] is True
+    assert payload["writing"]["role_file"] == "./roles/通用投标角色.md"
 
 
 def test_infer_project_root_uses_material_parent_transient_config_or_source_parent(tmp_path: Path):
