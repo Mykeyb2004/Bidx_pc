@@ -192,12 +192,29 @@ def copy_source_file_if_needed(state: NewConfigWizardState) -> Path | None:
     parent_dir = state.source_copy_path.parent
     created_parent_dir = not parent_dir.exists()
     parent_dir.mkdir(parents=True, exist_ok=True)
-    copied = Path(shutil.copy2(state.source_path, state.source_copy_path))
+    target_path = _unique_copy_target(state.source_copy_path)
+    state.source_copy_path = target_path
+    copied = Path(shutil.copy2(state.source_path, target_path))
     state.copied_source_path = copied
     if created_parent_dir:
         register_created_path(state, parent_dir)
     register_created_path(state, copied)
     return copied
+
+
+def _unique_copy_target(path: Path) -> Path:
+    if not path.exists():
+        return path
+
+    parent = path.parent
+    stem = path.stem
+    suffix = path.suffix
+    counter = 1
+    while True:
+        candidate = parent / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def _is_relative_to_normalized(path: Path, base: Path) -> bool:

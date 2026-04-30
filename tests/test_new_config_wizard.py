@@ -40,7 +40,21 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
     dialog.current_step_index = 0
     dialog.max_completed_step_index = 0
     dialog.result = {"saved_path": None, "apply_path": None}
+    dialog.vars = {
+        "source_path": StubVar(""),
+        "project_root": StubVar(str(tmp_path)),
+        "config_path": StubVar(str(tmp_path / "config.yaml")),
+        "requirements_path": StubVar(str(tmp_path / "项目要求" / "项目采购需求.md")),
+        "scoring_path": StubVar(str(tmp_path / "项目要求" / "评分标准.md")),
+        "outline_path": StubVar(str(tmp_path / "投标大纲.md")),
+        "output_dir": StubVar(str(tmp_path / "output")),
+        "bidder_name": StubVar(""),
+    }
     dialog.status_var = StubVar("")
+    dialog.config_summary_var = StubVar("")
+    dialog.source_hint_var = StubVar("")
+    dialog.import_status_var = StubVar("")
+    dialog.review_summary_var = StubVar("")
     dialog.back_button = StubButton()
     dialog.next_button = StubButton()
     dialog.step_buttons = []
@@ -49,9 +63,17 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
         source_path=None,
         project_root=tmp_path,
         config_path=tmp_path / "config.yaml",
+        import_dir=None,
+        should_copy_source=False,
+        source_copy_path=None,
+        copied_source_path=None,
         requirements_path=None,
         scoring_path=None,
+        outline_path=tmp_path / "投标大纲.md",
+        output_dir=tmp_path / "output",
         bidder_name="",
+        created_paths=[],
+        manual_inputs=True,
     )
     return dialog
 
@@ -131,6 +153,17 @@ def test_jump_to_step_only_allows_completed_steps(tmp_path: Path):
     assert dialog.current_step_index == 1
 
 
+def test_jump_to_previous_step_does_not_validate_current_incomplete_step(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.current_step_index = 2
+    dialog.max_completed_step_index = 2
+    dialog._validate_current_step = lambda: False
+
+    NewConfigWizardDialog._jump_to_step(dialog, 1)
+
+    assert dialog.current_step_index == 1
+
+
 def test_sync_footer_sets_status_and_final_button_text(tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.current_step_index = len(WIZARD_STEPS) - 1
@@ -139,3 +172,177 @@ def test_sync_footer_sets_status_and_final_button_text(tmp_path: Path):
 
     assert dialog.status_var.get() == "第 5 步，共 5 步"
     assert dialog.next_button.config_calls[-1]["text"] == "保存并应用"
+
+
+def test_sync_fields_updates_header_config_summary(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.state.config_path = tmp_path / "config_推导项目.yaml"
+
+    NewConfigWizardDialog._sync_fields_from_state(dialog)
+
+    assert dialog.config_summary_var.get() == f"目标配置：{tmp_path / 'config_推导项目.yaml'}"
+
+
+def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("测试公司")
+    dialog.vars["config_path"].set(str(tmp_path / "config_测试.yaml"))
+    saved = tmp_path / "config_测试.yaml"
+    destroyed = []
+
+    class FakeDocument:
+        model = {}
+
+        def validate(self, model, *, config_path=None):
+            return []
+
+        def save(self, model=None, *, target_path=None, create_backup=True):
+            assert target_path == saved
+            assert create_backup is True
+            return saved
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
+    dialog.destroy = lambda: destroyed.append(True)
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    assert dialog.result == {"saved_path": saved, "apply_path": saved}
+    assert destroyed == [True]
+
+
+def test_save_and_apply_shows_validation_errors(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("")
+    shown_errors = []
+    destroyed = []
+
+    class FakeMessage:
+        level = "error"
+        text = "投标主体名称不能为空。"
+
+    class FakeDocument:
+        model = {}
+
+        def validate(self, model, *, config_path=None):
+            return [FakeMessage()]
+
+        def save(self, model=None, *, target_path=None, create_backup=True):
+            raise AssertionError("save should not be called")
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+    dialog.destroy = lambda: destroyed.append(True)
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    assert dialog.result == {"saved_path": None, "apply_path": None}
+    assert destroyed == []
+    assert shown_errors and "投标主体名称不能为空" in shown_errors[0][1]
+
+
+def test_cancel_with_created_paths_can_cleanup(monkeypatch, tmp_path: Path):
+    created = tmp_path / "created.md"
+    created.write_text("created", encoding="utf-8")
+    dialog = _dialog(tmp_path)
+    dialog.state.created_paths = [created]
+    calls = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.askyesnocancel",
+        lambda *args, **kwargs: calls.append(args) or False,
+    )
+    dialog.destroy = lambda: calls.append(("destroy",))
+
+    NewConfigWizardDialog._cancel(dialog)
+
+    assert not created.exists()
+    assert ("destroy",) in calls
+
+
+def test_cancel_keeps_created_paths_when_user_chooses_keep(monkeypatch, tmp_path: Path):
+    created = tmp_path / "created.md"
+    created.write_text("created", encoding="utf-8")
+    dialog = _dialog(tmp_path)
+    dialog.state.created_paths = [created]
+    destroyed = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.askyesnocancel",
+        lambda *args, **kwargs: True,
+    )
+    dialog.destroy = lambda: destroyed.append(True)
+
+    NewConfigWizardDialog._cancel(dialog)
+
+    assert created.exists()
+    assert destroyed == [True]
+
+
+def test_select_source_file_rebuilds_state_and_moves_to_location(monkeypatch, tmp_path: Path):
+    source = tmp_path / "公共服务满意度项目招标文件.pdf"
+    source.write_text("fake", encoding="utf-8")
+    dialog = _dialog(tmp_path)
+    shown = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.askopenfilename",
+        lambda *args, **kwargs: str(source),
+    )
+    dialog._show_step = lambda: shown.append(dialog.current_step_index)
+
+    NewConfigWizardDialog._select_source_file(dialog)
+
+    assert dialog.state.source_path == source
+    assert dialog.vars["source_path"].get() == str(source)
+    assert dialog.vars["project_root"].get() == str(tmp_path)
+    assert dialog.current_step_index == 1
+    assert dialog.max_completed_step_index == 1
+    assert shown == [1]
+
+
+def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    source = tmp_path / "招标文件.pdf"
+    source.write_text("fake", encoding="utf-8")
+    dialog.state.source_path = source
+    dialog.vars["source_path"].set(str(source))
+    existing_requirements = tmp_path / "项目要求" / "项目采购需求.md"
+    existing_requirements.parent.mkdir()
+    existing_requirements.write_text("old", encoding="utf-8")
+    scoring = existing_requirements.parent / "评分标准.md"
+    report = tmp_path / ".bid_writer" / "imports" / "pending" / "extraction_report.json"
+    converted = report.parent / "converted.md"
+    conversion_map = report.parent / "conversion_map.json"
+    synced = []
+
+    class FakeResult:
+        cancelled = False
+        requirements_path = existing_requirements
+        scoring_path = scoring
+        import_dir = report.parent
+        created_paths = (report, converted, conversion_map, existing_requirements, scoring)
+
+    class FakeService:
+        def import_document(self, **kwargs):
+            report.parent.mkdir(parents=True)
+            report.write_text("{}", encoding="utf-8")
+            converted.write_text("converted", encoding="utf-8")
+            conversion_map.write_text("{}", encoding="utf-8")
+            scoring.write_text("score", encoding="utf-8")
+            return FakeResult()
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
+    monkeypatch.setattr("bid_writer.new_config_wizard.TenderImportService", lambda: FakeService())
+    monkeypatch.setattr("bid_writer.new_config_wizard.confirm_low_confidence", lambda _parent, _extraction: True)
+    dialog._sync_fields_from_state = lambda: synced.append(True)
+
+    NewConfigWizardDialog._run_import(dialog)
+
+    assert dialog.state.requirements_path == existing_requirements
+    assert dialog.state.scoring_path == scoring
+    assert report in dialog.state.created_paths
+    assert converted in dialog.state.created_paths
+    assert conversion_map in dialog.state.created_paths
+    assert scoring in dialog.state.created_paths
+    assert existing_requirements not in dialog.state.created_paths
+    assert synced == [True]

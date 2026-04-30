@@ -83,7 +83,7 @@ class TenderImportService:
                 extraction_report_path=report_path,
                 extraction=extraction,
                 cancelled=True,
-                created_paths=(report_path,),
+                created_paths=(*self._conversion_created_paths(conversion, import_dir), report_path),
             )
 
         target_dir = project_root / "项目要求"
@@ -100,8 +100,27 @@ class TenderImportService:
             import_dir=import_dir,
             extraction_report_path=report_path,
             extraction=extraction,
-            created_paths=(report_path, requirements_path, scoring_path),
+            created_paths=(
+                *self._conversion_created_paths(conversion, import_dir),
+                report_path,
+                requirements_path,
+                scoring_path,
+            ),
         )
+
+    def _conversion_created_paths(self, conversion, import_dir: Path) -> tuple[Path, ...]:
+        paths = [
+            getattr(conversion, "converted_markdown_path", import_dir / "converted.md"),
+            getattr(conversion, "conversion_map_path", import_dir / "conversion_map.json"),
+        ]
+        created_paths: list[Path] = []
+        for path in paths:
+            if path is None:
+                continue
+            normalized = Path(path)
+            if normalized not in created_paths:
+                created_paths.append(normalized)
+        return tuple(created_paths)
 
     def _write_target(
         self,

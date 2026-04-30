@@ -327,6 +327,41 @@ def test_copy_source_file_if_needed_copies_external_source_and_records_path(tmp_
     assert copied in state.created_paths
 
 
+def test_copy_source_file_if_needed_avoids_overwriting_existing_project_file(tmp_path: Path):
+    source = tmp_path / "Downloads" / "tender.pdf"
+    source.parent.mkdir()
+    source.write_text("source", encoding="utf-8")
+    project = tmp_path / "项目"
+    target_dir = project / "招标文件"
+    target_dir.mkdir(parents=True)
+    existing = target_dir / "tender.pdf"
+    existing.write_text("existing", encoding="utf-8")
+    state = NewConfigWizardState(
+        source_path=source,
+        project_root=project,
+        config_path=tmp_path / "config.yaml",
+        import_dir=None,
+        should_copy_source=True,
+        source_copy_path=existing,
+        copied_source_path=None,
+        requirements_path=None,
+        scoring_path=None,
+        outline_path=project / "投标大纲.md",
+        output_dir=project / "output",
+        bidder_name="",
+        created_paths=[],
+        manual_inputs=False,
+    )
+
+    copied = copy_source_file_if_needed(state)
+
+    assert copied == target_dir / "tender_1.pdf"
+    assert copied.read_text(encoding="utf-8") == "source"
+    assert existing.read_text(encoding="utf-8") == "existing"
+    assert state.copied_source_path == copied
+    assert copied in state.created_paths
+
+
 def test_copy_source_file_if_needed_records_new_parent_dir_for_cleanup(tmp_path: Path):
     source = tmp_path / "Downloads" / "tender.pdf"
     source.parent.mkdir()
