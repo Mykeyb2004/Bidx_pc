@@ -1,0 +1,243 @@
+"""从转换后的招标文件 Markdown block 中抽取采购需求和评分标准。"""
+
+from __future__ import annotations
+
+import re
+
+from rapidfuzz import fuzz
+
+from .tender_import_models import (
+    ConvertedBlock,
+    SectionCandidate,
+    TenderConversionResult,
+    TenderExtractionResult,
+    TenderSectionExtraction,
+)
+
+
+REQUIREMENT_ALIASES = (
+    "项目采购需求",
+    "采购需求",
+    "项目需求",
+    "服务需求",
+    "技术需求",
+    "技术和服务要求",
+    "采购内容及要求",
+    "项目内容及要求",
+    "服务内容及要求",
+    "技术参数及要求",
+    "用户需求书",
+    "商务技术要求",
+)
+
+SCORING_ALIASES = (
+    "评分标准",
+    "评审标准",
+    "评审办法",
+    "评审方法",
+    "评分办法",
+    "评分细则",
+    "综合评分法",
+    "详细评审",
+    "评审因素",
+    "技术商务评分表",
+    "综合评分表",
+    "评标办法",
+)
+
+REQUIREMENT_TERMS = ("服务", "技术", "要求", "内容", "范围", "参数", "成果", "验收", "采购")
+SCORING_TERMS = ("评分", "评审", "分值", "满分", "权重", "得分", "得", "分")
+SCORING_TABLE_TERMS = ("评审因素", "评分项", "评分标准", "评审内容", "分值", "权重", "得分")
+STRONG_STOP_TITLES = ("合同条款", "投标人须知", "响应文件格式", "开标评标定标")
+TOC_DOTTED_RE = re.compile(r"\.{3,}|…{2,}|[.．·]{2,}\s*\d+\s*$")
+
+
+def extract_tender_sections(conversion: TenderConversionResult) -> TenderSectionExtraction:
+    blocks = sorted(conversion.blocks, key=lambda item: item.order_index)
+    candidates = _collect_candidates(blocks)
+    requirements = _build_result("bid_requirements", blocks, candidates)
+    scoring = _build_result("scoring_criteria", blocks, candidates)
+
+    warnings: list[str] = []
+    if requirements is None:
+        warnings.append("未定位到项目采购需求章节。")
+    if scoring is None:
+        warnings.append("未定位到评分标准章节。")
+
+    return TenderSectionExtraction(
+        requirements=requirements,
+        scoring=scoring,
+        candidates=candidates,
+        warnings=tuple(warnings),
+    )
+
+
+def _collect_candidates(blocks: list[ConvertedBlock]) -> list[SectionCandidate]:
+    candidates: list[SectionCandidate] = []
+    for block in blocks:
+        if _is_toc_like(block):
+            continue
+        title = _candidate_title(block)
+        if not title and block.block_type != "table":
+            continue
+
+        requirement_score, requirement_reason = _alias_score(title, REQUIREMENT_ALIASES)
+        if requirement_score > 0:
+            candidates.append(
+                SectionCandidate(
+                    section_key="bid_requirements",
+                    block_id=block.block_id,
+                    title=title,
+                    score=requirement_score,
+                    reason=requirement_reason,
+                    order_index=block.order_index,
+                )
+            )
+
+        scoring_score, scoring_reason = _alias_score(title, SCORING_ALIASES)
+        table_bonus = _scoring_table_bonus(block)
+        if scoring_score > 0 or table_bonus > 0:
+            if scoring_score > 0:
+                combined_score = scoring_score + min(table_bonus, 15.0)
+                if block.block_type == "heading":
+                    combined_score += 5.0
+            else:
+                combined_score = min(95.0, 45.0 + table_bonus)
+            candidates.append(
+                SectionCandidate(
+                    section_key="scoring_criteria",
+                    block_id=block.block_id,
+                    title=title or block.text[:40],
+                    score=combined_score,
+                    reason=scoring_reason if scoring_score > 0 else "scoring_table_terms",
+                    order_index=block.order_index,
+                )
+            )
+    candidates.sort(key=lambda item: (-item.score, item.order_index))
+    return candidates
+
+
+def _candidate_title(block: ConvertedBlock) -> str:
+    if block.heading_title:
+        return block.heading_title.strip()
+    if block.block_type == "heading":
+        return block.text.strip()
+    if block.block_type in {"paragraph", "table"} and len(block.text.strip()) <= 40:
+        return block.text.strip()
+    return ""
+
+
+def _alias_score(title: str, aliases: tuple[str, ...]) -> tuple[float, str]:
+    normalized = _normalize_title(title)
+    if not normalized:
+        return 0.0, ""
+    best = 0.0
+    best_alias = ""
+    for alias in aliases:
+        alias_norm = _normalize_title(alias)
+        if alias_norm == normalized or alias_norm in normalized:
+            return 120.0, "exact_alias"
+        ratio = float(fuzz.partial_ratio(alias_norm, normalized))
+        if ratio > best:
+            best = ratio
+            best_alias = alias
+    if best >= 82:
+        return 85.0, f"fuzzy_alias:{best_alias}"
+    if best >= 68:
+        return 55.0, f"weak_alias:{best_alias}"
+    return 0.0, ""
+
+
+def _normalize_title(text: str) -> str:
+    text = re.sub(r"^#+\s*", "", text.strip())
+    text = re.sub(r"^[第]?[一二三四五六七八九十百千万\d]+[章节条、.．\s]+", "", text)
+    text = re.sub(r"[\s　:：|（）()\[\]【】《》<>/\\-]+", "", text)
+    return text.lower()
+
+
+def _scoring_table_bonus(block: ConvertedBlock) -> float:
+    text = block.text
+    hits = sum(1 for term in SCORING_TABLE_TERMS if term in text)
+    if block.block_type == "table" and hits >= 2:
+        return 55.0 + hits * 8.0
+    if hits >= 3:
+        return 35.0
+    return 0.0
+
+
+def _is_toc_like(block: ConvertedBlock) -> bool:
+    text = block.text.strip()
+    if block.heading_title.strip() == "目录":
+        return True
+    return bool(TOC_DOTTED_RE.search(text)) and len(text) <= 80
+
+
+def _build_result(
+    section_key: str,
+    blocks: list[ConvertedBlock],
+    candidates: list[SectionCandidate],
+) -> TenderExtractionResult | None:
+    candidate = next((item for item in candidates if item.section_key == section_key), None)
+    if candidate is None:
+        return None
+    index_by_id = {block.block_id: idx for idx, block in enumerate(blocks)}
+    start_index = index_by_id[candidate.block_id]
+    end_index = _find_end_index(blocks, start_index)
+    selected = blocks[start_index:end_index]
+    markdown = _join_markdown(selected)
+    confidence, warnings = _confidence(section_key, candidate.score, markdown, selected)
+    return TenderExtractionResult(
+        section_key=section_key,
+        title=candidate.title,
+        markdown=markdown,
+        start_block_id=selected[0].block_id,
+        end_block_id=selected[-1].block_id,
+        confidence=confidence,
+        warnings=tuple(warnings),
+    )
+
+
+def _find_end_index(blocks: list[ConvertedBlock], start_index: int) -> int:
+    start_block = blocks[start_index]
+    start_level = start_block.heading_level or 2
+    for index in range(start_index + 1, len(blocks)):
+        block = blocks[index]
+        title = block.heading_title or block.text
+        if block.heading_level is not None and block.heading_level <= start_level:
+            return index
+        if block.block_type == "heading" and any(term in title for term in STRONG_STOP_TITLES):
+            return index
+    return len(blocks)
+
+
+def _join_markdown(blocks: list[ConvertedBlock]) -> str:
+    return "\n\n".join(block.markdown.strip() for block in blocks if block.markdown.strip()).strip() + "\n"
+
+
+def _confidence(
+    section_key: str,
+    candidate_score: float,
+    markdown: str,
+    blocks: list[ConvertedBlock],
+) -> tuple[float, list[str]]:
+    del markdown
+    warnings: list[str] = []
+    score = min(candidate_score / 120.0, 1.0)
+    text = "\n".join(block.text for block in blocks)
+    if section_key == "bid_requirements":
+        hits = sum(1 for term in REQUIREMENT_TERMS if term in text)
+        if len(text.strip()) < 40:
+            score -= 0.30
+            warnings.append("采购需求摘录内容较短。")
+        if hits < 3:
+            score -= 0.20
+            warnings.append("采购需求关键词命中较少。")
+    else:
+        hits = sum(1 for term in SCORING_TERMS if term in text)
+        has_table = any(block.block_type == "table" for block in blocks)
+        if hits < 2 and not has_table:
+            score -= 0.25
+            warnings.append("评分标准关键词命中较少。")
+        if has_table:
+            score += 0.10
+    return max(0.0, min(score, 1.0)), warnings
