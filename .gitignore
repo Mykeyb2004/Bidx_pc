@@ -18,3 +18,4 @@ __pycache__/
 /caches/
 .omx/
 .worktrees/
+.superpowers/
