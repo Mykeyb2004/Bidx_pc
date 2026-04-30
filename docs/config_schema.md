@@ -78,6 +78,8 @@ project:
 - 新建配置默认使用 `./投标大纲.md` 作为大纲保存位置；如果已有大纲，也可以把 `project.inputs.outline_file` 指向现有 Markdown 文件
 - `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
 
+GUI 新建配置向导会根据招标文件位置生成这些路径。`project.root_dir` 会尽量相对配置文件保存；`project.inputs.*` 和 `project.output_dir` 会尽量相对 `project.root_dir` 保存。若招标文件来自 `Downloads`、`Desktop` 或临时目录，向导会建议创建正式项目目录，并在需要时把原始招标文件复制到项目内的 `招标文件/`。
+
 ### 3.1.1 跨平台路径规范
 
 推荐配置文件使用相对路径，并统一使用 `/` 作为路径分隔符：
