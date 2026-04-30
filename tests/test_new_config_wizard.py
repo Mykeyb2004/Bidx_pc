@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from bid_writer.gui import ensure_tk_runtime
 from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS
 
 
@@ -66,6 +67,7 @@ def test_wizard_defines_five_steps():
 
 
 def test_constructor_builds_initial_wizard_shell(tmp_path: Path):
+    ensure_tk_runtime()
     try:
         root = tk.Tk()
     except tk.TclError as exc:
