@@ -118,7 +118,7 @@ def build_default_editor_model() -> dict[str, Any]:
             "outline_generation": {
                 "role_file": "./roles/标书架构师.md",
             },
-            "outline_file": "./outline.md",
+            "outline_file": "./投标大纲.md",
             "bid_requirements_mode": "file",
             "bid_requirements_file": "./项目要求/项目采购需求.md",
             "bid_requirements_text": "",

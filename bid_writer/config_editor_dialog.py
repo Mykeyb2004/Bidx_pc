@@ -450,22 +450,24 @@ class ConfigEditorDialog(tk.Toplevel):
         self._add_entry_row(basic, 1, "投标主体名称", "project.bidder_name")
         self._add_path_row(basic, 2, "输出目录", "project.output_dir", browse_kind="dir", relative_to="project")
 
-        outline = ttk.LabelFrame(content, text="大纲准备", padding=12)
-        outline.pack(fill=tk.X, pady=(0, 12))
-        self._add_check_row(outline, 0, "大纲已锁定", "project.outline_locked")
-        self._add_path_row(
-            outline,
-            1,
-            "大纲生成角色文件",
-            "project.outline_generation.role_file",
-            browse_kind="file",
-            relative_to="config",
-        )
-        outline.columnconfigure(1, weight=1)
+        if not self.is_new_config:
+            outline = ttk.LabelFrame(content, text="大纲准备", padding=12)
+            outline.pack(fill=tk.X, pady=(0, 12))
+            self._add_check_row(outline, 0, "大纲已锁定", "project.outline_locked")
+            self._add_path_row(
+                outline,
+                1,
+                "大纲生成角色文件",
+                "project.outline_generation.role_file",
+                browse_kind="file",
+                relative_to="config",
+            )
+            outline.columnconfigure(1, weight=1)
 
         inputs = ttk.LabelFrame(content, text="输入资源", padding=12)
         inputs.pack(fill=tk.X, pady=(0, 12))
-        self._add_path_row(inputs, 0, "大纲文件", "project.outline_file", browse_kind="file", relative_to="project")
+        outline_file_label = "大纲保存位置 / 已有大纲文件" if self.is_new_config else "大纲文件"
+        self._add_path_row(inputs, 0, outline_file_label, "project.outline_file", browse_kind="file", relative_to="project")
 
         self._add_mode_selector(inputs, 1, "采购需求", "project.bid_requirements_mode")
         self.project_bid_file_frame = ttk.Frame(inputs)

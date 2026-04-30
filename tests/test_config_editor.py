@@ -450,7 +450,7 @@ def test_new_config_editor_document_renders_canonical_defaults(tmp_path: Path):
             "role_file": "./roles/标书架构师.md",
         },
         "inputs": {
-            "outline_file": "./outline.md",
+            "outline_file": "./投标大纲.md",
             "bid_requirements_file": "./项目要求/项目采购需求.md",
             "scoring_criteria_file": "./项目要求/评分标准.md",
         },
@@ -605,8 +605,10 @@ def test_new_config_defaults_to_unlocked_outline_generation_role(tmp_path: Path)
 
     assert document.model["project"]["outline_locked"] is False
     assert document.model["project"]["outline_generation"]["role_file"] == "./roles/标书架构师.md"
+    assert document.model["project"]["outline_file"] == "./投标大纲.md"
     assert payload["project"]["outline_locked"] is False
     assert payload["project"]["outline_generation"]["role_file"] == "./roles/标书架构师.md"
+    assert payload["project"]["inputs"]["outline_file"] == "./投标大纲.md"
 
 
 def test_config_editor_preserves_outline_generation_fields(tmp_path: Path):
