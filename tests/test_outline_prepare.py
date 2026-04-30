@@ -46,9 +46,22 @@ def test_confirm_outline_writes_file_and_locks_config(tmp_path: Path):
         "# 项目\n## 项目理解\n### 需求分析\n#### 采购需求响应\n",
     )
 
-    assert (tmp_path / "outline.md").read_text(encoding="utf-8").endswith("#### 采购需求响应\n")
+    assert (tmp_path / "outline.md").read_text(encoding="utf-8").endswith("#### 1.1.1 采购需求响应\n")
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert payload["project"]["outline_locked"] is True
+
+
+def test_confirm_outline_formats_numbering_before_saving(tmp_path: Path):
+    config = Config(str(_write_project(tmp_path)))
+
+    confirm_outline_and_lock(
+        config,
+        "# 项目\n## 4. 实施方案\n### 4.2 服务流程\n#### 4.2.8 响应机制\n",
+    )
+
+    assert (tmp_path / "outline.md").read_text(encoding="utf-8") == (
+        "# 项目\n## 1. 实施方案\n### 1.1 服务流程\n#### 1.1.1 响应机制\n"
+    )
 
 
 def test_confirm_outline_blocks_h3_leaf(tmp_path: Path):

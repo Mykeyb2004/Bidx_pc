@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .config import Config
-from .outline_generator import validate_outline_text
+from .outline_generator import format_outline_numbering, validate_outline_text
 
 
 class OutlinePrepareError(RuntimeError):
@@ -46,14 +46,15 @@ def set_outline_locked(config_path: str | Path, locked: bool) -> None:
 
 
 def confirm_outline_and_lock(config: Config, outline_text: str) -> Path:
-    messages = validate_outline_text(outline_text)
+    formatted_outline = format_outline_numbering(outline_text)
+    messages = validate_outline_text(formatted_outline)
     errors = [message.text for message in messages if message.level == "error"]
     if errors:
         raise OutlinePrepareError("\n".join(errors))
 
     path = outline_path(config)
     path.parent.mkdir(parents=True, exist_ok=True)
-    normalized = outline_text.strip() + "\n"
+    normalized = formatted_outline.strip() + "\n"
     path.write_text(normalized, encoding="utf-8")
     set_outline_locked(config.config_path, True)
     return path

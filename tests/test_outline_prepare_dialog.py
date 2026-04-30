@@ -117,12 +117,31 @@ def test_validate_current_text_enables_confirm_for_valid_h4_outline(tmp_path: Pa
     assert dialog.confirm_button.states[-1] == "normal"
 
 
+def test_format_current_text_rewrites_numbering_and_validates(tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+    dialog = _dialog(config)
+    dialog.outline_text.insert(
+        "1.0",
+        "# 项目\n## 7. 实施方案\n### 7.5 服务流程\n#### 7.5.4 响应机制\n",
+    )
+
+    OutlinePrepareDialog._format_current_text(dialog)
+
+    assert dialog.outline_text.get("1.0", "end") == (
+        "# 项目\n## 1. 实施方案\n### 1.1 服务流程\n#### 1.1.1 响应机制\n"
+    )
+    assert "已格式化大纲编号" in dialog.status_var.get()
+    assert dialog.confirm_button.states[-1] == "normal"
+
+
 def test_confirm_writes_outline_and_marks_result(tmp_path: Path):
     config = Config(str(_write_config(tmp_path)))
     dialog = _dialog(config)
-    dialog.outline_text.insert("1.0", "# 新项目\n## 项目理解\n### 需求分析\n#### 采购需求响应\n")
+    dialog.outline_text.insert("1.0", "# 新项目\n## 9. 项目理解\n### 9.3 需求分析\n#### 9.3.2 采购需求响应\n")
 
     OutlinePrepareDialog._confirm(dialog)
 
     assert dialog.result["confirmed"] is True
-    assert (tmp_path / "outline.md").read_text(encoding="utf-8").startswith("# 新项目")
+    assert (tmp_path / "outline.md").read_text(encoding="utf-8") == (
+        "# 新项目\n## 1. 项目理解\n### 1.1 需求分析\n#### 1.1.1 采购需求响应\n"
+    )

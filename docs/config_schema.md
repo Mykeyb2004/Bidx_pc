@@ -106,6 +106,8 @@ project:
 - `false`：新建配置的大纲准备阶段，GUI 会先打开“大纲准备”窗口。
 - `true`：大纲已固定，GUI 直接加载章节树并允许扩写。
 
+大纲未锁定时，用户可以在“大纲准备”窗口直接编辑 Markdown 标题。窗口提供“格式化大纲”按钮，会按当前标题顺序重算 H2/H3/H4 的数字前缀，例如 `## 1. ...`、`### 1.1 ...`、`#### 1.1.1 ...`；确认大纲时也会自动执行同样的格式化后再写入 `project.inputs.outline_file`。
+
 旧配置缺少该字段时按 `true` 处理，避免历史项目被强制带入新流程。
 
 `project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。GUI 新建配置时会隐藏 `outline_locked` 和 `outline_generation.role_file`，让用户先完成项目材料准备；编辑已有配置时仍可看到这些高级字段。

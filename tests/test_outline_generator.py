@@ -7,6 +7,7 @@ from bid_writer.outline_generator import (
     OutlineGenerationError,
     OutlineGenerator,
     clean_outline_response,
+    format_outline_numbering,
     validate_outline_text,
 )
 
@@ -71,6 +72,49 @@ def test_validate_outline_text_requires_h4_leaf_units():
     messages = validate_outline_text("# 项目\n## 章\n### 节\n")
 
     assert any(item.level == "error" and "至少包含 1 个 H4" in item.text for item in messages)
+
+
+def test_validate_outline_text_blocks_skipped_heading_levels():
+    messages = validate_outline_text("# 项目\n### 跳级小节\n#### 写作单元\n")
+
+    assert any(item.level == "error" and "不能从 H1 直接跳到 H3" in item.text for item in messages)
+
+
+def test_format_outline_numbering_recalculates_moved_h2_blocks():
+    formatted = format_outline_numbering(
+        """
+# 项目
+## 2. 实施方案
+### 2.3 服务流程
+#### 2.3.9 响应机制
+## 1. 项目理解
+### 1.1 需求分析
+#### 1.1.1 采购需求响应
+""".strip()
+    )
+
+    assert formatted == "\n".join(
+        [
+            "# 项目",
+            "## 1. 实施方案",
+            "### 1.1 服务流程",
+            "#### 1.1.1 响应机制",
+            "## 2. 项目理解",
+            "### 2.1 需求分析",
+            "#### 2.1.1 采购需求响应",
+            "",
+        ]
+    )
+
+
+def test_format_outline_numbering_preserves_score_prefix_text():
+    formatted = format_outline_numbering(
+        "# 项目\n## 3. 项目分析（12分）：国家政策指导下的项目目标\n### 3.1 国家政策指导下开展工作\n#### 3.1.1 未成年人保护法政策要求响应\n"
+    )
+
+    assert "## 1. 项目分析（12分）：国家政策指导下的项目目标" in formatted
+    assert "### 1.1 国家政策指导下开展工作" in formatted
+    assert "#### 1.1.1 未成年人保护法政策要求响应" in formatted
 
 
 def test_missing_architect_role_file_blocks_generation(tmp_path: Path):

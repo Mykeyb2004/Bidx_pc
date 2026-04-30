@@ -19,7 +19,7 @@ from .config_editor_dialog import (
     setup_gui_theme,
     style_text_widget,
 )
-from .outline_generator import OutlineGenerationError, OutlineGenerator, validate_outline_text
+from .outline_generator import OutlineGenerationError, OutlineGenerator, format_outline_numbering, validate_outline_text
 from .outline_prepare import OutlinePrepareError, confirm_outline_and_lock, load_existing_outline
 
 
@@ -96,19 +96,25 @@ class OutlinePrepareDialog(tk.Toplevel):
             command=self._generate_outline,
             **_bootstyle_kwargs("secondary"),
         ).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(
+            footer,
+            text="格式化大纲",
+            command=self._format_current_text,
+            **_bootstyle_kwargs("secondary"),
+        ).grid(row=0, column=2, padx=(8, 0))
         self.confirm_button = ttk.Button(
             footer,
             text="确认大纲并进入扩写",
             command=self._confirm,
             **_bootstyle_kwargs("primary"),
         )
-        self.confirm_button.grid(row=0, column=2, padx=(8, 0))
+        self.confirm_button.grid(row=0, column=3, padx=(8, 0))
         ttk.Button(
             footer,
             text="取消",
             command=self._cancel,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=3, padx=(8, 0))
+        ).grid(row=0, column=4, padx=(8, 0))
 
     def _set_text(self, value: str) -> None:
         self.outline_text.delete("1.0", tk.END)
@@ -164,8 +170,15 @@ class OutlinePrepareDialog(tk.Toplevel):
             self.confirm_button.configure(state="normal" if is_valid else "disabled")
         return is_valid
 
+    def _format_current_text(self) -> bool:
+        formatted = format_outline_numbering(self._current_text())
+        self._set_text(formatted)
+        is_valid = self._validate_current_text()
+        self.status_var.set("已格式化大纲编号")
+        return is_valid
+
     def _confirm(self) -> None:
-        if not self._validate_current_text():
+        if not self._format_current_text():
             messagebox.showerror("大纲校验失败", self.validation_var.get(), parent=self)
             return
         try:

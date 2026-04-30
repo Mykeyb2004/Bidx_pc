@@ -28,6 +28,7 @@ class OutlineGenerationError(RuntimeError):
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _FENCE_RE = re.compile(r"^\s*```")
+_OUTLINE_NUMBER_PREFIX_RE = re.compile(r"^(?:\d+[.．]\s+|\d+(?:[.．]\d+)+[.．]?\s+)")
 
 
 def clean_outline_response(raw_text: str) -> OutlineGenerationResult:
@@ -59,9 +60,64 @@ def clean_outline_response(raw_text: str) -> OutlineGenerationResult:
     )
 
 
+def format_outline_numbering(outline_text: str) -> str:
+    """按当前 Markdown 标题顺序重写 H2/H3/H4 的多级数字编号。"""
+    lines: list[str] = []
+    h2_index = 0
+    h3_index = 0
+    h4_index = 0
+
+    for raw_line in outline_text.splitlines():
+        stripped = raw_line.strip()
+        match = _HEADING_RE.match(stripped)
+        if not match:
+            lines.append(raw_line.rstrip())
+            continue
+
+        level = len(match.group(1))
+        title = _strip_outline_number_prefix(match.group(2).strip())
+        if level == 1:
+            h2_index = 0
+            h3_index = 0
+            h4_index = 0
+            lines.append(f"# {title}")
+            continue
+        if level == 2:
+            h2_index += 1
+            h3_index = 0
+            h4_index = 0
+            lines.append(f"## {h2_index}. {title}")
+            continue
+        if level == 3:
+            if h2_index == 0:
+                lines.append(f"### {title}")
+                continue
+            h3_index += 1
+            h4_index = 0
+            lines.append(f"### {h2_index}.{h3_index} {title}")
+            continue
+        if level == 4:
+            if h2_index == 0 or h3_index == 0:
+                lines.append(f"#### {title}")
+                continue
+            h4_index += 1
+            lines.append(f"#### {h2_index}.{h3_index}.{h4_index} {title}")
+            continue
+        lines.append(f"{'#' * level} {title}")
+
+    formatted = "\n".join(lines).strip()
+    return (formatted + "\n") if formatted else ""
+
+
+def _strip_outline_number_prefix(title: str) -> str:
+    stripped = _OUTLINE_NUMBER_PREFIX_RE.sub("", title, count=1).strip()
+    return stripped or title
+
+
 def validate_outline_text(outline_text: str) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
     raw_heading_levels: list[int] = []
+    previous_heading_level: int | None = None
 
     for line_number, raw_line in enumerate(outline_text.splitlines(), start=1):
         stripped = raw_line.strip()
@@ -78,6 +134,9 @@ def validate_outline_text(outline_text: str) -> list[ValidationMessage]:
             messages.append(ValidationMessage("error", f"第 {line_number} 行标题为空。"))
         if level > 4:
             messages.append(ValidationMessage("error", f"第 {line_number} 行为 H{level}，大纲固定到 H4，不允许 H5/H6。"))
+        if previous_heading_level is not None and level > previous_heading_level + 1:
+            messages.append(ValidationMessage("error", f"第 {line_number} 行标题层级跳级，不能从 H{previous_heading_level} 直接跳到 H{level}。"))
+        previous_heading_level = level
 
     parser = parse_outline(outline_text)
     headings = parser.get_all_headings()
