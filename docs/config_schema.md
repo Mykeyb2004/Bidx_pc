@@ -112,6 +112,21 @@ project:
 
 `project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。GUI 新建配置时会隐藏 `outline_locked` 和 `outline_generation.role_file`，让用户先完成项目材料准备；编辑已有配置时仍可看到这些高级字段。
 
+### 3.1.3 新建配置导入招标文件
+
+新建配置窗口支持从单个招标文件导入采购需求和评分标准。该功能不会新增 YAML schema 字段，而是写入现有输入文件路径：
+
+```yaml
+project:
+  inputs:
+    bid_requirements_file: "./项目要求/项目采购需求.md"
+    scoring_criteria_file: "./项目要求/评分标准.md"
+```
+
+转换中间产物保存在 `project.root_dir` 下的 `.bid_writer/imports/<import_id>/`，包括完整转换 Markdown、来源映射 JSON 和抽取报告 JSON。正式进入生成链路的仍只有 `project.inputs.bid_requirements_file` 与 `project.inputs.scoring_criteria_file` 指向的 Markdown 文件。
+
+当前导入仅支持单个文件，支持可复制文字 PDF、DOCX、XLSX、DOC、XLS；不支持 OCR、扫描件 PDF、WPS 原生 `.wps` / `.et`、OFD、图片或压缩包。
+
 ### 3.2 `writing`
 
 ```yaml

@@ -6,6 +6,7 @@ def test_config_editor_tooltips_cover_key_sections_and_fields():
         "section.project",
         "section.processing",
         "project.root_dir",
+        "project.tender_import",
         "project.bid_requirements_file",
         "writing.role_mode",
         "writing.extra_rules_text",
