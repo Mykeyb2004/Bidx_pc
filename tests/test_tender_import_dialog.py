@@ -1,6 +1,11 @@
 from pathlib import Path
+import tkinter as tk
 
+import pytest
+
+from bid_writer.gui import ensure_tk_runtime
 from bid_writer.tender_import_dialog import (
+    ManualTenderSectionConfirmDialog,
     SECTION_LABELS,
     build_confirmation_status,
     build_initial_section_selection,
@@ -93,6 +98,36 @@ def test_can_expand_selection_requires_block_backed_selection():
     assert can_expand_selection(None) is False
     assert can_expand_selection(ManualTenderSectionSelection("bid_requirements", "手选", None, None, True)) is False
     assert can_expand_selection(ManualTenderSectionSelection("bid_requirements", "", "r1", "r2", False)) is True
+
+
+def test_manual_dialog_saves_default_source_selection_without_user_drag():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        dialog._save_current_section()
+        dialog._save_current_section()
+
+        assert dialog.result.cancelled is False
+        assert dialog.result.requirements is not None
+        assert "服务内容" in dialog.result.requirements.markdown
+        assert dialog.result.scoring is not None
+        assert "10分" in dialog.result.scoring.markdown
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
 
 
 def test_low_confidence_preview_includes_confidence_and_excerpt():

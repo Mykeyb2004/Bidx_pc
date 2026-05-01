@@ -288,11 +288,12 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         if self._applied_source_selection_range is None:
             return True
         try:
-            start = self.source_text.count("1.0", "sel.first", "chars")[0]
-            end = self.source_text.count("1.0", "sel.last", "chars")[0]
+            start = self.source_text.index("sel.first")
+            end = self.source_text.index("sel.last")
         except tk.TclError:
             return False
-        return (start, end) != self._applied_source_selection_range
+        expected_start, expected_end = self._applied_source_selection_range
+        return (start, end) != (f"1.0+{expected_start}c", f"1.0+{expected_end}c")
 
     def _cancel(self) -> None:
         self.result = ManualTenderConfirmationResult(
