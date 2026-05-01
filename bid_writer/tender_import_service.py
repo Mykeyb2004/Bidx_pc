@@ -10,6 +10,7 @@ from typing import Callable
 
 from .tender_import_models import (
     ManualTenderConfirmationResult,
+    ManualTenderSectionSelection,
     TenderSectionExtraction,
     dump_extraction_report,
 )
@@ -81,11 +82,29 @@ class TenderImportService:
         target_dir = project_root / "项目要求"
         requirements_path = target_dir / "项目采购需求.md"
         scoring_path = target_dir / "评分标准.md"
+        saved_targets: dict[str, Path] = {}
+        backup_paths: list[Path] = []
+
+        def save_section(selection: ManualTenderSectionSelection) -> None:
+            if selection.section_key == "bid_requirements":
+                target_path = requirements_path
+            elif selection.section_key == "scoring_criteria":
+                target_path = scoring_path
+            else:
+                raise TenderImportError(f"未知资料类型：{selection.section_key}")
+            target_dir.mkdir(parents=True, exist_ok=True)
+            backup_path = self._plan_target_write(target_path, confirm_overwrite)
+            written_backup = self._write_planned_target(target_path, selection.markdown, backup_path)
+            saved_targets[selection.section_key] = target_path
+            if written_backup is not None:
+                backup_paths.append(written_backup)
+
         confirmation = confirm_sections(
             conversion=conversion,
             extraction=extraction,
             requirements_path=requirements_path,
             scoring_path=scoring_path,
+            save_section=save_section,
         )
         report_path.write_text(
             json.dumps(dump_extraction_report(extraction, confirmation), ensure_ascii=False, indent=2),
@@ -93,33 +112,48 @@ class TenderImportService:
         )
         if confirmation.cancelled or confirmation.requirements is None or confirmation.scoring is None:
             return TenderImportResult(
-                requirements_path=None,
-                scoring_path=None,
+                requirements_path=saved_targets.get("bid_requirements"),
+                scoring_path=saved_targets.get("scoring_criteria"),
                 relative_requirements_path="./项目要求/项目采购需求.md",
                 relative_scoring_path="./项目要求/评分标准.md",
                 import_dir=import_dir,
                 extraction_report_path=report_path,
                 extraction=extraction,
                 cancelled=True,
-                created_paths=(*self._conversion_created_paths(conversion, import_dir), report_path),
+                created_paths=(
+                    *self._conversion_created_paths(conversion, import_dir),
+                    report_path,
+                    *backup_paths,
+                    *saved_targets.values(),
+                ),
             )
 
         target_dir.mkdir(parents=True, exist_ok=True)
-        requirements_backup = self._plan_target_write(requirements_path, confirm_overwrite)
-        scoring_backup = self._plan_target_write(scoring_path, confirm_overwrite)
-        requirements_written_backup = self._write_planned_target(
-            requirements_path,
-            confirmation.requirements.markdown,
-            requirements_backup,
-        )
-        scoring_written_backup = self._write_planned_target(
-            scoring_path,
-            confirmation.scoring.markdown,
-            scoring_backup,
-        )
-        backup_paths = tuple(
-            path for path in (requirements_written_backup, scoring_written_backup) if path is not None
-        )
+        missing_requirements = "bid_requirements" not in saved_targets
+        missing_scoring = "scoring_criteria" not in saved_targets
+        if missing_requirements and missing_scoring:
+            requirements_backup = self._plan_target_write(requirements_path, confirm_overwrite)
+            scoring_backup = self._plan_target_write(scoring_path, confirm_overwrite)
+            requirements_written_backup = self._write_planned_target(
+                requirements_path,
+                confirmation.requirements.markdown,
+                requirements_backup,
+            )
+            scoring_written_backup = self._write_planned_target(
+                scoring_path,
+                confirmation.scoring.markdown,
+                scoring_backup,
+            )
+            saved_targets["bid_requirements"] = requirements_path
+            saved_targets["scoring_criteria"] = scoring_path
+            backup_paths.extend(
+                path for path in (requirements_written_backup, scoring_written_backup) if path is not None
+            )
+        else:
+            if missing_requirements:
+                save_section(confirmation.requirements)
+            if missing_scoring:
+                save_section(confirmation.scoring)
         return TenderImportResult(
             requirements_path=requirements_path,
             scoring_path=scoring_path,

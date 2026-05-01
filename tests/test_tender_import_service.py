@@ -227,6 +227,48 @@ def test_import_service_stops_when_manual_confirmation_cancelled(tmp_path: Path)
     assert not (tmp_path / "项目要求" / "项目采购需求.md").exists()
 
 
+def test_import_service_keeps_section_saved_before_manual_confirmation_cancel(tmp_path: Path):
+    source = tmp_path / "tender.docx"
+    source.write_text("fake", encoding="utf-8")
+    conversion = type("Conversion", (), {"output_dir": tmp_path / ".bid_writer" / "imports" / "import-test"})()
+    extraction = TenderSectionExtraction(
+        requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "算法需求", "r1", "r2", 0.92),
+        scoring=TenderExtractionResult("scoring_criteria", "评分标准", "算法评分", "s1", "s2", 0.90),
+    )
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "import-test",
+    )
+
+    def confirm_sections(**kwargs):
+        selection = ManualTenderSectionSelection(
+            "bid_requirements",
+            "# 项目采购需求\n\n已经存入的需求",
+            None,
+            None,
+            manually_adjusted=True,
+        )
+        kwargs["save_section"](selection)
+        return ManualTenderConfirmationResult(requirements=selection, scoring=None, cancelled=True)
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path,
+        confirm_overwrite=lambda _path: True,
+        confirm_sections=confirm_sections,
+    )
+
+    requirements_path = tmp_path / "项目要求" / "项目采购需求.md"
+    scoring_path = tmp_path / "项目要求" / "评分标准.md"
+    assert result.cancelled is True
+    assert result.requirements_path == requirements_path
+    assert result.scoring_path is None
+    assert requirements_path.read_text(encoding="utf-8") == "# 项目采购需求\n\n已经存入的需求\n"
+    assert not scoring_path.exists()
+    assert requirements_path in result.created_paths
+
+
 def test_import_service_allows_manual_completion_when_extractor_misses_sections(tmp_path: Path):
     source = tmp_path / "tender.docx"
     source.write_text("fake", encoding="utf-8")
