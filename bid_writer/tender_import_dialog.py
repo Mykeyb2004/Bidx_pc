@@ -55,6 +55,10 @@ def build_confirmation_status(
     return "\n".join(parts)
 
 
+def can_expand_selection(selection: ManualTenderSectionSelection | None) -> bool:
+    return selection is not None and selection.start_block_id is not None and selection.end_block_id is not None
+
+
 class ManualTenderSectionConfirmDialog(tk.Toplevel):
     section_order = ("bid_requirements", "scoring_criteria")
 
@@ -134,8 +138,10 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.configure(yscrollcommand=source_scroll.set)
         self.source_text.grid(row=1, column=0, sticky="nsew")
         source_scroll.grid(row=1, column=1, sticky="ns")
+        self.source_text.configure(state="normal")
         self.source_text.insert("1.0", self.document.markdown)
         self.source_text.tag_configure("current_selection", background="#cfe8ff")
+        self.source_text.configure(state="disabled")
 
     def _configure_rendered_tags(self) -> None:
         self.rendered_text.tag_configure("heading", font=("TkDefaultFont", 12, "bold"), spacing1=8, spacing3=4)
@@ -186,27 +192,25 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
     def _current_section_key(self) -> str:
         return self.section_order[self.current_index]
 
-    def _current_source_markdown(self) -> str:
+    def _current_source_selection(self) -> str:
         try:
             selected = self.source_text.get("sel.first", "sel.last").strip()
         except tk.TclError:
-            selected = ""
-        if selected:
-            return selected
-        selection = self.selections[self._current_section_key()]
-        if selection is None:
             return ""
-        return selection_to_markdown(self.document, selection)
+        return selected
 
     def _apply_source_selection(self, selection: ManualTenderSectionSelection | None) -> None:
+        self.source_text.configure(state="normal")
         self.source_text.tag_remove("current_selection", "1.0", "end")
         self.source_text.tag_remove("sel", "1.0", "end")
         self._applied_source_selection_range = None
         if selection is None:
             self.source_text.see("1.0")
+            self.source_text.configure(state="disabled")
             return
         range_start, range_end = self._selection_char_range(selection)
         if range_start is None or range_end is None:
+            self.source_text.configure(state="disabled")
             return
         start_index = f"1.0+{range_start}c"
         end_index = f"1.0+{range_end}c"
@@ -215,6 +219,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.mark_set("insert", start_index)
         self.source_text.see(start_index)
         self._applied_source_selection_range = (range_start, range_end)
+        self.source_text.configure(state="disabled")
 
     def _selection_char_range(self, selection: ManualTenderSectionSelection) -> tuple[int | None, int | None]:
         if selection.start_block_id and selection.end_block_id:
@@ -243,7 +248,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             self._update_status(blocking)
             messagebox.showwarning("选区不能为空", blocking[0], parent=self)
             return
-        if warnings and not messagebox.askyesno("确认选区", "\n".join(warnings), parent=self):
+        if warnings and not messagebox.askyesno("确认选区", "\n".join([*warnings, "是否继续存入？"]), parent=self):
             self._update_status(warnings)
             return
 
@@ -271,10 +276,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.destroy()
 
     def _selection_for_save(self, section_key: str) -> tuple[str, bool]:
-        try:
-            selected = self.source_text.get("sel.first", "sel.last").strip()
-        except tk.TclError:
-            selected = ""
+        selected = self._current_source_selection()
         if selected:
             return selected, self._source_selection_changed()
         selection = self.selections[section_key]
@@ -309,25 +311,11 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
     def _expand_current(self, *, previous: bool) -> None:
         section_key = self._current_section_key()
         selection = self.selections[section_key]
-        if selection is None:
-            first_block_id = self.document.ordered_block_ids[0] if self.document.ordered_block_ids else None
-            fallback = ManualTenderSectionSelection(
-                section_key=section_key,
-                markdown="",
-                start_block_id=first_block_id,
-                end_block_id=first_block_id,
-                manually_adjusted=True,
-            )
-            self.selections[section_key] = ManualTenderSectionSelection(
-                section_key=section_key,
-                markdown=selection_to_markdown(self.document, fallback),
-                start_block_id=first_block_id,
-                end_block_id=first_block_id,
-                manually_adjusted=True,
-            )
-        else:
-            expander = expand_selection_to_previous_block if previous else expand_selection_to_next_block
-            self.selections[section_key] = expander(self.document, selection)
+        if not can_expand_selection(selection):
+            messagebox.showinfo("需要手动选择", "未自动定位当前章节，请先在源码区手动选择文本。", parent=self)
+            return
+        expander = expand_selection_to_previous_block if previous else expand_selection_to_next_block
+        self.selections[section_key] = expander(self.document, selection)
         self._render_blocks()
         self._apply_source_selection(self.selections[section_key])
         self._update_status()

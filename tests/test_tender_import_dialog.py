@@ -4,6 +4,7 @@ from bid_writer.tender_import_dialog import (
     SECTION_LABELS,
     build_confirmation_status,
     build_initial_section_selection,
+    can_expand_selection,
     build_low_confidence_preview,
     confirm_extracted_sections_preview,
 )
@@ -86,6 +87,12 @@ def test_build_confirmation_status_includes_warnings():
 
     assert "评分标准" in status
     assert "可能不是评分标准" in status
+
+
+def test_can_expand_selection_requires_block_backed_selection():
+    assert can_expand_selection(None) is False
+    assert can_expand_selection(ManualTenderSectionSelection("bid_requirements", "手选", None, None, True)) is False
+    assert can_expand_selection(ManualTenderSectionSelection("bid_requirements", "", "r1", "r2", False)) is True
 
 
 def test_low_confidence_preview_includes_confidence_and_excerpt():
