@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from tkinter import messagebox
 
-from .tender_import_models import TenderExtractionResult, TenderSectionExtraction
+from .tender_import_models import (
+    ManualTenderConfirmationResult,
+    ManualTenderSectionSelection,
+    TenderExtractionResult,
+    TenderSectionExtraction,
+)
 
 
 def build_low_confidence_preview(extraction: TenderSectionExtraction, *, max_chars: int = 420) -> str:
@@ -25,6 +30,35 @@ def confirm_low_confidence(parent, extraction: TenderSectionExtraction) -> bool:
         "确认导入",
         build_low_confidence_preview(extraction),
         parent=parent,
+    )
+
+
+def confirm_extracted_sections_preview(
+    parent,
+    *,
+    extraction: TenderSectionExtraction,
+    **_kwargs,
+) -> ManualTenderConfirmationResult:
+    if not extraction.is_complete:
+        return ManualTenderConfirmationResult(cancelled=True)
+    if not confirm_low_confidence(parent, extraction):
+        return ManualTenderConfirmationResult(cancelled=True)
+    return ManualTenderConfirmationResult(
+        requirements=ManualTenderSectionSelection(
+            section_key="bid_requirements",
+            markdown=extraction.requirements.markdown,
+            start_block_id=extraction.requirements.start_block_id,
+            end_block_id=extraction.requirements.end_block_id,
+            manually_adjusted=False,
+        ),
+        scoring=ManualTenderSectionSelection(
+            section_key="scoring_criteria",
+            markdown=extraction.scoring.markdown,
+            start_block_id=extraction.scoring.start_block_id,
+            end_block_id=extraction.scoring.end_block_id,
+            manually_adjusted=False,
+        ),
+        cancelled=False,
     )
 
 

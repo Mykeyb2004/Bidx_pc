@@ -6,6 +6,10 @@ import pytest
 
 from bid_writer.gui import ensure_tk_runtime
 from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS
+from bid_writer.tender_import_models import (
+    ManualTenderConfirmationResult,
+    ManualTenderSectionSelection,
+)
 
 
 class StubVar:
@@ -364,6 +368,8 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
 
     class FakeService:
         def import_document(self, **kwargs):
+            assert "confirm_sections" in kwargs
+            assert "confirm_" + "low_confidence" not in kwargs
             report.parent.mkdir(parents=True)
             report.write_text("{}", encoding="utf-8")
             converted.write_text("converted", encoding="utf-8")
@@ -373,7 +379,13 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
 
     monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
     monkeypatch.setattr("bid_writer.new_config_wizard.TenderImportService", lambda: FakeService())
-    monkeypatch.setattr("bid_writer.new_config_wizard.confirm_low_confidence", lambda _parent, _extraction: True)
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.confirm_extracted_sections_preview",
+        lambda _parent, **_kwargs: ManualTenderConfirmationResult(
+            requirements=ManualTenderSectionSelection("bid_requirements", "需求", "r1", "r2", False),
+            scoring=ManualTenderSectionSelection("scoring_criteria", "评分", "s1", "s2", False),
+        ),
+    )
     dialog._sync_fields_from_state = lambda: synced.append(True)
 
     NewConfigWizardDialog._run_import(dialog)

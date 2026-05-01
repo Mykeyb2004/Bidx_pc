@@ -23,7 +23,7 @@ from bid_writer.new_config_flow import (
     register_created_path,
     should_copy_source_file,
 )
-from bid_writer.tender_import_dialog import confirm_low_confidence
+from bid_writer.tender_import_dialog import confirm_extracted_sections_preview
 from bid_writer.tender_import_service import TenderImportError, TenderImportService
 
 
@@ -613,7 +613,7 @@ class NewConfigWizardDialog(tk.Toplevel):
                 project_root=self.state.project_root,
                 import_dir=self.state.import_dir,
                 confirm_overwrite=self._confirm_overwrite,
-                confirm_low_confidence=lambda extraction: confirm_low_confidence(self, extraction),
+                confirm_sections=lambda **kwargs: confirm_extracted_sections_preview(self, **kwargs),
             )
         except TenderImportError as exc:
             self.import_status_var.set("导入失败，可手动填写资料文件。")

@@ -3,6 +3,10 @@ from types import SimpleNamespace
 
 from bid_writer import config_editor_dialog
 from bid_writer.config_editor_dialog import ConfigEditorDialog
+from bid_writer.tender_import_models import (
+    ManualTenderConfirmationResult,
+    ManualTenderSectionSelection,
+)
 
 
 class StubVar:
@@ -61,6 +65,8 @@ def test_import_tender_document_uses_single_file_dialog(monkeypatch, tmp_path: P
 
     class FakeService:
         def import_document(self, **kwargs):
+            assert "confirm_sections" in kwargs
+            assert "confirm_" + "low_confidence" not in kwargs
             calls.update(kwargs)
             return SimpleNamespace(
                 relative_requirements_path="./项目要求/项目采购需求.md",
@@ -73,7 +79,14 @@ def test_import_tender_document_uses_single_file_dialog(monkeypatch, tmp_path: P
     monkeypatch.setattr(config_editor_dialog.filedialog, "askopenfilename", lambda **_kwargs: str(source))
     monkeypatch.setattr(config_editor_dialog, "TenderImportService", lambda: FakeService())
     monkeypatch.setattr(config_editor_dialog.messagebox, "showinfo", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(config_editor_dialog, "confirm_low_confidence", lambda _parent, _extraction: True)
+    monkeypatch.setattr(
+        config_editor_dialog,
+        "confirm_extracted_sections_preview",
+        lambda _parent, **_kwargs: ManualTenderConfirmationResult(
+            requirements=ManualTenderSectionSelection("bid_requirements", "需求", "r1", "r2", False),
+            scoring=ManualTenderSectionSelection("scoring_criteria", "评分", "s1", "s2", False),
+        ),
+    )
     dialog._apply_tender_import_result = lambda result: calls.setdefault("applied", result)
 
     ConfigEditorDialog._import_tender_document(dialog)

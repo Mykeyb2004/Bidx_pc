@@ -29,7 +29,7 @@ from .gui import (
     style_canvas_widget,
     style_text_widget,
 )
-from .tender_import_dialog import confirm_low_confidence
+from .tender_import_dialog import confirm_extracted_sections_preview
 from .tender_import_service import TenderImportError, TenderImportService
 
 
@@ -926,7 +926,7 @@ class ConfigEditorDialog(tk.Toplevel):
                 source_path=Path(selected),
                 project_root=self._current_project_root(),
                 confirm_overwrite=self._confirm_tender_overwrite,
-                confirm_low_confidence=lambda extraction: confirm_low_confidence(self, extraction),
+                confirm_sections=lambda **kwargs: confirm_extracted_sections_preview(self, **kwargs),
             )
         except TenderImportError as exc:
             messagebox.showerror("导入失败", str(exc), parent=self)
