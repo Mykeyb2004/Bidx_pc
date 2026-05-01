@@ -1,4 +1,4 @@
-from bid_writer.tender_import_models import ConvertedBlock, TenderExtractionResult
+from bid_writer.tender_import_models import ConvertedBlock, ManualTenderSectionSelection, TenderExtractionResult
 from bid_writer.tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
@@ -43,6 +43,20 @@ def test_document_joins_blocks_and_records_ranges():
     assert document.block_ranges["r1"].start > document.block_ranges["h1"].end
     assert document.ordered_block_ids == ["h1", "r1", "r2", "h2", "s1"]
 
+    unsorted_document = TenderSelectionDocument.from_blocks(
+        [
+            _block("b2", "正文", 2),
+            _block("b1", "## 标题", 1, "heading", 2),
+        ]
+    )
+
+    assert unsorted_document.markdown == "## 标题\n\n正文"
+    assert unsorted_document.ordered_block_ids == ["b1", "b2"]
+    assert unsorted_document.block_ranges["b1"].start == 0
+    assert unsorted_document.block_ranges["b1"].end == 5
+    assert unsorted_document.block_ranges["b2"].start == 7
+    assert unsorted_document.block_ranges["b2"].end == 9
+
 
 def test_build_default_selection_maps_extraction_block_ids():
     document = _document()
@@ -84,8 +98,10 @@ def test_expand_selection_to_adjacent_blocks():
 
     assert previous.start_block_id == "h1"
     assert previous.end_block_id == "r1"
+    assert previous.manually_adjusted is True
     assert expanded.start_block_id == "h1"
     assert expanded.end_block_id == "r2"
+    assert expanded.manually_adjusted is True
 
 
 def test_selection_to_markdown_uses_character_range():
@@ -100,6 +116,27 @@ def test_selection_to_markdown_uses_character_range():
     assert markdown.startswith("## 评分标准")
     assert "10分" in markdown
     assert "项目采购需求" not in markdown
+
+
+def test_selection_to_markdown_falls_back_to_manual_markdown_without_valid_blocks():
+    document = _document()
+    selection = ManualTenderSectionSelection(
+        section_key="bid_requirements",
+        markdown="手动拖选内容",
+        start_block_id=None,
+        end_block_id=None,
+        manually_adjusted=True,
+    )
+    missing_block_selection = ManualTenderSectionSelection(
+        section_key="bid_requirements",
+        markdown="手动拖选内容",
+        start_block_id="missing",
+        end_block_id="r1",
+        manually_adjusted=True,
+    )
+
+    assert selection_to_markdown(document, selection) == "手动拖选内容"
+    assert selection_to_markdown(document, missing_block_selection) == "手动拖选内容"
 
 
 def test_validate_selection_markdown_warns_for_empty_short_and_suspicious_content():
