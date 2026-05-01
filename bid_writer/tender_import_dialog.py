@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import re
 import tkinter as tk
@@ -18,6 +19,7 @@ from .tender_selection_model import (
     TenderSelectionDocument,
     TenderSourceHint,
     build_source_hint,
+    source_hint_to_markdown,
     validate_selection_markdown,
 )
 from .tender_section_boundary_config import load_boundary_config
@@ -74,6 +76,8 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         parent,
         conversion: TenderConversionResult,
         extraction: TenderSectionExtraction,
+        *,
+        save_section: Callable[[ManualTenderSectionSelection], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.title("确认招标文件章节")
@@ -88,6 +92,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.confirmed: dict[str, ManualTenderSectionSelection] = {}
         self.current_index = 0
         self.result = ManualTenderConfirmationResult(cancelled=True)
+        self.save_section = save_section
         self.status_var = tk.StringVar()
         self._applied_source_selection_range: tuple[int, int] | None = None
         self._major_navigation_ranges, self._fallback_navigation_ranges = _build_source_navigation_ranges(self.document)
@@ -183,7 +188,14 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         return start_offset, end_offset
 
     def _use_source_selection(self) -> None:
-        return
+        selected = self._current_source_selection()
+        if not selected:
+            messagebox.showinfo("需要手动选择", "请先在源文区选择文本。", parent=self)
+            return
+        self.target_text.delete("1.0", "end")
+        self.target_text.insert("1.0", selected)
+        self.target_text.focus_set()
+        self._update_status()
 
     def _clear_target_editor(self) -> None:
         self.target_text.delete("1.0", "end")
@@ -223,7 +235,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
 
     def _save_current_section(self) -> None:
         section_key = self._current_section_key()
-        markdown = self._selection_for_save()
+        markdown = self._target_editor_markdown()
         warnings = validate_selection_markdown(section_key, markdown)
         blocking = [warning for warning in warnings if "不能为空" in warning]
         if blocking:
@@ -234,13 +246,17 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             self._update_status(warnings)
             return
 
+        hint = self.source_hints[section_key]
+        matches_hint = self._target_matches_source_hint(section_key, markdown)
         selection = ManualTenderSectionSelection(
             section_key=section_key,
-            markdown=markdown.strip(),
-            start_block_id=None,
-            end_block_id=None,
-            manually_adjusted=True,
+            markdown=markdown,
+            start_block_id=hint.start_block_id if hint is not None and matches_hint else None,
+            end_block_id=hint.end_block_id if hint is not None and matches_hint else None,
+            manually_adjusted=not matches_hint,
         )
+        if not self._persist_selection(selection):
+            return
         self.confirmed[section_key] = selection
 
         if self.current_index < len(self.section_order) - 1:
@@ -255,8 +271,24 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         )
         self.destroy()
 
-    def _selection_for_save(self) -> str:
+    def _target_editor_markdown(self) -> str:
         return self.target_text.get("1.0", "end-1c").strip()
+
+    def _target_matches_source_hint(self, section_key: str, markdown: str) -> bool:
+        hint = self.source_hints[section_key]
+        if hint is None:
+            return False
+        return markdown.strip() == source_hint_to_markdown(self.document, hint).strip()
+
+    def _persist_selection(self, selection: ManualTenderSectionSelection) -> bool:
+        if self.save_section is None:
+            return True
+        try:
+            self.save_section(selection)
+        except Exception as exc:
+            messagebox.showerror("写入失败", str(exc), parent=self)
+            return False
+        return True
 
     def _cancel(self) -> None:
         self.result = ManualTenderConfirmationResult(
@@ -566,9 +598,10 @@ def confirm_tender_sections(
     *,
     conversion: TenderConversionResult,
     extraction: TenderSectionExtraction,
+    save_section: Callable[[ManualTenderSectionSelection], None] | None = None,
     **_kwargs,
 ) -> ManualTenderConfirmationResult:
-    dialog = ManualTenderSectionConfirmDialog(parent, conversion, extraction)
+    dialog = ManualTenderSectionConfirmDialog(parent, conversion, extraction, save_section=save_section)
     parent.wait_window(dialog)
     return dialog.result
 

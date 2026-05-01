@@ -223,6 +223,80 @@ def test_manual_dialog_starts_with_empty_target_editor_and_source_hint(monkeypat
         root.destroy()
 
 
+def test_manual_dialog_use_selection_replaces_target_editor():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        dialog._use_source_selection()
+
+        assert "项目采购需求" in dialog.target_text.get("1.0", "end-1c")
+        assert "服务内容" in dialog.target_text.get("1.0", "end-1c")
+
+        dialog._apply_source_char_selection(0, len("## 项目采购需求"))
+        dialog._use_source_selection()
+
+        assert dialog.target_text.get("1.0", "end-1c") == "## 项目采购需求"
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_saves_edited_target_editor_content():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        saved = []
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction, save_section=saved.append)
+
+        dialog._use_source_selection()
+        dialog.target_text.insert("end", "\n\n人工补充说明。")
+        dialog._save_current_section()
+        dialog._use_source_selection()
+        dialog.target_text.delete("1.0", "end")
+        dialog.target_text.insert("1.0", "## 评分标准\n\n| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |\n\n人工调整评分。")
+        dialog._save_current_section()
+
+        assert dialog.result.cancelled is False
+        assert dialog.result.requirements is not None
+        assert "人工补充说明" in dialog.result.requirements.markdown
+        assert dialog.result.requirements.start_block_id is None
+        assert dialog.result.requirements.end_block_id is None
+        assert dialog.result.requirements.manually_adjusted is True
+        assert dialog.result.scoring is not None
+        assert "人工调整评分" in dialog.result.scoring.markdown
+        assert dialog.result.scoring.manually_adjusted is True
+        assert [item.section_key for item in saved] == ["bid_requirements", "scoring_criteria"]
+        assert "人工补充说明" in saved[0].markdown
+        assert "人工调整评分" in saved[1].markdown
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
 def test_manual_dialog_chapter_buttons_move_source_selection_by_detected_boundaries():
     ensure_tk_runtime()
     try:
