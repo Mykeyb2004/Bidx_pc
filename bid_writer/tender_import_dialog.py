@@ -40,6 +40,11 @@ def confirm_extracted_sections_preview(
     **_kwargs,
 ) -> ManualTenderConfirmationResult:
     if not extraction.is_complete:
+        messagebox.showwarning(
+            "需要人工确认",
+            "未能自动定位完整的项目采购需求和评分标准。后续人工确认窗口将支持手动选择，请暂时手动整理资料文件。",
+            parent=parent,
+        )
         return ManualTenderConfirmationResult(cancelled=True)
     if not confirm_low_confidence(parent, extraction):
         return ManualTenderConfirmationResult(cancelled=True)

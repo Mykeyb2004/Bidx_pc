@@ -105,8 +105,21 @@ class TenderImportService:
             )
 
         target_dir.mkdir(parents=True, exist_ok=True)
-        self._write_target(requirements_path, confirmation.requirements.markdown, confirm_overwrite)
-        self._write_target(scoring_path, confirmation.scoring.markdown, confirm_overwrite)
+        requirements_backup = self._plan_target_write(requirements_path, confirm_overwrite)
+        scoring_backup = self._plan_target_write(scoring_path, confirm_overwrite)
+        requirements_written_backup = self._write_planned_target(
+            requirements_path,
+            confirmation.requirements.markdown,
+            requirements_backup,
+        )
+        scoring_written_backup = self._write_planned_target(
+            scoring_path,
+            confirmation.scoring.markdown,
+            scoring_backup,
+        )
+        backup_paths = tuple(
+            path for path in (requirements_written_backup, scoring_written_backup) if path is not None
+        )
         return TenderImportResult(
             requirements_path=requirements_path,
             scoring_path=scoring_path,
@@ -118,6 +131,7 @@ class TenderImportService:
             created_paths=(
                 *self._conversion_created_paths(conversion, import_dir),
                 report_path,
+                *backup_paths,
                 requirements_path,
                 scoring_path,
             ),
@@ -137,15 +151,24 @@ class TenderImportService:
                 created_paths.append(normalized)
         return tuple(created_paths)
 
-    def _write_target(
+    def _plan_target_write(
         self,
         path: Path,
-        content: str,
         confirm_overwrite: Callable[[Path], bool],
-    ) -> None:
+    ) -> Path | None:
         if path.exists() and path.read_text(encoding="utf-8").strip():
             if not confirm_overwrite(path):
                 raise TenderImportError(f"用户取消覆盖：{path}")
-            backup = path.with_suffix(path.suffix + ".bak")
-            backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            return path.with_suffix(path.suffix + ".bak")
+        return None
+
+    def _write_planned_target(
+        self,
+        path: Path,
+        content: str,
+        backup_path: Path | None,
+    ) -> Path | None:
+        if backup_path is not None:
+            backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         path.write_text(content.strip() + "\n", encoding="utf-8")
+        return backup_path

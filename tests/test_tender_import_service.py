@@ -145,7 +145,7 @@ def test_import_service_backs_up_existing_nonempty_files(tmp_path: Path):
         import_id_factory=lambda: "import-test",
     )
 
-    service.import_document(
+    result = service.import_document(
         source_path=source,
         project_root=tmp_path,
         confirm_overwrite=lambda path: path.name == "项目采购需求.md",
@@ -154,6 +154,45 @@ def test_import_service_backs_up_existing_nonempty_files(tmp_path: Path):
 
     assert (target_dir / "项目采购需求.md.bak").read_text(encoding="utf-8") == "旧需求"
     assert existing.read_text(encoding="utf-8") == "# 项目采购需求\n\n新需求\n"
+    assert target_dir / "项目采购需求.md.bak" in result.created_paths
+
+
+def test_import_service_confirms_all_overwrites_before_writing_targets(tmp_path: Path):
+    source = tmp_path / "tender.docx"
+    source.write_text("fake", encoding="utf-8")
+    target_dir = tmp_path / "项目要求"
+    target_dir.mkdir()
+    requirements = target_dir / "项目采购需求.md"
+    scoring = target_dir / "评分标准.md"
+    requirements.write_text("旧需求", encoding="utf-8")
+    scoring.write_text("旧评分", encoding="utf-8")
+    conversion = type("Conversion", (), {"output_dir": tmp_path / ".bid_writer" / "imports" / "import-test"})()
+    extraction = TenderSectionExtraction(
+        requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "需求", "r1", "r1", 0.92),
+        scoring=TenderExtractionResult("scoring_criteria", "评分标准", "评分", "s1", "s1", 0.92),
+    )
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "import-test",
+    )
+
+    try:
+        service.import_document(
+            source_path=source,
+            project_root=tmp_path,
+            confirm_overwrite=lambda path: path.name == "项目采购需求.md",
+            confirm_sections=lambda **_kwargs: _confirmation("# 项目采购需求\n\n新需求\n", "# 评分标准\n\n新评分\n"),
+        )
+    except TenderImportError as exc:
+        assert str(exc) == f"用户取消覆盖：{scoring}"
+    else:
+        raise AssertionError("TenderImportError was not raised")
+
+    assert requirements.read_text(encoding="utf-8") == "旧需求"
+    assert scoring.read_text(encoding="utf-8") == "旧评分"
+    assert not (target_dir / "项目采购需求.md.bak").exists()
+    assert not (target_dir / "评分标准.md.bak").exists()
 
 
 def test_import_service_stops_when_manual_confirmation_cancelled(tmp_path: Path):
