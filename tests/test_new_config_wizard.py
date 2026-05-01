@@ -416,23 +416,43 @@ def test_run_import_reports_manual_confirmation_cancelled(monkeypatch, tmp_path:
     source.write_text("fake", encoding="utf-8")
     dialog.state.source_path = source
     dialog.vars["source_path"].set(str(source))
+    created_artifact = tmp_path / ".bid_writer" / "imports" / "pending" / "converted.md"
+    confirm_calls = []
 
     class FakeResult:
         cancelled = True
         requirements_path = None
         scoring_path = None
         import_dir = tmp_path / ".bid_writer" / "imports" / "pending"
-        created_paths = ()
+        created_paths = (created_artifact,)
 
     class FakeService:
         def import_document(self, **kwargs):
+            confirmation = kwargs["confirm_sections"](
+                conversion=SimpleNamespace(blocks=[]),
+                extraction=SimpleNamespace(),
+                requirements_path=tmp_path / "项目要求" / "项目采购需求.md",
+                scoring_path=tmp_path / "项目要求" / "评分标准.md",
+            )
+            assert confirmation.cancelled is True
+            created_artifact.parent.mkdir(parents=True)
+            created_artifact.write_text("converted", encoding="utf-8")
             return FakeResult()
 
     monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
     monkeypatch.setattr("bid_writer.new_config_wizard.TenderImportService", lambda: FakeService())
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.confirm_tender_sections",
+        lambda _parent, **_kwargs: confirm_calls.append(_kwargs)
+        or ManualTenderConfirmationResult(cancelled=True),
+    )
 
     NewConfigWizardDialog._run_import(dialog)
 
+    assert confirm_calls
     assert "已取消确认" in dialog.import_status_var.get()
     assert dialog.state.requirements_path is None
     assert dialog.state.scoring_path is None
+    assert dialog.vars["requirements_path"].get() == ""
+    assert dialog.vars["scoring_path"].get() == ""
+    assert created_artifact in dialog.state.created_paths

@@ -628,6 +628,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         if result.cancelled:
             self.state.requirements_path = None
             self.state.scoring_path = None
+            self._sync_fields_from_state()
             self.import_status_var.set("已取消确认，未完成资料写入。")
             return
 
