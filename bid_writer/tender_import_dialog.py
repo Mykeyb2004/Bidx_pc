@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import re
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -18,12 +20,23 @@ from .tender_selection_model import (
     selection_to_markdown,
     validate_selection_markdown,
 )
+from .tender_section_boundary_config import load_boundary_config
+from .tender_section_boundary_detector import detect_boundary_matches
 
 
 SECTION_LABELS = {
     "bid_requirements": "项目采购需求",
     "scoring_criteria": "评分标准",
 }
+
+
+@dataclass(frozen=True)
+class _SourceNavigationRange:
+    kind: str
+    start_block_id: str
+    end_block_id: str
+    start: int
+    end: int
 
 
 def build_initial_section_selection(
@@ -77,6 +90,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.result = ManualTenderConfirmationResult(cancelled=True)
         self.status_var = tk.StringVar()
         self._applied_source_selection_range: tuple[int, int] | None = None
+        self._major_navigation_ranges, self._fallback_navigation_ranges = _build_source_navigation_ranges(self.document)
 
         self._create_widgets()
         self._load_current_section()
@@ -193,6 +207,16 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             return ""
         return selected
 
+    def _current_source_char_range(self) -> tuple[int, int] | None:
+        try:
+            start = self.source_text.index("sel.first")
+            end = self.source_text.index("sel.last")
+        except tk.TclError:
+            return None
+        start_offset = len(self.source_text.get("1.0", start))
+        end_offset = len(self.source_text.get("1.0", end))
+        return start_offset, end_offset
+
     def _apply_source_selection(self, selection: ManualTenderSectionSelection | None) -> None:
         self.source_text.configure(state="normal")
         self.source_text.tag_remove("current_selection", "1.0", "end")
@@ -307,6 +331,22 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
 
     def _move_current(self, *, previous: bool) -> None:
         section_key = self._current_section_key()
+        char_range = self._current_source_char_range()
+        target = self._adjacent_navigation_range(char_range, previous=previous)
+        if target is not None:
+            self._apply_source_char_selection(target.start, target.end)
+            selected = self._current_source_selection()
+            self.selections[section_key] = ManualTenderSectionSelection(
+                section_key=section_key,
+                markdown=selected,
+                start_block_id=None,
+                end_block_id=None,
+                manually_adjusted=True,
+            )
+            self._render_blocks()
+            self._update_status()
+            return
+
         line_range = self._current_source_line_range()
         if line_range is None:
             messagebox.showinfo("需要手动选择", "请先在源码区选择文本。", parent=self)
@@ -330,6 +370,43 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         )
         self._render_blocks()
         self._update_status()
+
+    def _adjacent_navigation_range(
+        self,
+        current_range: tuple[int, int] | None,
+        *,
+        previous: bool,
+    ) -> _SourceNavigationRange | None:
+        if current_range is None:
+            return None
+        ranges = self._navigation_ranges_for_current_selection(current_range)
+        if not ranges:
+            return None
+        current_index = _current_navigation_index(ranges, current_range)
+        if current_index is None:
+            return None
+        target_index = current_index - 1 if previous else current_index + 1
+        if target_index < 0 or target_index >= len(ranges):
+            return None
+        return ranges[target_index]
+
+    def _navigation_ranges_for_current_selection(
+        self,
+        current_range: tuple[int, int],
+    ) -> tuple[_SourceNavigationRange, ...]:
+        for ranges in (self._major_navigation_ranges, self._fallback_navigation_ranges):
+            if any(item.start == current_range[0] and item.end == current_range[1] for item in ranges):
+                return ranges
+        fallback_containing = [
+            item
+            for item in self._fallback_navigation_ranges
+            if item.start <= current_range[0] and current_range[1] <= item.end
+        ]
+        if fallback_containing:
+            return self._fallback_navigation_ranges
+        if self._major_navigation_ranges:
+            return self._major_navigation_ranges
+        return self._fallback_navigation_ranges
 
     def _current_source_line_range(self) -> tuple[int, int] | None:
         try:
@@ -360,6 +437,106 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.see(start_index)
         self._applied_source_selection_range = None
         self.source_text.configure(state="disabled")
+
+    def _apply_source_char_selection(self, start: int, end: int) -> None:
+        start_index = f"1.0+{start}c"
+        end_index = f"1.0+{end}c"
+        self.source_text.configure(state="normal")
+        self.source_text.tag_remove("current_selection", "1.0", "end")
+        self.source_text.tag_remove("sel", "1.0", "end")
+        self.source_text.tag_add("current_selection", start_index, end_index)
+        self.source_text.tag_add("sel", start_index, end_index)
+        self.source_text.mark_set("insert", start_index)
+        self.source_text.see(start_index)
+        self._applied_source_selection_range = None
+        self.source_text.configure(state="disabled")
+
+
+def _build_source_navigation_ranges(
+    document: TenderSelectionDocument,
+) -> tuple[tuple[_SourceNavigationRange, ...], tuple[_SourceNavigationRange, ...]]:
+    config = load_boundary_config()
+    matches = [
+        match
+        for match in detect_boundary_matches(document.blocks, config)
+        if _is_useful_navigation_match(match.normalized_text, match.rule_name, match.title, match.ordinal)
+    ]
+    major_ranges = _source_navigation_ranges_for_kind(document, matches, kind="major")
+    fallback_ranges = _source_navigation_ranges_for_kind(document, matches, kind="fallback")
+    return major_ranges, fallback_ranges
+
+
+def _source_navigation_ranges_for_kind(
+    document: TenderSelectionDocument,
+    matches,
+    *,
+    kind: str,
+) -> tuple[_SourceNavigationRange, ...]:
+    blocks = document.blocks
+    kind_matches = sorted([match for match in matches if match.kind == kind], key=lambda item: item.block_index)
+    ranges: list[_SourceNavigationRange] = []
+    for match in kind_matches:
+        next_same = _next_match_index(kind_matches, match.block_index, len(blocks))
+        if kind == "fallback":
+            major_matches = [item for item in matches if item.kind == "major"]
+            next_major = _next_match_index(major_matches, match.block_index, len(blocks))
+            end_index = min(next_same, next_major)
+        else:
+            end_index = next_same
+        if end_index <= match.block_index:
+            continue
+        start_block = blocks[match.block_index]
+        end_block = blocks[end_index - 1]
+        start_range = document.block_ranges.get(start_block.block_id)
+        end_range = document.block_ranges.get(end_block.block_id)
+        if start_range is None or end_range is None:
+            continue
+        ranges.append(
+            _SourceNavigationRange(
+                kind=kind,
+                start_block_id=start_block.block_id,
+                end_block_id=end_block.block_id,
+                start=start_range.start,
+                end=end_range.end,
+            )
+        )
+    return tuple(ranges)
+
+
+def _next_match_index(matches, start_index: int, default: int) -> int:
+    later = [match.block_index for match in matches if match.block_index > start_index]
+    return min(later) if later else default
+
+
+def _current_navigation_index(
+    ranges: tuple[_SourceNavigationRange, ...],
+    current_range: tuple[int, int],
+) -> int | None:
+    for index, item in enumerate(ranges):
+        if item.start == current_range[0] and item.end == current_range[1]:
+            return index
+    overlaps = [
+        (index, _overlap_size(item.start, item.end, current_range[0], current_range[1]))
+        for index, item in enumerate(ranges)
+    ]
+    overlaps = [(index, size) for index, size in overlaps if size > 0]
+    if not overlaps:
+        return None
+    return max(overlaps, key=lambda item: item[1])[0]
+
+
+def _overlap_size(left_start: int, left_end: int, right_start: int, right_end: int) -> int:
+    return max(0, min(left_end, right_end) - max(left_start, right_start))
+
+
+def _is_useful_navigation_match(normalized_text: str, rule_name: str, title: str, ordinal: str) -> bool:
+    del ordinal
+    text = normalized_text.strip()
+    if not text or re.fullmatch(r"\d+", text):
+        return False
+    if rule_name in {"appendix", "appendix_table"} and not title.strip():
+        return False
+    return True
 
 
 def confirm_tender_sections(

@@ -63,6 +63,40 @@ class _FakeMainWindowForActionLayout:
         self.action_bar = _FakeGridContainer()
 
 
+class _FakeActivationWindow:
+    def __init__(self):
+        self.calls: list[object] = []
+
+    def deiconify(self):
+        self.calls.append("deiconify")
+
+    def lift(self):
+        self.calls.append("lift")
+
+    def update_idletasks(self):
+        self.calls.append("update_idletasks")
+
+    def focus_force(self):
+        self.calls.append("focus_force")
+
+    def attributes(self, *args):
+        self.calls.append(("attributes", args))
+
+    def after(self, delay_ms, callback):
+        self.calls.append(("after", delay_ms))
+        callback()
+
+
+class _FakeStartupActivationWindow:
+    def __init__(self):
+        self.scheduled_delays: list[int] = []
+        self.scheduled_callbacks = []
+
+    def after(self, delay_ms, callback):
+        self.scheduled_delays.append(delay_ms)
+        self.scheduled_callbacks.append(callback)
+
+
 def test_compute_gui_font_delta_keeps_standard_display_unchanged():
     assert _compute_gui_font_delta(screen_width=1366, screen_height=768, dpi=96.0) == 0
 
@@ -133,6 +167,36 @@ def test_action_buttons_align_to_bottom_of_top_controls():
     MainWindow._layout_action_bar(fake_window, "single")
 
     assert fake_window.action_frame.grid_kwargs["sticky"] == "se"
+
+
+def test_activate_window_requests_frontmost_focus_and_releases_topmost():
+    activate_fn = getattr(gui, "_activate_window", None)
+    assert activate_fn is not None
+    fake_window = _FakeActivationWindow()
+
+    activate_fn(fake_window)
+
+    assert fake_window.calls == [
+        "deiconify",
+        "lift",
+        "update_idletasks",
+        "focus_force",
+        ("attributes", ("-topmost", True)),
+        ("after", 200),
+        ("attributes", ("-topmost", False)),
+    ]
+
+
+def test_startup_activation_is_scheduled_after_main_window_setup(monkeypatch):
+    activated = []
+    monkeypatch.setattr(gui, "_activate_window", lambda window: activated.append(window), raising=False)
+    fake_window = _FakeStartupActivationWindow()
+
+    MainWindow._schedule_startup_activation(fake_window)
+
+    assert fake_window.scheduled_delays == [50]
+    fake_window.scheduled_callbacks[0]()
+    assert activated == [fake_window]
 
 
 def test_compute_gui_font_delta_allows_manual_adjustment():

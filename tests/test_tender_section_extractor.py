@@ -254,3 +254,35 @@ def test_extracts_minor_sections_when_both_targets_share_one_major_chapter():
     assert result.scoring.start_block_id == "score_title"
     assert result.scoring.end_block_id == "score_body"
     assert any("同一大章节" in warning for warning in result.warnings)
+
+
+def test_prefers_true_chapter_titles_over_later_references_in_forms():
+    conversion = _conversion(
+        [
+            _heading("chapter1", "第一章 招标公告", 1),
+            _paragraph("notice", "公告正文。", 2),
+            _heading("chapter2", "第二章 采购服务要求", 3),
+            _paragraph("req_body", "本项目服务内容包括调查、分析、成果提交和验收，技术要求详见本章。", 4),
+            _heading("chapter3", "第三章 投标人须知", 5),
+            _heading("scoring_intro", "28.评标原则和评标办法", 6),
+            _paragraph("scoring_intro_body", "评标委员会按照评标办法组织评审。", 7),
+            _heading("chapter4", "第四章 评标方法及评标标准", 8),
+            _table("score_table", "| 评审因素 | 评分标准 | 分值 |\n| --- | --- | --- |\n| 服务方案 | 完整得30分 | 30分 |", 9),
+            _heading("chapter5", "第五章 拟签订的合同文本", 10),
+            _paragraph("contract", "合同正文。", 11),
+            _heading("chapter6", "第六章 投标文件格式", 12),
+            _heading("appendix_form", "5.商务条款偏离表格式(注：按项目需求表具体项目修改)", 13),
+            _table("appendix_table", "| 项目 | 招标文件商务条款要求 |\n| --- | --- |\n| | |", 14),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.requirements is not None
+    assert result.requirements.start_block_id == "chapter2"
+    assert result.requirements.end_block_id == "req_body"
+    assert "商务条款偏离表格式" not in result.requirements.markdown
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "chapter4"
+    assert result.scoring.end_block_id == "score_table"
+    assert "28.评标原则" not in result.scoring.markdown

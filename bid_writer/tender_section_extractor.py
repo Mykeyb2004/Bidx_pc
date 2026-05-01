@@ -24,6 +24,7 @@ from .tender_section_boundary_detector import (
 REQUIREMENT_ALIASES = (
     "项目采购需求",
     "采购需求",
+    "采购服务要求",
     "项目需求",
     "服务需求",
     "技术需求",
@@ -43,6 +44,9 @@ SCORING_ALIASES = (
     "评审方法",
     "评分办法",
     "评分细则",
+    "评标方法",
+    "评标标准",
+    "评标方法及评标标准",
     "综合评分法",
     "详细评审",
     "评审因素",
@@ -160,12 +164,22 @@ def _alias_score(title: str, aliases: tuple[str, ...]) -> tuple[float, str]:
     best_alias = ""
     for alias in aliases:
         alias_norm = _normalize_title(alias)
-        if alias_norm == normalized or alias_norm in normalized:
+        if alias_norm == normalized:
             return 120.0, "exact_alias"
+        if normalized.startswith(alias_norm) or normalized.endswith(alias_norm):
+            best = max(best, 100.0)
+            best_alias = alias
+            continue
+        if alias_norm in normalized:
+            best = max(best, 45.0)
+            best_alias = alias
+            continue
         ratio = float(fuzz.partial_ratio(alias_norm, normalized))
         if ratio > best:
             best = ratio
             best_alias = alias
+    if best >= 100:
+        return 100.0, f"anchored_alias:{best_alias}"
     if best >= 82:
         return 85.0, f"fuzzy_alias:{best_alias}"
     if best >= 68:
@@ -286,10 +300,17 @@ def _is_start_marker_for_key(section_key: str, block: ConvertedBlock) -> bool:
     aliases = REQUIREMENT_ALIASES if section_key == "bid_requirements" else SCORING_ALIASES
     score, _reason = _alias_score(title, aliases)
     if score > 0:
-        return True
+        return block.block_type == "heading" or _looks_like_section_title(title)
     if section_key == "scoring_criteria":
         return "评分" in title and ("分值" in title or "因素" in title or "细则" in title)
     return False
+
+
+def _looks_like_section_title(title: str) -> bool:
+    stripped = title.strip()
+    if len(stripped) > 36:
+        return False
+    return not any(mark in stripped for mark in "，,。；;")
 
 
 def _is_opposite_section_boundary(section_key: str, block: ConvertedBlock) -> bool:

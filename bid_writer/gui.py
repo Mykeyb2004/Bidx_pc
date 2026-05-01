@@ -658,6 +658,42 @@ def _set_centered_window_geometry(window: tk.Misc, width: int, height: int) -> N
     )
 
 
+def _activate_window(window: tk.Misc) -> None:
+    """请求窗口显示到前台并获取焦点。"""
+    try:
+        window.deiconify()
+    except (AttributeError, tk.TclError):
+        pass
+
+    try:
+        window.lift()
+    except (AttributeError, tk.TclError):
+        pass
+
+    try:
+        window.update_idletasks()
+    except (AttributeError, tk.TclError):
+        pass
+
+    try:
+        window.focus_force()
+    except (AttributeError, tk.TclError):
+        pass
+
+    try:
+        window.attributes("-topmost", True)
+
+        def release_topmost() -> None:
+            try:
+                window.attributes("-topmost", False)
+            except tk.TclError:
+                pass
+
+        window.after(200, release_topmost)
+    except (AttributeError, tk.TclError):
+        pass
+
+
 def _compute_screen_size_limit(
     screen_size: Optional[int],
     *,
@@ -1522,6 +1558,7 @@ class MainWindow(tk.Tk):
             self.status_text.set("大纲加载完成")
         else:
             self.load_outline(preserve_tree_view=False, reset_tree_view=True)
+        self._schedule_startup_activation()
 
     def _create_info_item(self, parent, label: str, textvariable: tk.StringVar, padx: tuple[int, int] = (0, 18)):
         """创建顶部信息项"""
@@ -1529,6 +1566,9 @@ class MainWindow(tk.Tk):
         group.pack(side=tk.LEFT, padx=padx)
         ttk.Label(group, text=f"{label}:", style="SummaryLabel.TLabel").pack(side=tk.LEFT)
         ttk.Label(group, textvariable=textvariable, style="SummaryValue.TLabel").pack(side=tk.LEFT, padx=(4, 0))
+
+    def _schedule_startup_activation(self) -> None:
+        self.after(50, lambda: _activate_window(self))
 
     def center_window(self):
         """居中窗口"""

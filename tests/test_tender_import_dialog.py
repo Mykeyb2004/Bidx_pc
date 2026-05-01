@@ -38,12 +38,66 @@ def _conversion() -> TenderConversionResult:
     )
 
 
+def _uneven_chapter_conversion() -> TenderConversionResult:
+    blocks = [
+        ConvertedBlock(
+            "r0",
+            "tender.md",
+            "md",
+            "heading",
+            "## 第一章 项目采购需求",
+            "第一章 项目采购需求",
+            1,
+            heading_level=2,
+            heading_title="第一章 项目采购需求",
+        ),
+        ConvertedBlock("r1", "tender.md", "md", "paragraph", "服务内容包括调查、成果提交和验收。\n技术要求详见本章。", "服务内容包括调查、成果提交和验收。", 2),
+        ConvertedBlock("r2", "tender.md", "md", "paragraph", "服务范围覆盖全县。", "服务范围覆盖全县。", 3),
+        ConvertedBlock("r3", "tender.md", "md", "paragraph", "补充要求第一行。\n补充要求第二行。", "补充要求第一行。", 4),
+        ConvertedBlock(
+            "s0",
+            "tender.md",
+            "md",
+            "heading",
+            "## 第二章 评分标准",
+            "第二章 评分标准",
+            5,
+            heading_level=2,
+            heading_title="第二章 评分标准",
+        ),
+        ConvertedBlock("s1", "tender.md", "md", "table", "| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |", "| 评分项 | 分值 |", 6),
+        ConvertedBlock(
+            "c0",
+            "tender.md",
+            "md",
+            "heading",
+            "## 第三章 合同条款",
+            "第三章 合同条款",
+            7,
+            heading_level=2,
+            heading_title="第三章 合同条款",
+        ),
+        ConvertedBlock("c1", "tender.md", "md", "paragraph", "合同正文。", "合同正文。", 8),
+    ]
+    return TenderConversionResult(
+        source_path=Path("tender.md"),
+        output_dir=Path(".bid_writer/imports/test"),
+        converted_markdown_path=Path(".bid_writer/imports/test/converted.md"),
+        conversion_map_path=Path(".bid_writer/imports/test/conversion_map.json"),
+        blocks=blocks,
+    )
+
+
 def _selected_line_range(text: tk.Text) -> tuple[int, int]:
     start = int(text.index("sel.first").split(".", 1)[0])
     end = int(text.index("sel.last").split(".", 1)[0])
     if text.index("sel.last").split(".", 1)[1] == "0":
         end -= 1
     return start, end
+
+
+def _selected_text(text: tk.Text) -> str:
+    return text.get("sel.first", "sel.last")
 
 
 def test_manual_selection_dataclass_keeps_block_range():
@@ -138,7 +192,7 @@ def test_manual_dialog_saves_default_source_selection_without_user_drag():
         root.destroy()
 
 
-def test_manual_dialog_chapter_buttons_move_source_selection_by_line_count():
+def test_manual_dialog_chapter_buttons_move_source_selection_by_detected_boundaries():
     ensure_tk_runtime()
     try:
         root = tk.Tk()
@@ -149,16 +203,19 @@ def test_manual_dialog_chapter_buttons_move_source_selection_by_line_count():
     try:
         root.withdraw()
         extraction = TenderSectionExtraction(
-            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r3", 0.91),
             scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
         )
-        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+        dialog = ManualTenderSectionConfirmDialog(root, _uneven_chapter_conversion(), extraction)
 
-        assert _selected_line_range(dialog.source_text) == (1, 3)
+        assert "第一章 项目采购需求" in _selected_text(dialog.source_text)
+        assert "服务范围覆盖全县" in _selected_text(dialog.source_text)
 
         dialog._move_next()
 
-        assert _selected_line_range(dialog.source_text) == (4, 6)
+        assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
+        assert "10分" in _selected_text(dialog.source_text)
+        assert "第三章 合同条款" not in _selected_text(dialog.source_text)
         assert dialog.selections["bid_requirements"] is not None
         assert dialog.selections["bid_requirements"].start_block_id is None
         assert dialog.selections["bid_requirements"].end_block_id is None
@@ -166,7 +223,8 @@ def test_manual_dialog_chapter_buttons_move_source_selection_by_line_count():
 
         dialog._move_previous()
 
-        assert _selected_line_range(dialog.source_text) == (1, 3)
+        assert _selected_text(dialog.source_text).lstrip().startswith("## 第一章 项目采购需求")
+        assert "服务范围覆盖全县" in _selected_text(dialog.source_text)
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
