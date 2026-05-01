@@ -55,21 +55,22 @@ def build_default_selection(
         return None
     if extraction.start_block_id not in document.block_ranges or extraction.end_block_id not in document.block_ranges:
         return None
+    start_block_id, end_block_id = _canonical_block_ids(document, extraction.start_block_id, extraction.end_block_id)
     markdown = selection_to_markdown(
         document,
         ManualTenderSectionSelection(
             section_key=extraction.section_key,
             markdown="",
-            start_block_id=extraction.start_block_id,
-            end_block_id=extraction.end_block_id,
+            start_block_id=start_block_id,
+            end_block_id=end_block_id,
             manually_adjusted=False,
         ),
     )
     return ManualTenderSectionSelection(
         section_key=extraction.section_key,
         markdown=markdown,
-        start_block_id=extraction.start_block_id,
-        end_block_id=extraction.end_block_id,
+        start_block_id=start_block_id,
+        end_block_id=end_block_id,
         manually_adjusted=False,
     )
 
@@ -77,29 +78,29 @@ def build_default_selection(
 def selection_to_markdown(document: TenderSelectionDocument, selection: ManualTenderSectionSelection) -> str:
     if selection.start_block_id is None or selection.end_block_id is None:
         return selection.markdown.strip()
-    start_range = document.block_ranges.get(selection.start_block_id)
-    end_range = document.block_ranges.get(selection.end_block_id)
+    start_block_id, end_block_id = _canonical_block_ids(document, selection.start_block_id, selection.end_block_id)
+    start_range = document.block_ranges.get(start_block_id)
+    end_range = document.block_ranges.get(end_block_id)
     if start_range is None or end_range is None:
         return selection.markdown.strip()
-    start = min(start_range.start, end_range.start)
-    end = max(start_range.end, end_range.end)
-    return document.markdown[start:end].strip()
+    return document.markdown[start_range.start : end_range.end].strip()
 
 
 def expand_selection_to_previous_block(
     document: TenderSelectionDocument,
     selection: ManualTenderSectionSelection,
 ) -> ManualTenderSectionSelection:
-    if selection.start_block_id not in document.ordered_block_ids:
+    start_block_id, end_block_id = _canonical_block_ids(document, selection.start_block_id, selection.end_block_id)
+    if start_block_id not in document.ordered_block_ids:
         return selection
-    index = document.ordered_block_ids.index(selection.start_block_id)
+    index = document.ordered_block_ids.index(start_block_id)
     if index <= 0:
         return selection
     return _replace_block_range(
         document,
         selection,
         start_block_id=document.ordered_block_ids[index - 1],
-        end_block_id=selection.end_block_id,
+        end_block_id=end_block_id,
     )
 
 
@@ -107,15 +108,16 @@ def expand_selection_to_next_block(
     document: TenderSelectionDocument,
     selection: ManualTenderSectionSelection,
 ) -> ManualTenderSectionSelection:
-    if selection.end_block_id not in document.ordered_block_ids:
+    start_block_id, end_block_id = _canonical_block_ids(document, selection.start_block_id, selection.end_block_id)
+    if end_block_id not in document.ordered_block_ids:
         return selection
-    index = document.ordered_block_ids.index(selection.end_block_id)
+    index = document.ordered_block_ids.index(end_block_id)
     if index >= len(document.ordered_block_ids) - 1:
         return selection
     return _replace_block_range(
         document,
         selection,
-        start_block_id=selection.start_block_id,
+        start_block_id=start_block_id,
         end_block_id=document.ordered_block_ids[index + 1],
     )
 
@@ -127,6 +129,7 @@ def _replace_block_range(
     start_block_id: str | None,
     end_block_id: str | None,
 ) -> ManualTenderSectionSelection:
+    start_block_id, end_block_id = _canonical_block_ids(document, start_block_id, end_block_id)
     updated = ManualTenderSectionSelection(
         section_key=selection.section_key,
         markdown="",
@@ -141,6 +144,20 @@ def _replace_block_range(
         end_block_id=end_block_id,
         manually_adjusted=True,
     )
+
+
+def _canonical_block_ids(
+    document: TenderSelectionDocument,
+    start_block_id: str | None,
+    end_block_id: str | None,
+) -> tuple[str | None, str | None]:
+    if start_block_id not in document.ordered_block_ids or end_block_id not in document.ordered_block_ids:
+        return start_block_id, end_block_id
+    start_index = document.ordered_block_ids.index(start_block_id)
+    end_index = document.ordered_block_ids.index(end_block_id)
+    if start_index <= end_index:
+        return start_block_id, end_block_id
+    return end_block_id, start_block_id
 
 
 def validate_selection_markdown(section_key: str, markdown: str) -> list[str]:

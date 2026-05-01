@@ -78,6 +78,26 @@ def test_build_default_selection_maps_extraction_block_ids():
     assert "评分标准" not in selection_to_markdown(document, selection)
 
 
+def test_build_default_selection_canonicalizes_reversed_block_ids():
+    document = _document()
+    extraction = TenderExtractionResult(
+        section_key="bid_requirements",
+        title="项目采购需求",
+        markdown="",
+        start_block_id="r2",
+        end_block_id="h1",
+        confidence=0.9,
+    )
+
+    selection = build_default_selection(document, extraction)
+
+    assert selection is not None
+    assert selection.start_block_id == "h1"
+    assert selection.end_block_id == "r2"
+    assert "项目采购需求" in selection_to_markdown(document, selection)
+    assert "评分标准" not in selection_to_markdown(document, selection)
+
+
 def test_build_default_selection_returns_none_for_missing_extraction_or_blocks():
     document = _document()
     missing = TenderExtractionResult("bid_requirements", "需求", "", "missing", "r2", 0.1)
@@ -102,6 +122,33 @@ def test_expand_selection_to_adjacent_blocks():
     assert expanded.start_block_id == "h1"
     assert expanded.end_block_id == "r2"
     assert expanded.manually_adjusted is True
+
+
+def test_expand_selection_handles_reversed_input_consistently():
+    document = _document()
+    selection = ManualTenderSectionSelection("bid_requirements", "", "r2", "r1", True)
+
+    previous = expand_selection_to_previous_block(document, selection)
+    expanded = expand_selection_to_next_block(document, selection)
+
+    assert previous.start_block_id == "h1"
+    assert previous.end_block_id == "r2"
+    assert expanded.start_block_id == "r1"
+    assert expanded.end_block_id == "h2"
+
+
+def test_expand_selection_noops_at_document_boundaries():
+    document = _document()
+    first = ManualTenderSectionSelection("bid_requirements", "first", "h1", "h1", True)
+    last = ManualTenderSectionSelection("scoring_criteria", "last", "s1", "s1", True)
+
+    previous = expand_selection_to_previous_block(document, first)
+    expanded = expand_selection_to_next_block(document, last)
+
+    assert previous.start_block_id == "h1"
+    assert previous.end_block_id == "h1"
+    assert expanded.start_block_id == "s1"
+    assert expanded.end_block_id == "s1"
 
 
 def test_selection_to_markdown_uses_character_range():
