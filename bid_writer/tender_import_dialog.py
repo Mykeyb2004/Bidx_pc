@@ -305,7 +305,6 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self._move_current(previous=False)
 
     def _move_current(self, *, previous: bool) -> None:
-        section_key = self._current_section_key()
         char_range = self._current_source_char_range()
         target = self._adjacent_navigation_range(char_range, previous=previous)
         if target is not None:
@@ -315,7 +314,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
 
         line_range = self._current_source_line_range()
         if line_range is None:
-            messagebox.showinfo("需要手动选择", "请先在源码区选择文本。", parent=self)
+            messagebox.showinfo("需要手动选择", "请先在源文区选择文本。", parent=self)
             return
         start_line, end_line = line_range
         line_count = end_line - start_line + 1

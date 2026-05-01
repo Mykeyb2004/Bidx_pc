@@ -321,12 +321,40 @@ def test_manual_dialog_chapter_buttons_move_source_selection_by_detected_boundar
         assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
         assert "10分" in _selected_text(dialog.source_text)
         assert "第三章 合同条款" not in _selected_text(dialog.source_text)
-        assert dialog.source_hints["bid_requirements"] == TenderSourceHint("bid_requirements", "r0", "r3")
+        assert dialog.target_text.get("1.0", "end-1c") == ""
 
         dialog._move_previous()
 
         assert _selected_text(dialog.source_text).lstrip().startswith("## 第一章 项目采购需求")
         assert "服务范围覆盖全县" in _selected_text(dialog.source_text)
+        assert dialog.target_text.get("1.0", "end-1c") == ""
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_navigation_does_not_overwrite_existing_target_editor():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r3", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _uneven_chapter_conversion(), extraction)
+        dialog.target_text.insert("1.0", "用户已经整理好的目标内容")
+
+        dialog._move_next()
+
+        assert dialog.target_text.get("1.0", "end-1c") == "用户已经整理好的目标内容"
+        assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
