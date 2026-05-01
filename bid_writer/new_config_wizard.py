@@ -23,7 +23,7 @@ from bid_writer.new_config_flow import (
     register_created_path,
     should_copy_source_file,
 )
-from bid_writer.tender_import_dialog import confirm_extracted_sections_preview
+from bid_writer.tender_import_dialog import confirm_tender_sections
 from bid_writer.tender_import_service import TenderImportError, TenderImportService
 
 
@@ -613,7 +613,7 @@ class NewConfigWizardDialog(tk.Toplevel):
                 project_root=self.state.project_root,
                 import_dir=self.state.import_dir,
                 confirm_overwrite=self._confirm_overwrite,
-                confirm_sections=lambda **kwargs: confirm_extracted_sections_preview(self, **kwargs),
+                confirm_sections=lambda **kwargs: confirm_tender_sections(self, **kwargs),
             )
         except TenderImportError as exc:
             self.import_status_var.set("导入失败，可手动填写资料文件。")
@@ -626,7 +626,9 @@ class NewConfigWizardDialog(tk.Toplevel):
 
         self._register_new_created_paths(result.created_paths, existing_paths)
         if result.cancelled:
-            self.import_status_var.set("已取消写入，未修改资料路径。")
+            self.state.requirements_path = None
+            self.state.scoring_path = None
+            self.import_status_var.set("已取消确认，未完成资料写入。")
             return
 
         self.state.requirements_path = result.requirements_path

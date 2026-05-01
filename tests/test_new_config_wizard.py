@@ -371,7 +371,14 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     class FakeService:
         def import_document(self, **kwargs):
             assert "confirm_sections" in kwargs
-            assert "confirm_" + "low_confidence" not in kwargs
+            assert "confirm_low_confidence" not in kwargs
+            confirmation = kwargs["confirm_sections"](
+                conversion=SimpleNamespace(blocks=[]),
+                extraction=SimpleNamespace(),
+                requirements_path=existing_requirements,
+                scoring_path=scoring,
+            )
+            assert confirmation.cancelled is False
             report.parent.mkdir(parents=True)
             report.write_text("{}", encoding="utf-8")
             converted.write_text("converted", encoding="utf-8")
@@ -382,10 +389,10 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
     monkeypatch.setattr("bid_writer.new_config_wizard.TenderImportService", lambda: FakeService())
     monkeypatch.setattr(
-        "bid_writer.new_config_wizard.confirm_extracted_sections_preview",
+        "bid_writer.new_config_wizard.confirm_tender_sections",
         lambda _parent, **_kwargs: ManualTenderConfirmationResult(
-            requirements=ManualTenderSectionSelection("bid_requirements", "需求", "r1", "r2", False),
-            scoring=ManualTenderSectionSelection("scoring_criteria", "评分", "s1", "s2", False),
+            requirements=ManualTenderSectionSelection("bid_requirements", "需求", None, None, True),
+            scoring=ManualTenderSectionSelection("scoring_criteria", "评分", None, None, True),
         ),
     )
     dialog._sync_fields_from_state = lambda: synced.append(True)
@@ -401,3 +408,31 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     assert existing_requirements not in dialog.state.created_paths
     assert existing_backup not in dialog.state.created_paths
     assert synced == [True]
+
+
+def test_run_import_reports_manual_confirmation_cancelled(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    source = tmp_path / "招标文件.pdf"
+    source.write_text("fake", encoding="utf-8")
+    dialog.state.source_path = source
+    dialog.vars["source_path"].set(str(source))
+
+    class FakeResult:
+        cancelled = True
+        requirements_path = None
+        scoring_path = None
+        import_dir = tmp_path / ".bid_writer" / "imports" / "pending"
+        created_paths = ()
+
+    class FakeService:
+        def import_document(self, **kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
+    monkeypatch.setattr("bid_writer.new_config_wizard.TenderImportService", lambda: FakeService())
+
+    NewConfigWizardDialog._run_import(dialog)
+
+    assert "已取消确认" in dialog.import_status_var.get()
+    assert dialog.state.requirements_path is None
+    assert dialog.state.scoring_path is None
