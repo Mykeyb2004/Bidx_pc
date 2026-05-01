@@ -185,7 +185,7 @@ def test_build_confirmation_status_includes_warnings():
     assert "可能不是评分标准" in status
 
 
-def test_manual_dialog_starts_with_empty_target_editor_and_source_hint():
+def test_manual_dialog_starts_with_empty_target_editor_and_source_hint(monkeypatch):
     ensure_tk_runtime()
     try:
         root = tk.Tk()
@@ -205,11 +205,18 @@ def test_manual_dialog_starts_with_empty_target_editor_and_source_hint():
         assert "项目采购需求" in _selected_text(dialog.source_text)
         assert "服务内容" in _selected_text(dialog.source_text)
 
+        warnings = []
+        monkeypatch.setattr(
+            "bid_writer.tender_import_dialog.messagebox.showwarning",
+            lambda title, message, **kwargs: warnings.append((title, message, kwargs)),
+        )
+
         dialog._save_current_section()
 
         assert dialog.result.cancelled is True
         assert dialog.confirmed == {}
         assert "不能为空" in dialog.status_var.get()
+        assert warnings == [("选区不能为空", "选区不能为空。", {"parent": dialog})]
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
@@ -240,7 +247,7 @@ def test_manual_dialog_chapter_buttons_move_source_selection_by_detected_boundar
         assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
         assert "10分" in _selected_text(dialog.source_text)
         assert "第三章 合同条款" not in _selected_text(dialog.source_text)
-        assert dialog.source_hints["bid_requirements"] == TenderSourceHint("bid_requirements", "s0", "s1")
+        assert dialog.source_hints["bid_requirements"] == TenderSourceHint("bid_requirements", "r0", "r3")
 
         dialog._move_previous()
 
