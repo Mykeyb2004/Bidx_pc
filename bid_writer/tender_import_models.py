@@ -73,6 +73,22 @@ class TenderSectionExtraction:
         return any(item.confidence < 0.80 for item in results)
 
 
+@dataclass(frozen=True)
+class ManualTenderSectionSelection:
+    section_key: str
+    markdown: str
+    start_block_id: str | None = None
+    end_block_id: str | None = None
+    manually_adjusted: bool = False
+
+
+@dataclass(frozen=True)
+class ManualTenderConfirmationResult:
+    requirements: ManualTenderSectionSelection | None = None
+    scoring: ManualTenderSectionSelection | None = None
+    cancelled: bool = False
+
+
 def _json_path(path: Path) -> str:
     return path.as_posix()
 
@@ -89,6 +105,12 @@ def _result_to_dict(result: TenderExtractionResult | None) -> dict[str, Any] | N
     return payload
 
 
+def _manual_selection_to_dict(selection: ManualTenderSectionSelection | None) -> dict[str, Any] | None:
+    if selection is None:
+        return None
+    return asdict(selection)
+
+
 def dump_conversion_map(result: TenderConversionResult) -> dict[str, Any]:
     return {
         "source_path": _json_path(result.source_path),
@@ -100,8 +122,11 @@ def dump_conversion_map(result: TenderConversionResult) -> dict[str, Any]:
     }
 
 
-def dump_extraction_report(extraction: TenderSectionExtraction) -> dict[str, Any]:
-    return {
+def dump_extraction_report(
+    extraction: TenderSectionExtraction,
+    manual_confirmation: ManualTenderConfirmationResult | None = None,
+) -> dict[str, Any]:
+    payload = {
         "requirements": _result_to_dict(extraction.requirements),
         "scoring": _result_to_dict(extraction.scoring),
         "candidates": [asdict(candidate) for candidate in extraction.candidates],
@@ -109,3 +134,10 @@ def dump_extraction_report(extraction: TenderSectionExtraction) -> dict[str, Any
         "complete": extraction.is_complete,
         "needs_confirmation": extraction.needs_confirmation,
     }
+    if manual_confirmation is not None:
+        payload["manual_confirmation"] = {
+            "requirements": _manual_selection_to_dict(manual_confirmation.requirements),
+            "scoring": _manual_selection_to_dict(manual_confirmation.scoring),
+            "cancelled": manual_confirmation.cancelled,
+        }
+    return payload

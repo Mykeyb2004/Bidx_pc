@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from bid_writer.tender_import_models import TenderExtractionResult, TenderSectionExtraction
+from bid_writer.tender_import_models import (
+    ManualTenderConfirmationResult,
+    ManualTenderSectionSelection,
+    TenderExtractionResult,
+    TenderSectionExtraction,
+)
 from bid_writer.tender_import_service import TenderImportError, TenderImportService
 
 
@@ -22,6 +27,30 @@ class FakeExtractor:
     def __call__(self, conversion):
         self.calls.append(conversion)
         return self.extraction
+
+
+def test_manual_confirmation_result_carries_final_markdown():
+    confirmation = ManualTenderConfirmationResult(
+        requirements=ManualTenderSectionSelection(
+            section_key="bid_requirements",
+            markdown="# 项目采购需求\n\n人工确认需求",
+            start_block_id="r1",
+            end_block_id="r2",
+            manually_adjusted=True,
+        ),
+        scoring=ManualTenderSectionSelection(
+            section_key="scoring_criteria",
+            markdown="# 评分标准\n\n人工确认评分",
+            start_block_id="s1",
+            end_block_id="s2",
+            manually_adjusted=False,
+        ),
+    )
+
+    assert confirmation.requirements.markdown.endswith("人工确认需求")
+    assert confirmation.requirements.manually_adjusted is True
+    assert confirmation.scoring.manually_adjusted is False
+    assert confirmation.cancelled is False
 
 
 def test_import_service_writes_outputs_and_report(tmp_path: Path):

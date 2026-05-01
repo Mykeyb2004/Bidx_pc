@@ -1,5 +1,23 @@
 from bid_writer.tender_import_dialog import build_low_confidence_preview
-from bid_writer.tender_import_models import TenderExtractionResult, TenderSectionExtraction
+from bid_writer.tender_import_models import (
+    ManualTenderSectionSelection,
+    TenderExtractionResult,
+    TenderSectionExtraction,
+)
+
+
+def test_manual_selection_dataclass_keeps_block_range():
+    selection = ManualTenderSectionSelection(
+        section_key="bid_requirements",
+        markdown="需求",
+        start_block_id="b1",
+        end_block_id="b3",
+        manually_adjusted=True,
+    )
+
+    assert selection.section_key == "bid_requirements"
+    assert selection.start_block_id == "b1"
+    assert selection.end_block_id == "b3"
 
 
 def test_low_confidence_preview_includes_confidence_and_excerpt():
