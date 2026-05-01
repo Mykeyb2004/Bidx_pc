@@ -72,6 +72,8 @@ def resolve_extraction_spans(
         matches,
         scoring_candidate_index,
     )
+    requirements_fallback = None
+    scoring_fallback = None
     warnings: list[str] = []
 
     if _same_span(requirements_major, scoring_major):
@@ -110,6 +112,10 @@ def resolve_extraction_spans(
         matches,
         scoring_candidate_index,
     )
+    if requirements_span is not None and requirements_span.kind == "fallback":
+        warnings.append("项目采购需求未能稳定定位到大章节，已降级使用小节边界。")
+    if scoring_span is not None and scoring_span.kind == "fallback":
+        warnings.append("评分标准未能稳定定位到大章节，已降级使用小节边界。")
     return requirements_span, scoring_span, tuple(warnings)
 
 
@@ -134,7 +140,7 @@ def _match_rule(
     normalized: str,
     rule: TenderSectionBoundaryRule,
 ) -> TenderSectionBoundaryMatch | None:
-    match = rule.regex.search(normalized)
+    match = rule.regex.fullmatch(normalized)
     if not match:
         return None
     title = (match.groupdict().get("title") or "").strip()

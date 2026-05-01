@@ -210,3 +210,47 @@ def test_table_scoring_candidate_expands_back_to_preceding_scoring_title_and_int
     assert "本项目采用综合评分法" in result.scoring.markdown
     assert "完整得30分" in result.scoring.markdown
     assert "合同正文" not in result.scoring.markdown
+
+
+def test_extracts_whole_major_chapter_for_requirements_and_scoring():
+    conversion = _conversion(
+        [
+            _heading("chapter5", "第五章 项目采购需求", 1),
+            _paragraph("req_body", "本项目服务内容包括调查、分析、成果提交和验收。", 2),
+            _heading("chapter6", "第六章 评分标准", 3),
+            _table("score_body", "| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |", 4),
+            _heading("chapter7", "第七章 合同条款", 5),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.requirements is not None
+    assert result.requirements.start_block_id == "chapter5"
+    assert result.requirements.end_block_id == "req_body"
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "chapter6"
+    assert result.scoring.end_block_id == "score_body"
+
+
+def test_extracts_minor_sections_when_both_targets_share_one_major_chapter():
+    conversion = _conversion(
+        [
+            _heading("chapter5", "第五章 招标要求", 1),
+            _paragraph("req_title", "一、项目采购需求", 2),
+            _paragraph("req_body", "采购需求正文。", 3),
+            _paragraph("score_title", "二、评分标准", 4),
+            _table("score_body", "| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |", 5),
+            _heading("chapter6", "第六章 其他条款", 6),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.requirements is not None
+    assert result.requirements.start_block_id == "req_title"
+    assert result.requirements.end_block_id == "req_body"
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "score_title"
+    assert result.scoring.end_block_id == "score_body"
+    assert any("同一大章节" in warning for warning in result.warnings)

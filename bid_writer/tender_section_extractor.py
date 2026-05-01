@@ -13,6 +13,12 @@ from .tender_import_models import (
     TenderExtractionResult,
     TenderSectionExtraction,
 )
+from .tender_section_boundary_config import load_boundary_config
+from .tender_section_boundary_detector import (
+    TenderSectionBoundarySpan,
+    detect_boundary_matches,
+    resolve_extraction_spans,
+)
 
 
 REQUIREMENT_ALIASES = (
@@ -56,10 +62,20 @@ TOC_PAGE_RE = re.compile(r"^.{2,80}\s+\d{1,4}\s*$")
 def extract_tender_sections(conversion: TenderConversionResult) -> TenderSectionExtraction:
     blocks = sorted(conversion.blocks, key=lambda item: item.order_index)
     candidates = _collect_candidates(blocks)
-    requirements = _build_result("bid_requirements", blocks, candidates)
-    scoring = _build_result("scoring_criteria", blocks, candidates)
+    boundary_config = load_boundary_config()
+    boundary_matches = detect_boundary_matches(blocks, boundary_config)
+    requirements_span, scoring_span, boundary_warnings = resolve_extraction_spans(
+        blocks=blocks,
+        matches=boundary_matches,
+        requirements_candidate_index=_candidate_index_for("bid_requirements", candidates, blocks),
+        scoring_candidate_index=_candidate_index_for("scoring_criteria", candidates, blocks),
+    )
+    requirements = _build_result("bid_requirements", blocks, candidates, requirements_span)
+    scoring = _build_result("scoring_criteria", blocks, candidates, scoring_span)
 
     warnings: list[str] = []
+    warnings.extend(boundary_config.warnings)
+    warnings.extend(boundary_warnings)
     if requirements is None:
         warnings.append("未定位到项目采购需求章节。")
     if scoring is None:
@@ -192,14 +208,19 @@ def _build_result(
     section_key: str,
     blocks: list[ConvertedBlock],
     candidates: list[SectionCandidate],
+    span: TenderSectionBoundarySpan | None = None,
 ) -> TenderExtractionResult | None:
     candidate = next((item for item in candidates if item.section_key == section_key), None)
     if candidate is None:
         return None
     index_by_id = {block.block_id: idx for idx, block in enumerate(blocks)}
     candidate_index = index_by_id[candidate.block_id]
-    start_index = _adjust_start_index(section_key, blocks, candidate_index)
-    end_index = _find_end_index(section_key, blocks, start_index)
+    if span is None:
+        start_index = _adjust_start_index(section_key, blocks, candidate_index)
+        end_index = _find_end_index(section_key, blocks, start_index)
+    else:
+        start_index = span.start_index
+        end_index = span.end_index
     selected = blocks[start_index:end_index]
     markdown = _join_markdown(selected)
     confidence, warnings = _confidence(section_key, candidate.score, markdown, selected)
@@ -212,6 +233,18 @@ def _build_result(
         confidence=confidence,
         warnings=tuple(warnings),
     )
+
+
+def _candidate_index_for(
+    section_key: str,
+    candidates: list[SectionCandidate],
+    blocks: list[ConvertedBlock],
+) -> int | None:
+    candidate = next((item for item in candidates if item.section_key == section_key), None)
+    if candidate is None:
+        return None
+    index_by_id = {block.block_id: idx for idx, block in enumerate(blocks)}
+    return index_by_id.get(candidate.block_id)
 
 
 def _adjust_start_index(section_key: str, blocks: list[ConvertedBlock], candidate_index: int) -> int:
