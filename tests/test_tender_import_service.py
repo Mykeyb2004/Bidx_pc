@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from bid_writer.tender_import_models import (
@@ -123,6 +124,10 @@ def test_import_service_writes_outputs_and_report(tmp_path: Path):
     assert result.requirements_path.read_text(encoding="utf-8") == "# 项目采购需求\n\n人工需求\n"
     assert result.scoring_path.read_text(encoding="utf-8") == "# 评分标准\n\n人工评分\n"
     assert result.extraction_report_path.exists()
+    report = json.loads(result.extraction_report_path.read_text(encoding="utf-8"))
+    assert report["manual_confirmation"]["requirements"]["markdown"] == "# 项目采购需求\n\n人工需求\n"
+    assert report["manual_confirmation"]["scoring"]["markdown"] == "# 评分标准\n\n人工评分\n"
+    assert report["manual_confirmation"]["cancelled"] is False
     assert result.relative_requirements_path == "./项目要求/项目采购需求.md"
     assert result.relative_scoring_path == "./项目要求/评分标准.md"
 
@@ -217,6 +222,8 @@ def test_import_service_stops_when_manual_confirmation_cancelled(tmp_path: Path)
     )
 
     assert result.cancelled is True
+    report = json.loads(result.extraction_report_path.read_text(encoding="utf-8"))
+    assert report["manual_confirmation"]["cancelled"] is True
     assert not (tmp_path / "项目要求" / "项目采购需求.md").exists()
 
 

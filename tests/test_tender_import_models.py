@@ -2,6 +2,8 @@ from pathlib import Path
 
 from bid_writer.tender_import_models import (
     ConvertedBlock,
+    ManualTenderConfirmationResult,
+    ManualTenderSectionSelection,
     SectionCandidate,
     TenderConversionResult,
     TenderExtractionResult,
@@ -145,3 +147,19 @@ def test_dump_extraction_report_serializes_results_and_candidates(tmp_path: Path
     assert payload["warnings"] == ["ok"]
     assert payload["complete"] is True
     assert payload["needs_confirmation"] is False
+
+
+def test_dump_extraction_report_includes_manual_confirmation_when_provided():
+    extraction = TenderSectionExtraction()
+    confirmation = ManualTenderConfirmationResult(
+        requirements=ManualTenderSectionSelection("bid_requirements", "需求", "r1", "r2", True),
+        scoring=ManualTenderSectionSelection("scoring_criteria", "评分", "s1", "s2", False),
+        cancelled=False,
+    )
+
+    payload = dump_extraction_report(extraction, confirmation)
+
+    assert payload["manual_confirmation"]["requirements"]["markdown"] == "需求"
+    assert payload["manual_confirmation"]["requirements"]["manually_adjusted"] is True
+    assert payload["manual_confirmation"]["scoring"]["start_block_id"] == "s1"
+    assert payload["manual_confirmation"]["cancelled"] is False
