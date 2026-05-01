@@ -16,8 +16,9 @@ from .tender_import_models import (
 )
 from .tender_selection_model import (
     TenderSelectionDocument,
-    build_default_selection,
-    selection_to_markdown,
+    TenderSourceHint,
+    build_source_hint,
+    source_hint_to_markdown,
     validate_selection_markdown,
 )
 from .tender_section_boundary_config import load_boundary_config
@@ -44,26 +45,24 @@ class _SourceNavigationRange:
 def build_initial_section_selection(
     conversion: TenderConversionResult,
     extraction: TenderSectionExtraction,
-) -> tuple[TenderSelectionDocument, ManualTenderSectionSelection | None, ManualTenderSectionSelection | None]:
+) -> tuple[TenderSelectionDocument, TenderSourceHint | None, TenderSourceHint | None]:
     document = TenderSelectionDocument.from_blocks(conversion.blocks)
-    requirements = build_default_selection(document, extraction.requirements)
-    scoring = build_default_selection(document, extraction.scoring)
+    requirements = build_source_hint(document, extraction.requirements)
+    scoring = build_source_hint(document, extraction.scoring)
     return document, requirements, scoring
 
 
 def build_confirmation_status(
     section_key: str,
-    selection: ManualTenderSectionSelection | None,
+    hint: TenderSourceHint | None,
     warnings: list[str],
 ) -> str:
     label = SECTION_LABELS[section_key]
     parts = [label]
-    if selection is None:
+    if hint is None:
         parts.append("未自动定位，请手动选择。")
-    elif selection.manually_adjusted:
-        parts.append("已手动调整选区。")
     else:
-        parts.append("已根据自动定位默认选中。")
+        parts.append("已跳到疑似章节，请选择源文并放入目标编辑框。")
     parts.extend(warnings)
     return "\n".join(parts)
 
@@ -83,7 +82,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.minsize(920, 560)
 
         self.document, requirements, scoring = build_initial_section_selection(conversion, extraction)
-        self.selections: dict[str, ManualTenderSectionSelection | None] = {
+        self.source_hints: dict[str, TenderSourceHint | None] = {
             "bid_requirements": requirements,
             "scoring_criteria": scoring,
         }
@@ -122,24 +121,14 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         )
         ttk.Button(controls, text="上一章节", command=self._move_previous).grid(row=3, column=0, sticky="ew", pady=3)
         ttk.Button(controls, text="下一章节", command=self._move_next).grid(row=4, column=0, sticky="ew", pady=3)
+        self.use_selection_button = ttk.Button(controls, text="使用选区", command=self._use_source_selection)
+        self.use_selection_button.grid(row=5, column=0, sticky="ew", pady=(14, 3))
         self.save_button = ttk.Button(controls, text="", command=self._save_current_section)
-        self.save_button.grid(row=5, column=0, sticky="ew", pady=(14, 3))
-        ttk.Button(controls, text="取消", command=self._cancel).grid(row=6, column=0, sticky="ew", pady=3)
+        self.save_button.grid(row=6, column=0, sticky="ew", pady=3)
+        ttk.Button(controls, text="取消", command=self._cancel).grid(row=7, column=0, sticky="ew", pady=3)
 
-        rendered_frame = ttk.Frame(self, padding=(0, 12, 6, 12))
-        rendered_frame.grid(row=0, column=1, sticky="nsew")
-        rendered_frame.columnconfigure(0, weight=1)
-        rendered_frame.rowconfigure(1, weight=1)
-        ttk.Label(rendered_frame, text="块预览").grid(row=0, column=0, sticky="w")
-        self.rendered_text = tk.Text(rendered_frame, wrap="word", height=20, borderwidth=1, relief="solid")
-        rendered_scroll = ttk.Scrollbar(rendered_frame, orient="vertical", command=self.rendered_text.yview)
-        self.rendered_text.configure(yscrollcommand=rendered_scroll.set)
-        self.rendered_text.grid(row=1, column=0, sticky="nsew")
-        rendered_scroll.grid(row=1, column=1, sticky="ns")
-        self._configure_rendered_tags()
-
-        source_frame = ttk.Frame(self, padding=(6, 12, 12, 12))
-        source_frame.grid(row=0, column=2, sticky="nsew")
+        source_frame = ttk.Frame(self, padding=(0, 12, 6, 12))
+        source_frame.grid(row=0, column=1, sticky="nsew")
         source_frame.columnconfigure(0, weight=1)
         source_frame.rowconfigure(1, weight=1)
         ttk.Label(source_frame, text="Markdown 源文").grid(row=0, column=0, sticky="w")
@@ -150,54 +139,29 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         source_scroll.grid(row=1, column=1, sticky="ns")
         self.source_text.configure(state="normal")
         self.source_text.insert("1.0", self.document.markdown)
+        self.source_text.tag_configure("source_hint", background="#fff2b8")
         self.source_text.tag_configure("current_selection", background="#cfe8ff")
         self.source_text.configure(state="disabled")
 
-    def _configure_rendered_tags(self) -> None:
-        self.rendered_text.tag_configure("heading", font=("TkDefaultFont", 12, "bold"), spacing1=8, spacing3=4)
-        self.rendered_text.tag_configure("table", font=("TkFixedFont", 10), background="#f4f4f4", lmargin1=8, lmargin2=8)
-        self.rendered_text.tag_configure("paragraph", spacing1=3, spacing3=7)
-        self.rendered_text.tag_configure("selected_block", background="#d9ecff")
+        target_frame = ttk.Frame(self, padding=(6, 12, 12, 12))
+        target_frame.grid(row=0, column=2, sticky="nsew")
+        target_frame.columnconfigure(0, weight=1)
+        target_frame.rowconfigure(1, weight=1)
+        ttk.Label(target_frame, text="目标编辑框").grid(row=0, column=0, sticky="w")
+        self.target_text = tk.Text(target_frame, wrap="word", undo=True, borderwidth=1, relief="solid")
+        target_scroll = ttk.Scrollbar(target_frame, orient="vertical", command=self.target_text.yview)
+        self.target_text.configure(yscrollcommand=target_scroll.set)
+        self.target_text.grid(row=1, column=0, sticky="nsew")
+        target_scroll.grid(row=1, column=1, sticky="ns")
 
     def _load_current_section(self) -> None:
         section_key = self._current_section_key()
         label = SECTION_LABELS[section_key]
         self.step_label.configure(text=f"{self.current_index + 1}/2：{label}")
         self.save_button.configure(text="存入项目需求" if section_key == "bid_requirements" else "存入评分标准")
-        self._render_blocks()
-        self._apply_source_selection(self.selections[section_key])
+        self._clear_target_editor()
+        self._apply_source_hint(self.source_hints[section_key])
         self._update_status()
-
-    def _render_blocks(self) -> None:
-        self.rendered_text.configure(state="normal")
-        self.rendered_text.delete("1.0", "end")
-        selected_ids = self._current_selected_block_ids()
-        for block in self.document.blocks:
-            start = self.rendered_text.index("end-1c")
-            prefix = ""
-            if block.block_type == "heading" and block.heading_level:
-                prefix = "#" * block.heading_level + " "
-            body = block.markdown.strip() if block.block_type == "table" else block.text or block.markdown.strip()
-            self.rendered_text.insert("end", f"{prefix}{body}\n\n")
-            end = self.rendered_text.index("end-1c")
-            tag = "heading" if block.block_type == "heading" else "table" if block.block_type == "table" else "paragraph"
-            self.rendered_text.tag_add(tag, start, end)
-            if block.block_id in selected_ids:
-                self.rendered_text.tag_add("selected_block", start, end)
-        self.rendered_text.configure(state="disabled")
-
-    def _current_selected_block_ids(self) -> set[str]:
-        selection = self.selections[self._current_section_key()]
-        if selection is None or selection.start_block_id is None or selection.end_block_id is None:
-            return set()
-        start_id, end_id = selection.start_block_id, selection.end_block_id
-        if start_id not in self.document.ordered_block_ids or end_id not in self.document.ordered_block_ids:
-            return set()
-        start = self.document.ordered_block_ids.index(start_id)
-        end = self.document.ordered_block_ids.index(end_id)
-        if start > end:
-            start, end = end, start
-        return set(self.document.ordered_block_ids[start : end + 1])
 
     def _current_section_key(self) -> str:
         return self.section_order[self.current_index]
@@ -219,49 +183,54 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         end_offset = len(self.source_text.get("1.0", end))
         return start_offset, end_offset
 
-    def _apply_source_selection(self, selection: ManualTenderSectionSelection | None) -> None:
+    def _use_source_selection(self) -> None:
+        selected = self._current_source_selection()
+        if not selected:
+            messagebox.showinfo("需要手动选择", "请先在源码区选择文本。", parent=self)
+            return
+        self.target_text.delete("1.0", "end")
+        self.target_text.insert("1.0", selected)
+        self.target_text.focus_set()
+
+    def _clear_target_editor(self) -> None:
+        self.target_text.delete("1.0", "end")
+
+    def _apply_source_hint(self, hint: TenderSourceHint | None) -> None:
         self.source_text.configure(state="normal")
-        self.source_text.tag_remove("current_selection", "1.0", "end")
+        self.source_text.tag_remove("source_hint", "1.0", "end")
         self.source_text.tag_remove("sel", "1.0", "end")
         self._applied_source_selection_range = None
-        if selection is None:
+        if hint is None:
             self.source_text.see("1.0")
             self.source_text.configure(state="disabled")
             return
-        range_start, range_end = self._selection_char_range(selection)
+        range_start, range_end = self._hint_char_range(hint)
         if range_start is None or range_end is None:
             self.source_text.configure(state="disabled")
             return
         start_index = f"1.0+{range_start}c"
         end_index = f"1.0+{range_end}c"
-        self.source_text.tag_add("current_selection", start_index, end_index)
+        self.source_text.tag_add("source_hint", start_index, end_index)
         self.source_text.tag_add("sel", start_index, end_index)
         self.source_text.mark_set("insert", start_index)
         self.source_text.see(start_index)
         self._applied_source_selection_range = (range_start, range_end)
         self.source_text.configure(state="disabled")
 
-    def _selection_char_range(self, selection: ManualTenderSectionSelection) -> tuple[int | None, int | None]:
-        if selection.start_block_id and selection.end_block_id:
-            start_range = self.document.block_ranges.get(selection.start_block_id)
-            end_range = self.document.block_ranges.get(selection.end_block_id)
-            if start_range is not None and end_range is not None:
-                return min(start_range.start, end_range.start), max(start_range.end, end_range.end)
-        needle = selection.markdown.strip()
-        if not needle:
+    def _hint_char_range(self, hint: TenderSourceHint) -> tuple[int | None, int | None]:
+        start_range = self.document.block_ranges.get(hint.start_block_id)
+        end_range = self.document.block_ranges.get(hint.end_block_id)
+        if start_range is None or end_range is None:
             return None, None
-        start = self.document.markdown.find(needle)
-        if start < 0:
-            return None, None
-        return start, start + len(needle)
+        return min(start_range.start, end_range.start), max(start_range.end, end_range.end)
 
     def _update_status(self, warnings: list[str] | None = None) -> None:
         section_key = self._current_section_key()
-        self.status_var.set(build_confirmation_status(section_key, self.selections[section_key], warnings or []))
+        self.status_var.set(build_confirmation_status(section_key, self.source_hints[section_key], warnings or []))
 
     def _save_current_section(self) -> None:
         section_key = self._current_section_key()
-        markdown, manually_adjusted = self._selection_for_save(section_key)
+        markdown = self._selection_for_save()
         warnings = validate_selection_markdown(section_key, markdown)
         blocking = [warning for warning in warnings if "不能为空" in warning]
         if blocking:
@@ -272,15 +241,14 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             self._update_status(warnings)
             return
 
-        previous = self.selections[section_key]
+        hint = self.source_hints[section_key]
         selection = ManualTenderSectionSelection(
             section_key=section_key,
             markdown=markdown.strip(),
-            start_block_id=None if manually_adjusted else previous.start_block_id if previous else None,
-            end_block_id=None if manually_adjusted else previous.end_block_id if previous else None,
-            manually_adjusted=manually_adjusted or bool(previous and previous.manually_adjusted),
+            start_block_id=hint.start_block_id if self._matches_source_hint(markdown, hint) else None,
+            end_block_id=hint.end_block_id if self._matches_source_hint(markdown, hint) else None,
+            manually_adjusted=not self._matches_source_hint(markdown, hint),
         )
-        self.selections[section_key] = selection
         self.confirmed[section_key] = selection
 
         if self.current_index < len(self.section_order) - 1:
@@ -295,27 +263,11 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         )
         self.destroy()
 
-    def _selection_for_save(self, section_key: str) -> tuple[str, bool]:
-        selected = self._current_source_selection()
-        if selected:
-            return selected, self._source_selection_changed()
-        selection = self.selections[section_key]
-        if selection is None:
-            return "", False
-        return selection_to_markdown(self.document, selection), bool(selection.manually_adjusted)
+    def _selection_for_save(self) -> str:
+        return self.target_text.get("1.0", "end-1c").strip()
 
-    def _source_selection_changed(self) -> bool:
-        if self._applied_source_selection_range is None:
-            return True
-        try:
-            start = self.source_text.index("sel.first")
-            end = self.source_text.index("sel.last")
-        except tk.TclError:
-            return False
-        expected_start, expected_end = self._applied_source_selection_range
-        expected_start_index = self.source_text.index(f"1.0+{expected_start}c")
-        expected_end_index = self.source_text.index(f"1.0+{expected_end}c")
-        return (start, end) != (expected_start_index, expected_end_index)
+    def _matches_source_hint(self, markdown: str, hint: TenderSourceHint | None) -> bool:
+        return hint is not None and markdown.strip() == source_hint_to_markdown(self.document, hint)
 
     def _cancel(self) -> None:
         self.result = ManualTenderConfirmationResult(
@@ -337,15 +289,11 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         target = self._adjacent_navigation_range(char_range, previous=previous)
         if target is not None:
             self._apply_source_char_selection(target.start, target.end)
-            selected = self._current_source_selection()
-            self.selections[section_key] = ManualTenderSectionSelection(
+            self.source_hints[section_key] = TenderSourceHint(
                 section_key=section_key,
-                markdown=selected,
-                start_block_id=None,
-                end_block_id=None,
-                manually_adjusted=True,
+                start_block_id=target.start_block_id,
+                end_block_id=target.end_block_id,
             )
-            self._render_blocks()
             self._update_status()
             return
 
@@ -362,15 +310,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             return
 
         self._apply_source_line_selection(target_start, target_end)
-        selected = self._current_source_selection()
-        self.selections[section_key] = ManualTenderSectionSelection(
-            section_key=section_key,
-            markdown=selected,
-            start_block_id=None,
-            end_block_id=None,
-            manually_adjusted=True,
-        )
-        self._render_blocks()
+        self.source_hints[section_key] = None
         self._update_status()
 
     def _adjacent_navigation_range(

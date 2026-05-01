@@ -21,7 +21,7 @@ from bid_writer.tender_import_models import (
     TenderExtractionResult,
     TenderSectionExtraction,
 )
-from bid_writer.tender_selection_model import TenderSelectionDocument
+from bid_writer.tender_selection_model import TenderSelectionDocument, TenderSourceHint
 
 
 def _conversion() -> TenderConversionResult:
@@ -145,17 +145,19 @@ def test_section_labels_match_required_flow():
     assert SECTION_LABELS["scoring_criteria"] == "评分标准"
 
 
-def test_build_initial_section_selection_uses_extraction_default():
+def test_build_initial_section_selection_uses_extraction_as_source_hint_only():
     extraction = TenderSectionExtraction(
         requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
         scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
     )
     document, requirements, scoring = build_initial_section_selection(_conversion(), extraction)
 
-    assert requirements is not None
-    assert scoring is not None
-    assert "服务内容" in requirements.markdown
-    assert "10分" in scoring.markdown
+    assert isinstance(requirements, TenderSourceHint)
+    assert isinstance(scoring, TenderSourceHint)
+    assert requirements.start_block_id == "r0"
+    assert requirements.end_block_id == "r1"
+    assert scoring.start_block_id == "s0"
+    assert scoring.end_block_id == "s1"
     assert document.markdown.startswith("## 项目采购需求")
 
 
@@ -175,14 +177,15 @@ def test_build_confirmation_status_mentions_missing_auto_location():
 
 
 def test_build_confirmation_status_includes_warnings():
-    selection = ManualTenderSectionSelection("scoring_criteria", "普通文字" * 20, None, None, True)
-    status = build_confirmation_status("scoring_criteria", selection, ["当前内容可能不是评分标准，请确认。"])
+    hint = TenderSourceHint("scoring_criteria", "s0", "s1")
+    status = build_confirmation_status("scoring_criteria", hint, ["当前内容可能不是评分标准，请确认。"])
 
     assert "评分标准" in status
+    assert "已跳到疑似章节" in status
     assert "可能不是评分标准" in status
 
 
-def test_manual_dialog_saves_default_source_selection_without_user_drag():
+def test_manual_dialog_starts_with_empty_target_editor_and_source_hint():
     ensure_tk_runtime()
     try:
         root = tk.Tk()
@@ -198,20 +201,15 @@ def test_manual_dialog_saves_default_source_selection_without_user_drag():
         )
         dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
 
-        dialog._save_current_section()
+        assert dialog.target_text.get("1.0", "end-1c") == ""
+        assert "项目采购需求" in _selected_text(dialog.source_text)
+        assert "服务内容" in _selected_text(dialog.source_text)
+
         dialog._save_current_section()
 
-        assert dialog.result.cancelled is False
-        assert dialog.result.requirements is not None
-        assert "服务内容" in dialog.result.requirements.markdown
-        assert dialog.result.requirements.start_block_id == "r0"
-        assert dialog.result.requirements.end_block_id == "r1"
-        assert dialog.result.requirements.manually_adjusted is False
-        assert dialog.result.scoring is not None
-        assert "10分" in dialog.result.scoring.markdown
-        assert dialog.result.scoring.start_block_id == "s0"
-        assert dialog.result.scoring.end_block_id == "s1"
-        assert dialog.result.scoring.manually_adjusted is False
+        assert dialog.result.cancelled is True
+        assert dialog.confirmed == {}
+        assert "不能为空" in dialog.status_var.get()
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
@@ -242,10 +240,7 @@ def test_manual_dialog_chapter_buttons_move_source_selection_by_detected_boundar
         assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
         assert "10分" in _selected_text(dialog.source_text)
         assert "第三章 合同条款" not in _selected_text(dialog.source_text)
-        assert dialog.selections["bid_requirements"] is not None
-        assert dialog.selections["bid_requirements"].start_block_id is None
-        assert dialog.selections["bid_requirements"].end_block_id is None
-        assert dialog.selections["bid_requirements"].manually_adjusted is True
+        assert dialog.source_hints["bid_requirements"] == TenderSourceHint("bid_requirements", "s0", "s1")
 
         dialog._move_previous()
 
