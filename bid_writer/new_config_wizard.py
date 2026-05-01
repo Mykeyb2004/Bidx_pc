@@ -659,8 +659,18 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _register_new_created_paths(self, paths: tuple[Path, ...], existing_paths: set[Path]) -> None:
         for path in paths:
             resolved = Path(path).expanduser().resolve()
+            if self._is_import_backup_path(resolved):
+                continue
             if resolved not in existing_paths and resolved.exists():
                 register_created_path(self.state, resolved)
+
+    def _is_import_backup_path(self, path: Path) -> bool:
+        material_dir = (self.state.project_root / "项目要求").resolve()
+        backup_paths = {
+            (material_dir / "项目采购需求.md.bak").resolve(),
+            (material_dir / "评分标准.md.bak").resolve(),
+        }
+        return path.resolve() in backup_paths
 
     def _confirm_overwrite(self, path: Path) -> bool:
         return messagebox.askyesno(

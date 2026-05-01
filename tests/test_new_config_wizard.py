@@ -356,6 +356,7 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     existing_backup = existing_requirements.with_suffix(existing_requirements.suffix + ".bak")
     existing_backup.write_text("old backup", encoding="utf-8")
     scoring = existing_requirements.parent / "评分标准.md"
+    scoring_backup = scoring.with_suffix(scoring.suffix + ".bak")
     report = tmp_path / ".bid_writer" / "imports" / "pending" / "extraction_report.json"
     converted = report.parent / "converted.md"
     conversion_map = report.parent / "conversion_map.json"
@@ -366,7 +367,7 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
         requirements_path = existing_requirements
         scoring_path = scoring
         import_dir = report.parent
-        created_paths = (report, converted, conversion_map, existing_requirements, existing_backup, scoring)
+        created_paths = (report, converted, conversion_map, existing_requirements, existing_backup, scoring, scoring_backup)
 
     class FakeService:
         def import_document(self, **kwargs):
@@ -384,6 +385,7 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
             converted.write_text("converted", encoding="utf-8")
             conversion_map.write_text("{}", encoding="utf-8")
             scoring.write_text("score", encoding="utf-8")
+            scoring_backup.write_text("score backup", encoding="utf-8")
             return FakeResult()
 
     monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
@@ -407,6 +409,7 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     assert scoring in dialog.state.created_paths
     assert existing_requirements not in dialog.state.created_paths
     assert existing_backup not in dialog.state.created_paths
+    assert scoring_backup not in dialog.state.created_paths
     assert synced == [True]
 
 

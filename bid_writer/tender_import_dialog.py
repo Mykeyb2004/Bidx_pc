@@ -293,7 +293,9 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         except tk.TclError:
             return False
         expected_start, expected_end = self._applied_source_selection_range
-        return (start, end) != (f"1.0+{expected_start}c", f"1.0+{expected_end}c")
+        expected_start_index = self.source_text.index(f"1.0+{expected_start}c")
+        expected_end_index = self.source_text.index(f"1.0+{expected_end}c")
+        return (start, end) != (expected_start_index, expected_end_index)
 
     def _cancel(self) -> None:
         self.result = ManualTenderConfirmationResult(

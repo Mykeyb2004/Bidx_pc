@@ -122,8 +122,14 @@ def test_manual_dialog_saves_default_source_selection_without_user_drag():
         assert dialog.result.cancelled is False
         assert dialog.result.requirements is not None
         assert "服务内容" in dialog.result.requirements.markdown
+        assert dialog.result.requirements.start_block_id == "r0"
+        assert dialog.result.requirements.end_block_id == "r1"
+        assert dialog.result.requirements.manually_adjusted is False
         assert dialog.result.scoring is not None
         assert "10分" in dialog.result.scoring.markdown
+        assert dialog.result.scoring.start_block_id == "s0"
+        assert dialog.result.scoring.end_block_id == "s1"
+        assert dialog.result.scoring.manually_adjusted is False
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
