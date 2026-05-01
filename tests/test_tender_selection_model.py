@@ -2,7 +2,9 @@ from bid_writer.tender_import_models import ConvertedBlock, ManualTenderSectionS
 from bid_writer.tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
+    build_source_hint,
     selection_to_markdown,
+    source_hint_to_markdown,
     validate_selection_markdown,
 )
 
@@ -94,6 +96,35 @@ def test_build_default_selection_canonicalizes_reversed_block_ids():
     assert selection.end_block_id == "r2"
     assert "项目采购需求" in selection_to_markdown(document, selection)
     assert "评分标准" not in selection_to_markdown(document, selection)
+
+
+def test_build_source_hint_maps_extraction_without_creating_manual_selection():
+    document = _document()
+    extraction = TenderExtractionResult(
+        section_key="bid_requirements",
+        title="项目采购需求",
+        markdown="算法原文",
+        start_block_id="h1",
+        end_block_id="r2",
+        confidence=0.9,
+    )
+
+    hint = build_source_hint(document, extraction)
+
+    assert hint is not None
+    assert hint.section_key == "bid_requirements"
+    assert hint.start_block_id == "h1"
+    assert hint.end_block_id == "r2"
+    assert "项目采购需求" in source_hint_to_markdown(document, hint)
+    assert "评分标准" not in source_hint_to_markdown(document, hint)
+
+
+def test_build_source_hint_returns_none_for_missing_extraction_or_blocks():
+    document = _document()
+    missing = TenderExtractionResult("bid_requirements", "需求", "", "missing", "r2", 0.1)
+
+    assert build_source_hint(document, None) is None
+    assert build_source_hint(document, missing) is None
 
 
 def test_build_default_selection_returns_none_for_missing_extraction_or_blocks():

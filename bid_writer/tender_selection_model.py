@@ -47,30 +47,51 @@ class TenderSelectionDocument:
         )
 
 
-def build_default_selection(
+@dataclass(frozen=True)
+class TenderSourceHint:
+    section_key: str
+    start_block_id: str
+    end_block_id: str
+
+
+def build_source_hint(
     document: TenderSelectionDocument,
     extraction: TenderExtractionResult | None,
-) -> ManualTenderSectionSelection | None:
+) -> TenderSourceHint | None:
     if extraction is None:
         return None
     if extraction.start_block_id not in document.block_ranges or extraction.end_block_id not in document.block_ranges:
         return None
     start_block_id, end_block_id = _canonical_block_ids(document, extraction.start_block_id, extraction.end_block_id)
-    markdown = selection_to_markdown(
-        document,
-        ManualTenderSectionSelection(
-            section_key=extraction.section_key,
-            markdown="",
-            start_block_id=start_block_id,
-            end_block_id=end_block_id,
-            manually_adjusted=False,
-        ),
-    )
-    return ManualTenderSectionSelection(
+    return TenderSourceHint(
         section_key=extraction.section_key,
-        markdown=markdown,
         start_block_id=start_block_id,
         end_block_id=end_block_id,
+    )
+
+
+def source_hint_to_markdown(document: TenderSelectionDocument, hint: TenderSourceHint) -> str:
+    start_block_id, end_block_id = _canonical_block_ids(document, hint.start_block_id, hint.end_block_id)
+    start_range = document.block_ranges.get(start_block_id)
+    end_range = document.block_ranges.get(end_block_id)
+    if start_range is None or end_range is None:
+        return ""
+    return document.markdown[start_range.start : end_range.end].strip()
+
+
+def build_default_selection(
+    document: TenderSelectionDocument,
+    extraction: TenderExtractionResult | None,
+) -> ManualTenderSectionSelection | None:
+    hint = build_source_hint(document, extraction)
+    if hint is None:
+        return None
+    markdown = source_hint_to_markdown(document, hint)
+    return ManualTenderSectionSelection(
+        section_key=hint.section_key,
+        markdown=markdown,
+        start_block_id=hint.start_block_id,
+        end_block_id=hint.end_block_id,
         manually_adjusted=False,
     )
 
