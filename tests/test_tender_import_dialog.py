@@ -1,5 +1,6 @@
 from pathlib import Path
 import tkinter as tk
+from tkinter import ttk
 
 import pytest
 
@@ -9,7 +10,7 @@ from bid_writer.tender_import_dialog import (
     SECTION_LABELS,
     build_confirmation_status,
     build_initial_section_selection,
-    can_expand_selection,
+    can_move_selection,
     build_low_confidence_preview,
     confirm_extracted_sections_preview,
 )
@@ -94,10 +95,10 @@ def test_build_confirmation_status_includes_warnings():
     assert "可能不是评分标准" in status
 
 
-def test_can_expand_selection_requires_block_backed_selection():
-    assert can_expand_selection(None) is False
-    assert can_expand_selection(ManualTenderSectionSelection("bid_requirements", "手选", None, None, True)) is False
-    assert can_expand_selection(ManualTenderSectionSelection("bid_requirements", "", "r1", "r2", False)) is True
+def test_can_move_selection_requires_block_backed_selection():
+    assert can_move_selection(None) is False
+    assert can_move_selection(ManualTenderSectionSelection("bid_requirements", "手选", None, None, True)) is False
+    assert can_move_selection(ManualTenderSectionSelection("bid_requirements", "", "r1", "r2", False)) is True
 
 
 def test_manual_dialog_saves_default_source_selection_without_user_drag():
@@ -130,6 +131,38 @@ def test_manual_dialog_saves_default_source_selection_without_user_drag():
         assert dialog.result.scoring.start_block_id == "s0"
         assert dialog.result.scoring.end_block_id == "s1"
         assert dialog.result.scoring.manually_adjusted is False
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_uses_chapter_navigation_button_labels():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        button_texts = [
+            child.cget("text")
+            for child in dialog.winfo_children()[0].winfo_children()
+            if isinstance(child, ttk.Button)
+        ]
+
+        assert "上一章节" in button_texts
+        assert "下一章节" in button_texts
+        assert "向前扩展" not in button_texts
+        assert "向后扩展" not in button_texts
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()

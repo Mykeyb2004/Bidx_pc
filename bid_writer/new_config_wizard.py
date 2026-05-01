@@ -190,7 +190,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         frame = self._create_step_frame(
             "source",
             "资料来源",
-            "先选择招标文件，系统会根据文件位置推导项目目录和配置路径；也可以跳过导入，后续手动填写资料文件。",
+            "先选择招标文件，系统会把项目根目录设为招标文件所在目录，并推导配置路径；也可以跳过导入，后续手动填写资料文件。",
         )
         controls = ttk.Frame(frame)
         controls.grid(row=2, column=0, sticky="ew", pady=(18, 0))

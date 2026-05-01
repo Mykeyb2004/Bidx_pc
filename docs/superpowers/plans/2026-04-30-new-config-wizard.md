@@ -74,7 +74,7 @@ def test_regular_tender_directory_becomes_project_root(tmp_path: Path):
     assert state.should_copy_source is False
 
 
-def test_materials_directory_uses_parent_as_project_root(tmp_path: Path):
+def test_materials_directory_itself_becomes_project_root(tmp_path: Path):
     project = tmp_path / "公共服务项目"
     source_dir = project / "招标文件"
     source_dir.mkdir(parents=True)
@@ -83,11 +83,11 @@ def test_materials_directory_uses_parent_as_project_root(tmp_path: Path):
 
     state = build_initial_state_from_source(source, current_config_path=tmp_path / "config.yaml")
 
-    assert state.project_root == project
+    assert state.project_root == source_dir
     assert state.should_copy_source is False
 
 
-def test_downloads_source_suggests_new_project_folder(tmp_path: Path):
+def test_downloads_source_directory_becomes_project_root(tmp_path: Path):
     downloads = tmp_path / "Downloads"
     downloads.mkdir()
     source = downloads / "公共服务满意度项目招标文件.pdf"
@@ -97,9 +97,9 @@ def test_downloads_source_suggests_new_project_folder(tmp_path: Path):
 
     state = build_initial_state_from_source(source, current_config_path=current_config)
 
-    assert state.project_root == current_config.parent / "公共服务满意度项目"
-    assert state.should_copy_source is True
-    assert state.source_copy_path == state.project_root / "招标文件" / source.name
+    assert state.project_root == downloads
+    assert state.should_copy_source is False
+    assert state.source_copy_path is None
 
 
 def test_project_name_strips_common_tender_suffixes():
@@ -246,8 +246,6 @@ from pathlib import Path
 from .config_editor import ConfigEditorDocument, create_new_config_editor_document
 
 
-MATERIAL_DIR_NAMES = {"招标文件", "项目资料", "资料", "采购文件", "投标资料"}
-TRANSIENT_DIR_NAMES = {"Downloads", "Desktop", "下载", "桌面", "tmp", "temp"}
 DEFAULT_REQUIREMENTS_RELATIVE = "./项目要求/项目采购需求.md"
 DEFAULT_SCORING_RELATIVE = "./项目要求/评分标准.md"
 DEFAULT_OUTLINE_RELATIVE = "./投标大纲.md"
@@ -321,22 +319,13 @@ def build_manual_state(*, project_root: Path, config_path: Path) -> NewConfigWiz
 
 
 def infer_project_root(source_path: Path, config_dir: Path, project_name: str) -> Path:
-    source_dir = source_path.parent
-    if is_transient_location(source_dir):
-        return config_dir / project_name
-    if source_dir.name in MATERIAL_DIR_NAMES:
-        return source_dir.parent
-    return source_dir
+    return source_path.parent
 
 
 def derive_project_name(filename: str) -> str:
     stem = Path(filename).stem.strip()
     cleaned = re.sub(r"(招标文件|采购文件|招标公告|采购公告|竞争性磋商文件|公开招标文件)$", "", stem).strip(" _-—")
     return cleaned or "新项目"
-
-
-def is_transient_location(path: Path) -> bool:
-    return any(part in TRANSIENT_DIR_NAMES for part in path.parts)
 
 
 def should_copy_source_file(source_path: Path, project_root: Path) -> bool:
@@ -1350,13 +1339,13 @@ git commit -m "feat: open new config wizard from project menu"
 In `README.md`, replace the current new-config note under “使用流程” with:
 
 ```markdown
-- “新建配置...”会打开新建配置向导。默认从选择招标文件开始，系统会根据招标文件位置推导项目根目录、配置文件保存位置、资料目录、输出目录和大纲路径；用户确认后可自动抽取采购需求和评分标准。若招标文件来自下载、桌面或临时目录，向导会建议创建正式项目文件夹。抽取失败时可手动选择采购需求和评分标准文件。
+- “新建配置...”会打开新建配置向导。默认从选择招标文件开始，系统会把项目根目录设置为招标文件所在目录，并据此推导配置文件保存位置、资料目录、输出目录和大纲路径；用户确认后可自动抽取采购需求和评分标准。抽取失败时可手动选择采购需求和评分标准文件。
 ```
 
 Update “新建配置中导入招标文件” first paragraph to:
 
 ```markdown
-在“项目 -> 新建配置...”向导中，第一步可以选择一个招标文件。向导会先推导项目位置并让用户确认，确认后再转换招标文件、抽取“项目采购需求”和“评分标准”，并写入配置引用的独立 Markdown 文件。
+在“项目 -> 新建配置...”向导中，第一步可以选择一个招标文件。向导会先把项目根目录设置为招标文件所在目录并让用户确认，确认后再转换招标文件、抽取“项目采购需求”和“评分标准”，并写入配置引用的独立 Markdown 文件。
 ```
 
 - [ ] **Step 2: Update config schema documentation**
@@ -1364,7 +1353,7 @@ Update “新建配置中导入招标文件” first paragraph to:
 In `docs/config_schema.md`, add this paragraph near the project path explanation:
 
 ```markdown
-GUI 新建配置向导会根据招标文件位置生成这些路径。`project.root_dir` 会尽量相对配置文件保存；`project.inputs.*` 和 `project.output_dir` 会尽量相对 `project.root_dir` 保存。若招标文件来自 `Downloads`、`Desktop` 或临时目录，向导会建议创建正式项目目录，并在需要时把原始招标文件复制到项目内的 `招标文件/`。
+GUI 新建配置向导会根据招标文件位置生成这些路径。选择招标文件后，`project.root_dir` 默认设置为该招标文件所在目录，并尽量相对配置文件保存；`project.inputs.*` 和 `project.output_dir` 会尽量相对 `project.root_dir` 保存。
 ```
 
 - [ ] **Step 3: Run focused regression tests**

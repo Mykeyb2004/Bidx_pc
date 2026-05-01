@@ -26,17 +26,6 @@ class NewConfigWizardState:
     manual_inputs: bool = False
 
 
-_MATERIALS_DIR_NAMES = {"招标文件", "采购文件", "招采文件", "投标资料", "项目资料", "资料"}
-_TRANSIENT_DIR_NAMES = {
-    "downloads",
-    "download",
-    "desktop",
-    "桌面",
-    "下载",
-    "tmp",
-    "temp",
-    "temporaryitems",
-}
 _TENDER_SUFFIXES = (
     "公开招标文件",
     "竞争性磋商文件",
@@ -130,12 +119,7 @@ def build_editor_document_from_state(state: NewConfigWizardState) -> ConfigEdito
 
 def infer_project_root(source_path: str | Path, config_dir: str | Path, project_name: str) -> Path:
     source = Path(source_path)
-    parent = source.parent
-    if parent.name in _MATERIALS_DIR_NAMES:
-        return parent.parent
-    if is_transient_location(source):
-        return Path(config_dir) / project_name
-    return parent
+    return source.parent
 
 
 def derive_project_name(filename: str | Path) -> str:
@@ -145,11 +129,6 @@ def derive_project_name(filename: str | Path) -> str:
             name = name[: -len(suffix)].strip()
             break
     return name or "新项目"
-
-
-def is_transient_location(path: str | Path) -> bool:
-    path_obj = Path(path)
-    return any(part.casefold() in _TRANSIENT_DIR_NAMES for part in path_obj.parts)
 
 
 def should_copy_source_file(source_path: str | Path, project_root: str | Path) -> bool:

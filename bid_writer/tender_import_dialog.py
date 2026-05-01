@@ -15,8 +15,8 @@ from .tender_import_models import (
 from .tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    expand_selection_to_next_block,
-    expand_selection_to_previous_block,
+    move_selection_to_next_block,
+    move_selection_to_previous_block,
     selection_to_markdown,
     validate_selection_markdown,
 )
@@ -55,7 +55,7 @@ def build_confirmation_status(
     return "\n".join(parts)
 
 
-def can_expand_selection(selection: ManualTenderSectionSelection | None) -> bool:
+def can_move_selection(selection: ManualTenderSectionSelection | None) -> bool:
     return selection is not None and selection.start_block_id is not None and selection.end_block_id is not None
 
 
@@ -110,8 +110,8 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             sticky="ew",
             pady=(0, 16),
         )
-        ttk.Button(controls, text="向前扩展", command=self._expand_previous).grid(row=3, column=0, sticky="ew", pady=3)
-        ttk.Button(controls, text="向后扩展", command=self._expand_next).grid(row=4, column=0, sticky="ew", pady=3)
+        ttk.Button(controls, text="上一章节", command=self._move_previous).grid(row=3, column=0, sticky="ew", pady=3)
+        ttk.Button(controls, text="下一章节", command=self._move_next).grid(row=4, column=0, sticky="ew", pady=3)
         self.save_button = ttk.Button(controls, text="", command=self._save_current_section)
         self.save_button.grid(row=5, column=0, sticky="ew", pady=(14, 3))
         ttk.Button(controls, text="取消", command=self._cancel).grid(row=6, column=0, sticky="ew", pady=3)
@@ -305,20 +305,20 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         )
         self.destroy()
 
-    def _expand_previous(self) -> None:
-        self._expand_current(previous=True)
+    def _move_previous(self) -> None:
+        self._move_current(previous=True)
 
-    def _expand_next(self) -> None:
-        self._expand_current(previous=False)
+    def _move_next(self) -> None:
+        self._move_current(previous=False)
 
-    def _expand_current(self, *, previous: bool) -> None:
+    def _move_current(self, *, previous: bool) -> None:
         section_key = self._current_section_key()
         selection = self.selections[section_key]
-        if not can_expand_selection(selection):
+        if not can_move_selection(selection):
             messagebox.showinfo("需要手动选择", "未自动定位当前章节，请先在源码区手动选择文本。", parent=self)
             return
-        expander = expand_selection_to_previous_block if previous else expand_selection_to_next_block
-        self.selections[section_key] = expander(self.document, selection)
+        mover = move_selection_to_previous_block if previous else move_selection_to_next_block
+        self.selections[section_key] = mover(self.document, selection)
         self._render_blocks()
         self._apply_source_selection(self.selections[section_key])
         self._update_status()

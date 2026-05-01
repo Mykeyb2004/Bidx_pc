@@ -231,8 +231,8 @@ from bid_writer.tender_import_models import ConvertedBlock, TenderExtractionResu
 from bid_writer.tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    expand_selection_to_next_block,
-    expand_selection_to_previous_block,
+    move_selection_to_next_block,
+    move_selection_to_previous_block,
     selection_to_markdown,
     validate_selection_markdown,
 )
@@ -301,20 +301,20 @@ def test_build_default_selection_returns_none_for_missing_extraction_or_blocks()
     assert build_default_selection(document, missing) is None
 
 
-def test_expand_selection_to_adjacent_blocks():
+def test_move_selection_to_adjacent_blocks_preserves_selection_width():
     document = _document()
     selection = build_default_selection(
         document,
         TenderExtractionResult("bid_requirements", "项目采购需求", "", "r1", "r1", 0.9),
     )
 
-    previous = expand_selection_to_previous_block(document, selection)
-    expanded = expand_selection_to_next_block(document, previous)
+    previous = move_selection_to_previous_block(document, selection)
+    moved = move_selection_to_next_block(document, previous)
 
     assert previous.start_block_id == "h1"
-    assert previous.end_block_id == "r1"
-    assert expanded.start_block_id == "h1"
-    assert expanded.end_block_id == "r2"
+    assert previous.end_block_id == "h1"
+    assert moved.start_block_id == "r1"
+    assert moved.end_block_id == "r1"
 
 
 def test_selection_to_markdown_uses_character_range():
@@ -442,7 +442,7 @@ def selection_to_markdown(document: TenderSelectionDocument, selection: ManualTe
     return document.markdown[start:end].strip()
 
 
-def expand_selection_to_previous_block(
+def move_selection_to_previous_block(
     document: TenderSelectionDocument,
     selection: ManualTenderSectionSelection,
 ) -> ManualTenderSectionSelection:
@@ -459,7 +459,7 @@ def expand_selection_to_previous_block(
     )
 
 
-def expand_selection_to_next_block(
+def move_selection_to_next_block(
     document: TenderSelectionDocument,
     selection: ManualTenderSectionSelection,
 ) -> ManualTenderSectionSelection:
@@ -901,8 +901,8 @@ from .tender_import_models import (
 from .tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    expand_selection_to_next_block,
-    expand_selection_to_previous_block,
+    move_selection_to_next_block,
+    move_selection_to_previous_block,
     validate_selection_markdown,
 )
 ```
@@ -972,7 +972,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
 
 Implement `_create_widgets()` with a `ttk.PanedWindow` or grid. The rendered Markdown block view is a Tk `Text` widget with simple tags; it must not add a Markdown/WebView dependency:
 
-- Left `ttk.Frame`: labels, status text, previous/next expand buttons, save button, cancel button.
+- Left `ttk.Frame`: labels, status text, previous/next chapter buttons, save button, cancel button.
 - Middle `tk.Text`: rendered-ish view. Insert each block with simple tags:
   - headings: larger/bold tag where supported by `tkinter.font`.
   - tables: monospace tag.
@@ -1047,7 +1047,7 @@ def _save_current_section(self) -> None:
     self.destroy()
 ```
 
-Implement `_expand_previous()` and `_expand_next()` using `expand_selection_to_previous_block()` and `expand_selection_to_next_block()` when there is an existing block-based selection.
+Implement `_move_previous()` and `_move_next()` using `move_selection_to_previous_block()` and `move_selection_to_next_block()` when there is an existing block-based selection. Buttons are labeled “上一章节” and “下一章节”, and move the current block-backed selection instead of expanding it.
 
 Implement `_cancel()`:
 
