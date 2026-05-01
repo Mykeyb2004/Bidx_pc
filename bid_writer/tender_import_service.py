@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .tender_import_models import TenderSectionExtraction, dump_extraction_report
+from .tender_import_models import (
+    ManualTenderConfirmationResult,
+    TenderSectionExtraction,
+    dump_extraction_report,
+)
 from .tender_markdown_converter import convert_tender_document
 from .tender_section_extractor import extract_tender_sections
 
@@ -24,6 +28,9 @@ class TenderImportResult:
     extraction: TenderSectionExtraction
     cancelled: bool = False
     created_paths: tuple[Path, ...] = ()
+
+
+ConfirmSectionsCallback = Callable[..., ManualTenderConfirmationResult]
 
 
 class TenderImportError(RuntimeError):
@@ -48,7 +55,7 @@ class TenderImportService:
         source_path: Path,
         project_root: Path,
         confirm_overwrite: Callable[[Path], bool],
-        confirm_low_confidence: Callable[[TenderSectionExtraction], bool],
+        confirm_sections: ConfirmSectionsCallback,
         import_dir: Path | None = None,
     ) -> TenderImportResult:
         project_root = Path(project_root).expanduser().resolve()
@@ -71,9 +78,20 @@ class TenderImportService:
             encoding="utf-8",
         )
 
-        if not extraction.is_complete:
-            raise TenderImportError("未能同时抽取项目采购需求和评分标准，请查看转换 Markdown 或手动整理。")
-        if extraction.needs_confirmation and not confirm_low_confidence(extraction):
+        target_dir = project_root / "项目要求"
+        requirements_path = target_dir / "项目采购需求.md"
+        scoring_path = target_dir / "评分标准.md"
+        confirmation = confirm_sections(
+            conversion=conversion,
+            extraction=extraction,
+            requirements_path=requirements_path,
+            scoring_path=scoring_path,
+        )
+        report_path.write_text(
+            json.dumps(dump_extraction_report(extraction, confirmation), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        if confirmation.cancelled or confirmation.requirements is None or confirmation.scoring is None:
             return TenderImportResult(
                 requirements_path=None,
                 scoring_path=None,
@@ -86,12 +104,9 @@ class TenderImportService:
                 created_paths=(*self._conversion_created_paths(conversion, import_dir), report_path),
             )
 
-        target_dir = project_root / "项目要求"
         target_dir.mkdir(parents=True, exist_ok=True)
-        requirements_path = target_dir / "项目采购需求.md"
-        scoring_path = target_dir / "评分标准.md"
-        self._write_target(requirements_path, extraction.requirements.markdown, confirm_overwrite)
-        self._write_target(scoring_path, extraction.scoring.markdown, confirm_overwrite)
+        self._write_target(requirements_path, confirmation.requirements.markdown, confirm_overwrite)
+        self._write_target(scoring_path, confirmation.scoring.markdown, confirm_overwrite)
         return TenderImportResult(
             requirements_path=requirements_path,
             scoring_path=scoring_path,

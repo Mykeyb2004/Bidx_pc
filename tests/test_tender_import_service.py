@@ -29,6 +29,25 @@ class FakeExtractor:
         return self.extraction
 
 
+def _confirmation(requirements="# 项目采购需求\n\n人工需求\n", scoring="# 评分标准\n\n人工评分\n"):
+    return ManualTenderConfirmationResult(
+        requirements=ManualTenderSectionSelection(
+            "bid_requirements",
+            requirements,
+            "r1",
+            "r2",
+            manually_adjusted=False,
+        ),
+        scoring=ManualTenderSectionSelection(
+            "scoring_criteria",
+            scoring,
+            "s1",
+            "s2",
+            manually_adjusted=False,
+        ),
+    )
+
+
 def test_manual_confirmation_result_carries_final_markdown():
     confirmation = ManualTenderConfirmationResult(
         requirements=ManualTenderSectionSelection(
@@ -96,13 +115,13 @@ def test_import_service_writes_outputs_and_report(tmp_path: Path):
         source_path=source,
         project_root=tmp_path,
         confirm_overwrite=lambda _path: True,
-        confirm_low_confidence=lambda _extraction: True,
+        confirm_sections=lambda **_kwargs: _confirmation(),
     )
 
     assert result.requirements_path == tmp_path / "项目要求" / "项目采购需求.md"
     assert result.scoring_path == tmp_path / "项目要求" / "评分标准.md"
-    assert result.requirements_path.read_text(encoding="utf-8") == "# 项目采购需求\n\n需求正文\n"
-    assert result.scoring_path.read_text(encoding="utf-8") == "# 评分标准\n\n评分正文\n"
+    assert result.requirements_path.read_text(encoding="utf-8") == "# 项目采购需求\n\n人工需求\n"
+    assert result.scoring_path.read_text(encoding="utf-8") == "# 评分标准\n\n人工评分\n"
     assert result.extraction_report_path.exists()
     assert result.relative_requirements_path == "./项目要求/项目采购需求.md"
     assert result.relative_scoring_path == "./项目要求/评分标准.md"
@@ -130,14 +149,14 @@ def test_import_service_backs_up_existing_nonempty_files(tmp_path: Path):
         source_path=source,
         project_root=tmp_path,
         confirm_overwrite=lambda path: path.name == "项目采购需求.md",
-        confirm_low_confidence=lambda _extraction: True,
+        confirm_sections=lambda **_kwargs: _confirmation("# 项目采购需求\n\n新需求\n", "# 评分标准\n\n新评分\n"),
     )
 
     assert (target_dir / "项目采购需求.md.bak").read_text(encoding="utf-8") == "旧需求"
     assert existing.read_text(encoding="utf-8") == "# 项目采购需求\n\n新需求\n"
 
 
-def test_import_service_stops_when_low_confidence_not_confirmed(tmp_path: Path):
+def test_import_service_stops_when_manual_confirmation_cancelled(tmp_path: Path):
     source = tmp_path / "tender.docx"
     source.write_text("fake", encoding="utf-8")
     conversion = type("Conversion", (), {"output_dir": tmp_path / ".bid_writer" / "imports" / "import-test"})()
@@ -155,11 +174,72 @@ def test_import_service_stops_when_low_confidence_not_confirmed(tmp_path: Path):
         source_path=source,
         project_root=tmp_path,
         confirm_overwrite=lambda _path: True,
-        confirm_low_confidence=lambda _extraction: False,
+        confirm_sections=lambda **_kwargs: ManualTenderConfirmationResult(cancelled=True),
     )
 
     assert result.cancelled is True
     assert not (tmp_path / "项目要求" / "项目采购需求.md").exists()
+
+
+def test_import_service_allows_manual_completion_when_extractor_misses_sections(tmp_path: Path):
+    source = tmp_path / "tender.docx"
+    source.write_text("fake", encoding="utf-8")
+    conversion = type(
+        "Conversion",
+        (),
+        {
+            "source_path": source,
+            "output_dir": tmp_path / ".bid_writer" / "imports" / "import-test",
+            "converted_markdown_path": tmp_path / ".bid_writer" / "imports" / "import-test" / "converted.md",
+            "conversion_map_path": tmp_path / ".bid_writer" / "imports" / "import-test" / "conversion_map.json",
+            "blocks": [],
+            "warnings": (),
+        },
+    )()
+    extraction = TenderSectionExtraction(requirements=None, scoring=None, warnings=("未定位到章节",))
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "import-test",
+    )
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path,
+        confirm_overwrite=lambda _path: True,
+        confirm_sections=lambda **_kwargs: _confirmation(),
+    )
+
+    assert result.cancelled is False
+    assert result.requirements_path.read_text(encoding="utf-8") == "# 项目采购需求\n\n人工需求\n"
+    assert result.scoring_path.read_text(encoding="utf-8") == "# 评分标准\n\n人工评分\n"
+
+
+def test_import_service_does_not_write_when_confirmation_returns_incomplete_result(tmp_path: Path):
+    source = tmp_path / "tender.docx"
+    source.write_text("fake", encoding="utf-8")
+    conversion = type("Conversion", (), {"output_dir": tmp_path / ".bid_writer" / "imports" / "import-test"})()
+    extraction = TenderSectionExtraction()
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "import-test",
+    )
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path,
+        confirm_overwrite=lambda _path: True,
+        confirm_sections=lambda **_kwargs: ManualTenderConfirmationResult(
+            requirements=ManualTenderSectionSelection("bid_requirements", "需求", None, None, True),
+            scoring=None,
+            cancelled=True,
+        ),
+    )
+
+    assert result.cancelled is True
+    assert not (tmp_path / "项目要求" / "项目采购需求.md").exists()
+    assert not (tmp_path / "项目要求" / "评分标准.md").exists()
 
 
 def test_import_service_accepts_explicit_import_dir_and_reports_created_paths(tmp_path: Path):
@@ -183,7 +263,7 @@ def test_import_service_accepts_explicit_import_dir_and_reports_created_paths(tm
         project_root=tmp_path / "项目",
         import_dir=explicit_import_dir,
         confirm_overwrite=lambda _path: True,
-        confirm_low_confidence=lambda _extraction: True,
+        confirm_sections=lambda **_kwargs: _confirmation(),
     )
 
     assert service.converter.calls[0] == (source, explicit_import_dir)
@@ -222,7 +302,7 @@ def test_import_service_normalizes_explicit_relative_import_dir(tmp_path: Path, 
         project_root=tmp_path / "项目",
         import_dir=relative_import_dir,
         confirm_overwrite=lambda _path: True,
-        confirm_low_confidence=lambda _extraction: True,
+        confirm_sections=lambda **_kwargs: _confirmation(),
     )
 
     assert service.converter.calls[0] == (source, expected_import_dir)
@@ -248,7 +328,7 @@ def test_import_service_cancelled_low_confidence_reports_only_report_path(tmp_pa
         source_path=source,
         project_root=tmp_path,
         confirm_overwrite=lambda _path: True,
-        confirm_low_confidence=lambda _extraction: False,
+        confirm_sections=lambda **_kwargs: ManualTenderConfirmationResult(cancelled=True),
     )
 
     assert result.cancelled is True
@@ -290,7 +370,7 @@ def test_import_service_reports_conversion_artifacts_when_converter_provides_pat
         project_root=tmp_path,
         import_dir=import_dir,
         confirm_overwrite=lambda _path: True,
-        confirm_low_confidence=lambda _extraction: True,
+        confirm_sections=lambda **_kwargs: _confirmation(),
     )
 
     assert result.created_paths == (
@@ -320,7 +400,7 @@ def test_import_service_wraps_converter_errors_for_ui(tmp_path: Path):
             source_path=source,
             project_root=tmp_path,
             confirm_overwrite=lambda _path: True,
-            confirm_low_confidence=lambda _extraction: True,
+            confirm_sections=lambda **_kwargs: _confirmation(),
         )
     except TenderImportError as exc:
         assert str(exc) == "暂不支持 WPS 原生格式"
