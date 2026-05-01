@@ -18,7 +18,6 @@ from .tender_selection_model import (
     TenderSelectionDocument,
     TenderSourceHint,
     build_source_hint,
-    source_hint_to_markdown,
     validate_selection_markdown,
 )
 from .tender_section_boundary_config import load_boundary_config
@@ -184,13 +183,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         return start_offset, end_offset
 
     def _use_source_selection(self) -> None:
-        selected = self._current_source_selection()
-        if not selected:
-            messagebox.showinfo("需要手动选择", "请先在源码区选择文本。", parent=self)
-            return
-        self.target_text.delete("1.0", "end")
-        self.target_text.insert("1.0", selected)
-        self.target_text.focus_set()
+        return
 
     def _clear_target_editor(self) -> None:
         self.target_text.delete("1.0", "end")
@@ -241,13 +234,12 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             self._update_status(warnings)
             return
 
-        hint = self.source_hints[section_key]
         selection = ManualTenderSectionSelection(
             section_key=section_key,
             markdown=markdown.strip(),
-            start_block_id=hint.start_block_id if self._matches_source_hint(markdown, hint) else None,
-            end_block_id=hint.end_block_id if self._matches_source_hint(markdown, hint) else None,
-            manually_adjusted=not self._matches_source_hint(markdown, hint),
+            start_block_id=None,
+            end_block_id=None,
+            manually_adjusted=True,
         )
         self.confirmed[section_key] = selection
 
@@ -265,9 +257,6 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
 
     def _selection_for_save(self) -> str:
         return self.target_text.get("1.0", "end-1c").strip()
-
-    def _matches_source_hint(self, markdown: str, hint: TenderSourceHint | None) -> bool:
-        return hint is not None and markdown.strip() == source_hint_to_markdown(self.document, hint)
 
     def _cancel(self) -> None:
         self.result = ManualTenderConfirmationResult(
@@ -289,11 +278,6 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         target = self._adjacent_navigation_range(char_range, previous=previous)
         if target is not None:
             self._apply_source_char_selection(target.start, target.end)
-            self.source_hints[section_key] = TenderSourceHint(
-                section_key=section_key,
-                start_block_id=target.start_block_id,
-                end_block_id=target.end_block_id,
-            )
             self._update_status()
             return
 
@@ -310,7 +294,6 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             return
 
         self._apply_source_line_selection(target_start, target_end)
-        self.source_hints[section_key] = None
         self._update_status()
 
     def _adjacent_navigation_range(
