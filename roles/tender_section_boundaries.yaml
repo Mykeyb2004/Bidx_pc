@@ -1,0 +1,35 @@
+normalization:
+  strip_invisible: true
+  collapse_space: true
+major_markers:
+  - name: chapter
+    pattern: '第\s*(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９]+)\s*章\s*(?P<title>.*)'
+    priority: 100
+  - name: part
+    pattern: '第\s*(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９]+)\s*部分\s*(?P<title>.*)'
+    priority: 100
+  - name: volume_or_book
+    pattern: '第\s*(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９]+)\s*[篇卷册]\s*(?P<title>.*)'
+    priority: 95
+  - name: section
+    pattern: '第\s*(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９]+)\s*节\s*(?P<title>.*)'
+    priority: 85
+  - name: appendix
+    pattern: '附件\s*(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９A-Za-zＡ-Ｚａ-ｚ]+)?\s*[:：、.．]?\s*(?P<title>.*)'
+    priority: 85
+  - name: appendix_table
+    pattern: '附表\s*(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９A-Za-zＡ-Ｚａ-ｚ]+)?\s*[:：、.．]?\s*(?P<title>.*)'
+    priority: 85
+  - name: package
+    pattern: '(?:第\s*)?(?P<ordinal>[一二三四五六七八九十百千万零〇0-9０-９]+)\s*(?:包|标包|采购包)\s*(?P<title>.*)'
+    priority: 80
+fallback_markers:
+  - name: chinese_top
+    pattern: '(?P<ordinal>[一二三四五六七八九十百千万]+)\s*[、.．]\s*(?P<title>.+)'
+    priority: 60
+  - name: parenthesized
+    pattern: '[（(]\s*(?P<ordinal>[一二三四五六七八九十百千万0-9０-９]+)\s*[）)]\s*(?P<title>.+)'
+    priority: 50
+  - name: numeric
+    pattern: '(?P<ordinal>[0-9０-９]+(?:\s*[.．]\s*[0-9０-９]+)*)\s*[.．、]?\s*(?P<title>.+)'
+    priority: 45
