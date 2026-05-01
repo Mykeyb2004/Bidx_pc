@@ -353,6 +353,8 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     existing_requirements = tmp_path / "项目要求" / "项目采购需求.md"
     existing_requirements.parent.mkdir()
     existing_requirements.write_text("old", encoding="utf-8")
+    existing_backup = existing_requirements.with_suffix(existing_requirements.suffix + ".bak")
+    existing_backup.write_text("old backup", encoding="utf-8")
     scoring = existing_requirements.parent / "评分标准.md"
     report = tmp_path / ".bid_writer" / "imports" / "pending" / "extraction_report.json"
     converted = report.parent / "converted.md"
@@ -364,7 +366,7 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
         requirements_path = existing_requirements
         scoring_path = scoring
         import_dir = report.parent
-        created_paths = (report, converted, conversion_map, existing_requirements, scoring)
+        created_paths = (report, converted, conversion_map, existing_requirements, existing_backup, scoring)
 
     class FakeService:
         def import_document(self, **kwargs):
@@ -397,4 +399,5 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     assert conversion_map in dialog.state.created_paths
     assert scoring in dialog.state.created_paths
     assert existing_requirements not in dialog.state.created_paths
+    assert existing_backup not in dialog.state.created_paths
     assert synced == [True]

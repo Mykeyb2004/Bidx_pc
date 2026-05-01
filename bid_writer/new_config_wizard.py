@@ -635,9 +635,13 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.import_status_var.set(f"导入完成：{result.import_dir}")
 
     def _snapshot_existing_import_paths(self) -> set[Path]:
+        requirements = self.state.project_root / "项目要求" / "项目采购需求.md"
+        scoring = self.state.project_root / "项目要求" / "评分标准.md"
         paths = {
-            self.state.project_root / "项目要求" / "项目采购需求.md",
-            self.state.project_root / "项目要求" / "评分标准.md",
+            requirements,
+            scoring,
+            requirements.with_suffix(requirements.suffix + ".bak"),
+            scoring.with_suffix(scoring.suffix + ".bak"),
         }
         if self.state.import_dir is not None:
             paths.update(
