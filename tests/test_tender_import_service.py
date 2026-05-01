@@ -132,6 +132,61 @@ def test_import_service_writes_outputs_and_report(tmp_path: Path):
     assert result.relative_scoring_path == "./项目要求/评分标准.md"
 
 
+def test_import_service_report_records_edited_manual_confirmation(tmp_path: Path):
+    source = tmp_path / "tender.docx"
+    source.write_text("fake", encoding="utf-8")
+    conversion = type(
+        "Conversion",
+        (),
+        {
+            "source_path": source,
+            "output_dir": tmp_path / ".bid_writer" / "imports" / "import-test",
+            "converted_markdown_path": tmp_path / ".bid_writer" / "imports" / "import-test" / "converted.md",
+            "conversion_map_path": tmp_path / ".bid_writer" / "imports" / "import-test" / "conversion_map.json",
+            "blocks": [],
+            "warnings": (),
+        },
+    )()
+    extraction = TenderSectionExtraction(
+        requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "算法需求", "r1", "r2", 0.92),
+        scoring=TenderExtractionResult("scoring_criteria", "评分标准", "算法评分", "s1", "s2", 0.90),
+    )
+    service = TenderImportService(
+        converter=FakeConverter(conversion),
+        extractor=FakeExtractor(extraction),
+        import_id_factory=lambda: "import-test",
+    )
+
+    result = service.import_document(
+        source_path=source,
+        project_root=tmp_path,
+        confirm_overwrite=lambda _path: True,
+        confirm_sections=lambda **_kwargs: ManualTenderConfirmationResult(
+            requirements=ManualTenderSectionSelection(
+                "bid_requirements",
+                "# 项目采购需求\n\n编辑后的需求",
+                None,
+                None,
+                manually_adjusted=True,
+            ),
+            scoring=ManualTenderSectionSelection(
+                "scoring_criteria",
+                "# 评分标准\n\n编辑后的评分",
+                None,
+                None,
+                manually_adjusted=True,
+            ),
+        ),
+    )
+
+    report = json.loads(result.extraction_report_path.read_text(encoding="utf-8"))
+    assert report["manual_confirmation"]["requirements"]["markdown"] == "# 项目采购需求\n\n编辑后的需求"
+    assert report["manual_confirmation"]["requirements"]["manually_adjusted"] is True
+    assert report["manual_confirmation"]["requirements"]["start_block_id"] is None
+    assert report["manual_confirmation"]["scoring"]["markdown"] == "# 评分标准\n\n编辑后的评分"
+    assert report["manual_confirmation"]["scoring"]["manually_adjusted"] is True
+
+
 def test_import_service_backs_up_existing_nonempty_files(tmp_path: Path):
     source = tmp_path / "tender.docx"
     source.write_text("fake", encoding="utf-8")
