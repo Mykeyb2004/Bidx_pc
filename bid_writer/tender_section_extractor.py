@@ -28,7 +28,11 @@ REQUIREMENT_ALIASES = (
     "项目需求",
     "服务需求",
     "技术需求",
+    "货物需求",
+    "货物需求一览表",
+    "货物需求一览表及技术规格",
     "技术和服务要求",
+    "技术规格",
     "采购内容及要求",
     "项目内容及要求",
     "服务内容及要求",
@@ -67,12 +71,24 @@ def extract_tender_sections(conversion: TenderConversionResult) -> TenderSection
     blocks = sorted(conversion.blocks, key=lambda item: item.order_index)
     candidates = _collect_candidates(blocks)
     boundary_config = load_boundary_config()
-    boundary_matches = detect_boundary_matches(blocks, boundary_config)
+    boundary_matches = _filter_boundary_matches(blocks, detect_boundary_matches(blocks, boundary_config))
     requirements_span, scoring_span, boundary_warnings = resolve_extraction_spans(
         blocks=blocks,
         matches=boundary_matches,
         requirements_candidate_index=_candidate_index_for("bid_requirements", candidates, blocks),
         scoring_candidate_index=_candidate_index_for("scoring_criteria", candidates, blocks),
+    )
+    requirements_span = _discard_heading_candidate_fallback_span(
+        "bid_requirements",
+        blocks,
+        candidates,
+        requirements_span,
+    )
+    scoring_span = _discard_heading_candidate_fallback_span(
+        "scoring_criteria",
+        blocks,
+        candidates,
+        scoring_span,
     )
     requirements = _build_result("bid_requirements", blocks, candidates, requirements_span)
     scoring = _build_result("scoring_criteria", blocks, candidates, scoring_span)
@@ -218,6 +234,32 @@ def _is_toc_like(block: ConvertedBlock, *, in_toc_region: bool = False) -> bool:
     return bool(TOC_DOTTED_RE.search(text)) and len(text) <= 80
 
 
+def _filter_boundary_matches(blocks, matches):
+    matches_by_index: dict[int, list] = {}
+    for match in matches:
+        matches_by_index.setdefault(match.block_index, []).append(match)
+
+    filtered: list = []
+    in_toc_region = False
+    for index, block in enumerate(blocks):
+        if _is_toc_header(block):
+            in_toc_region = True
+            continue
+        if in_toc_region and block.heading_level is not None:
+            in_toc_region = False
+        if _is_toc_like(block, in_toc_region=in_toc_region):
+            continue
+        for match in matches_by_index.get(index, []):
+            if _is_broad_volume_boundary(match):
+                continue
+            filtered.append(match)
+    return filtered
+
+
+def _is_broad_volume_boundary(match) -> bool:
+    return match.rule_name == "volume_or_book" and not match.title.strip()
+
+
 def _build_result(
     section_key: str,
     blocks: list[ConvertedBlock],
@@ -261,6 +303,23 @@ def _candidate_index_for(
     return index_by_id.get(candidate.block_id)
 
 
+def _discard_heading_candidate_fallback_span(
+    section_key: str,
+    blocks: list[ConvertedBlock],
+    candidates: list[SectionCandidate],
+    span: TenderSectionBoundarySpan | None,
+) -> TenderSectionBoundarySpan | None:
+    if span is None or span.kind != "fallback":
+        return span
+    candidate_index = _candidate_index_for(section_key, candidates, blocks)
+    if candidate_index is None:
+        return span
+    candidate_block = blocks[candidate_index]
+    if candidate_block.heading_level is not None and span.start_index < candidate_index:
+        return None
+    return span
+
+
 def _adjust_start_index(section_key: str, blocks: list[ConvertedBlock], candidate_index: int) -> int:
     candidate = blocks[candidate_index]
     if candidate.block_type == "heading":
@@ -282,11 +341,13 @@ def _find_end_index(section_key: str, blocks: list[ConvertedBlock], start_index:
     for index in range(start_index + 1, len(blocks)):
         block = blocks[index]
         title = block.heading_title or block.text
-        if block.heading_level is not None and block.heading_level <= start_level:
-            return index
         if _is_strong_stop_boundary(block):
             return index
         if _is_opposite_section_boundary(section_key, block):
+            return index
+        if block.heading_level is not None and block.heading_level < start_level:
+            return index
+        if block.heading_level is not None and block.heading_level == start_level and _looks_like_peer_chapter(title):
             return index
     return len(blocks)
 
@@ -313,6 +374,13 @@ def _looks_like_section_title(title: str) -> bool:
     return not any(mark in stripped for mark in "，,。；;")
 
 
+def _looks_like_peer_chapter(title: str) -> bool:
+    normalized = _normalize_title(title)
+    if not normalized:
+        return False
+    return bool(re.match(r"^(第?[一二三四五六七八九十百千万零〇0-9０-９]+章|第?[一二三四五六七八九十百千万零〇0-9０-９]+部分)", title.strip()))
+
+
 def _is_opposite_section_boundary(section_key: str, block: ConvertedBlock) -> bool:
     if block.block_type == "table":
         return False
@@ -327,7 +395,9 @@ def _is_opposite_section_boundary(section_key: str, block: ConvertedBlock) -> bo
 def _is_strong_stop_boundary(block: ConvertedBlock) -> bool:
     if block.block_type == "table":
         return False
-    title = _candidate_title(block) or block.text
+    title = _candidate_title(block)
+    if not title:
+        return False
     return any(term in title for term in STRONG_STOP_TITLES)
 
 

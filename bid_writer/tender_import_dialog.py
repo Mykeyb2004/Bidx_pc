@@ -28,6 +28,8 @@ SECTION_LABELS = {
     "bid_requirements": "项目采购需求",
     "scoring_criteria": "评分标准",
 }
+TOC_DOTTED_RE = re.compile(r"\.{3,}|…{2,}|[.．·]{2,}\s*\d+\s*$")
+TOC_PAGE_RE = re.compile(r"^.{2,80}\s+\d{1,4}\s*$")
 
 
 @dataclass(frozen=True)
@@ -456,12 +458,14 @@ def _build_source_navigation_ranges(
     document: TenderSelectionDocument,
 ) -> tuple[tuple[_SourceNavigationRange, ...], tuple[_SourceNavigationRange, ...]]:
     config = load_boundary_config()
-    matches = [
+    matches = _filter_navigation_boundary_matches(document.blocks, [
         match
         for match in detect_boundary_matches(document.blocks, config)
         if _is_useful_navigation_match(match.normalized_text, match.rule_name, match.title, match.ordinal)
-    ]
-    major_ranges = _source_navigation_ranges_for_kind(document, matches, kind="major")
+    ])
+    boundary_major_ranges = _source_navigation_ranges_for_kind(document, matches, kind="major")
+    heading_major_ranges = _heading_navigation_ranges(document)
+    major_ranges = _merge_navigation_ranges(boundary_major_ranges, heading_major_ranges)
     fallback_ranges = _source_navigation_ranges_for_kind(document, matches, kind="fallback")
     return major_ranges, fallback_ranges
 
@@ -508,6 +512,53 @@ def _next_match_index(matches, start_index: int, default: int) -> int:
     return min(later) if later else default
 
 
+def _heading_navigation_ranges(document: TenderSelectionDocument) -> tuple[_SourceNavigationRange, ...]:
+    if not any(block.source_type == "docx" for block in document.blocks):
+        return ()
+    heading_indexes = [
+        index
+        for index, block in enumerate(document.blocks)
+        if block.heading_level is not None and _is_useful_heading_navigation_block(block)
+    ]
+    if not heading_indexes:
+        return ()
+    top_level = min(document.blocks[index].heading_level for index in heading_indexes)
+    top_heading_indexes = [
+        index for index in heading_indexes if document.blocks[index].heading_level == top_level
+    ]
+    ranges: list[_SourceNavigationRange] = []
+    for position, start_index in enumerate(top_heading_indexes):
+        end_index = top_heading_indexes[position + 1] if position + 1 < len(top_heading_indexes) else len(document.blocks)
+        start_block = document.blocks[start_index]
+        end_block = document.blocks[end_index - 1]
+        start_range = document.block_ranges.get(start_block.block_id)
+        end_range = document.block_ranges.get(end_block.block_id)
+        if start_range is None or end_range is None:
+            continue
+        ranges.append(
+            _SourceNavigationRange(
+                kind="heading",
+                start_block_id=start_block.block_id,
+                end_block_id=end_block.block_id,
+                start=start_range.start,
+                end=end_range.end,
+            )
+        )
+    return tuple(ranges)
+
+
+def _merge_navigation_ranges(
+    primary: tuple[_SourceNavigationRange, ...],
+    secondary: tuple[_SourceNavigationRange, ...],
+) -> tuple[_SourceNavigationRange, ...]:
+    merged = list(primary)
+    for candidate in secondary:
+        if any(item.start == candidate.start for item in merged):
+            continue
+        merged.append(candidate)
+    return tuple(sorted(merged, key=lambda item: item.start))
+
+
 def _current_navigation_index(
     ranges: tuple[_SourceNavigationRange, ...],
     current_range: tuple[int, int],
@@ -534,7 +585,55 @@ def _is_useful_navigation_match(normalized_text: str, rule_name: str, title: str
     text = normalized_text.strip()
     if not text or re.fullmatch(r"\d+", text):
         return False
+    if rule_name == "volume_or_book" and not title.strip():
+        return False
     if rule_name in {"appendix", "appendix_table"} and not title.strip():
+        return False
+    return True
+
+
+def _filter_navigation_boundary_matches(blocks, matches):
+    matches_by_index: dict[int, list] = {}
+    for match in matches:
+        matches_by_index.setdefault(match.block_index, []).append(match)
+
+    filtered: list = []
+    in_toc_region = False
+    for index, block in enumerate(blocks):
+        if _is_toc_header_block(block):
+            in_toc_region = True
+            continue
+        if in_toc_region and block.heading_level is not None:
+            in_toc_region = False
+        if _is_toc_like_block(block, in_toc_region=in_toc_region):
+            continue
+        filtered.extend(matches_by_index.get(index, []))
+    return filtered
+
+
+def _is_toc_header_block(block) -> bool:
+    text = str(block.heading_title or block.text or "").strip()
+    return re.sub(r"[\s　]+", "", text) == "目录"
+
+
+def _is_toc_like_block(block, *, in_toc_region: bool = False) -> bool:
+    text = str(block.text or "").strip()
+    if _is_toc_header_block(block):
+        return True
+    if in_toc_region and TOC_PAGE_RE.search(text):
+        return True
+    return bool(TOC_DOTTED_RE.search(text)) and len(text) <= 80
+
+
+def _is_useful_heading_navigation_block(block) -> bool:
+    text = str(block.heading_title or block.text or "").strip()
+    if not text:
+        return False
+    if _is_toc_header_block(block):
+        return False
+    if re.match(r"^[一二三四五六七八九十百千万]+[、.．]", text):
+        return False
+    if re.match(r"^[0-9０-９]+(?:\s*[.．、]|\s)", text):
         return False
     return True
 

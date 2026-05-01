@@ -286,3 +286,31 @@ def test_prefers_true_chapter_titles_over_later_references_in_forms():
     assert result.scoring.start_block_id == "chapter4"
     assert result.scoring.end_block_id == "score_table"
     assert "28.评标原则" not in result.scoring.markdown
+
+
+def test_docx_body_headings_win_over_toc_chapter_rows():
+    conversion = _conversion(
+        [
+            _paragraph("cover", "第二册", 1),
+            _paragraph("toc", "目      录", 2),
+            _paragraph("toc_req", "第八章  货物需求一览表及技术规格\t67", 3),
+            _paragraph("toc_score", "第九章  评标方法和标准\t69", 4),
+            _heading("notice", "招标公告", 5, level=1),
+            _paragraph("notice_body", "采购需求：本项目为15号楼研究生公寓采购配套家具。", 6),
+            _heading("req", "货物需求一览表及技术规格", 7, level=1),
+            _paragraph("req_body", "采购服务内容包括研究生公寓家具、技术规格、样品、验收和售后要求。", 8),
+            _heading("score", "评标方法和标准", 9, level=1),
+            _table("score_table", "| 评分项 | 评分标准 | 分值 |\n| --- | --- | --- |\n| 技术方案 | 完整得30分 | 30分 |", 10),
+        ]
+    )
+
+    result = extract_tender_sections(conversion)
+
+    assert result.requirements is not None
+    assert result.requirements.start_block_id == "req"
+    assert result.requirements.end_block_id == "req_body"
+    assert "第八章" not in result.requirements.markdown
+    assert result.scoring is not None
+    assert result.scoring.start_block_id == "score"
+    assert result.scoring.end_block_id == "score_table"
+    assert "第九章" not in result.scoring.markdown
