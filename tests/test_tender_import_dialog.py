@@ -10,7 +10,6 @@ from bid_writer.tender_import_dialog import (
     SECTION_LABELS,
     build_confirmation_status,
     build_initial_section_selection,
-    can_move_selection,
     build_low_confidence_preview,
     confirm_extracted_sections_preview,
 )
@@ -37,6 +36,14 @@ def _conversion() -> TenderConversionResult:
         conversion_map_path=Path(".bid_writer/imports/test/conversion_map.json"),
         blocks=blocks,
     )
+
+
+def _selected_line_range(text: tk.Text) -> tuple[int, int]:
+    start = int(text.index("sel.first").split(".", 1)[0])
+    end = int(text.index("sel.last").split(".", 1)[0])
+    if text.index("sel.last").split(".", 1)[1] == "0":
+        end -= 1
+    return start, end
 
 
 def test_manual_selection_dataclass_keeps_block_range():
@@ -95,12 +102,6 @@ def test_build_confirmation_status_includes_warnings():
     assert "可能不是评分标准" in status
 
 
-def test_can_move_selection_requires_block_backed_selection():
-    assert can_move_selection(None) is False
-    assert can_move_selection(ManualTenderSectionSelection("bid_requirements", "手选", None, None, True)) is False
-    assert can_move_selection(ManualTenderSectionSelection("bid_requirements", "", "r1", "r2", False)) is True
-
-
 def test_manual_dialog_saves_default_source_selection_without_user_drag():
     ensure_tk_runtime()
     try:
@@ -131,6 +132,41 @@ def test_manual_dialog_saves_default_source_selection_without_user_drag():
         assert dialog.result.scoring.start_block_id == "s0"
         assert dialog.result.scoring.end_block_id == "s1"
         assert dialog.result.scoring.manually_adjusted is False
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_chapter_buttons_move_source_selection_by_line_count():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        assert _selected_line_range(dialog.source_text) == (1, 3)
+
+        dialog._move_next()
+
+        assert _selected_line_range(dialog.source_text) == (4, 6)
+        assert dialog.selections["bid_requirements"] is not None
+        assert dialog.selections["bid_requirements"].start_block_id is None
+        assert dialog.selections["bid_requirements"].end_block_id is None
+        assert dialog.selections["bid_requirements"].manually_adjusted is True
+
+        dialog._move_previous()
+
+        assert _selected_line_range(dialog.source_text) == (1, 3)
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()

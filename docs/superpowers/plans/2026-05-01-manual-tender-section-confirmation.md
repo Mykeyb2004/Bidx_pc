@@ -231,8 +231,6 @@ from bid_writer.tender_import_models import ConvertedBlock, TenderExtractionResu
 from bid_writer.tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    move_selection_to_next_block,
-    move_selection_to_previous_block,
     selection_to_markdown,
     validate_selection_markdown,
 )
@@ -299,22 +297,6 @@ def test_build_default_selection_returns_none_for_missing_extraction_or_blocks()
 
     assert build_default_selection(document, None) is None
     assert build_default_selection(document, missing) is None
-
-
-def test_move_selection_to_adjacent_blocks_preserves_selection_width():
-    document = _document()
-    selection = build_default_selection(
-        document,
-        TenderExtractionResult("bid_requirements", "项目采购需求", "", "r1", "r1", 0.9),
-    )
-
-    previous = move_selection_to_previous_block(document, selection)
-    moved = move_selection_to_next_block(document, previous)
-
-    assert previous.start_block_id == "h1"
-    assert previous.end_block_id == "h1"
-    assert moved.start_block_id == "r1"
-    assert moved.end_block_id == "r1"
 
 
 def test_selection_to_markdown_uses_character_range():
@@ -440,40 +422,6 @@ def selection_to_markdown(document: TenderSelectionDocument, selection: ManualTe
     start = min(start_range.start, end_range.start)
     end = max(start_range.end, end_range.end)
     return document.markdown[start:end].strip()
-
-
-def move_selection_to_previous_block(
-    document: TenderSelectionDocument,
-    selection: ManualTenderSectionSelection,
-) -> ManualTenderSectionSelection:
-    if selection.start_block_id not in document.ordered_block_ids:
-        return selection
-    index = document.ordered_block_ids.index(selection.start_block_id)
-    if index <= 0:
-        return selection
-    return _replace_block_range(
-        document,
-        selection,
-        start_block_id=document.ordered_block_ids[index - 1],
-        end_block_id=selection.end_block_id,
-    )
-
-
-def move_selection_to_next_block(
-    document: TenderSelectionDocument,
-    selection: ManualTenderSectionSelection,
-) -> ManualTenderSectionSelection:
-    if selection.end_block_id not in document.ordered_block_ids:
-        return selection
-    index = document.ordered_block_ids.index(selection.end_block_id)
-    if index >= len(document.ordered_block_ids) - 1:
-        return selection
-    return _replace_block_range(
-        document,
-        selection,
-        start_block_id=selection.start_block_id,
-        end_block_id=document.ordered_block_ids[index + 1],
-    )
 
 
 def _replace_block_range(
@@ -901,8 +849,6 @@ from .tender_import_models import (
 from .tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    move_selection_to_next_block,
-    move_selection_to_previous_block,
     validate_selection_markdown,
 )
 ```
@@ -1047,7 +993,7 @@ def _save_current_section(self) -> None:
     self.destroy()
 ```
 
-Implement `_move_previous()` and `_move_next()` using `move_selection_to_previous_block()` and `move_selection_to_next_block()` when there is an existing block-based selection. Buttons are labeled “上一章节” and “下一章节”, and move the current block-backed selection instead of expanding it.
+Implement `_move_previous()` and `_move_next()` by moving the current source text selection up or down by its own line count. Buttons are labeled “上一章节” and “下一章节”, and the moved selection is saved as a manual text selection rather than a block-backed range.
 
 Implement `_cancel()`:
 

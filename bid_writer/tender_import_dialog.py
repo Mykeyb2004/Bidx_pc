@@ -15,8 +15,6 @@ from .tender_import_models import (
 from .tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    move_selection_to_next_block,
-    move_selection_to_previous_block,
     selection_to_markdown,
     validate_selection_markdown,
 )
@@ -53,10 +51,6 @@ def build_confirmation_status(
         parts.append("已根据自动定位默认选中。")
     parts.extend(warnings)
     return "\n".join(parts)
-
-
-def can_move_selection(selection: ManualTenderSectionSelection | None) -> bool:
-    return selection is not None and selection.start_block_id is not None and selection.end_block_id is not None
 
 
 class ManualTenderSectionConfirmDialog(tk.Toplevel):
@@ -313,15 +307,59 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
 
     def _move_current(self, *, previous: bool) -> None:
         section_key = self._current_section_key()
-        selection = self.selections[section_key]
-        if not can_move_selection(selection):
-            messagebox.showinfo("需要手动选择", "未自动定位当前章节，请先在源码区手动选择文本。", parent=self)
+        line_range = self._current_source_line_range()
+        if line_range is None:
+            messagebox.showinfo("需要手动选择", "请先在源码区选择文本。", parent=self)
             return
-        mover = move_selection_to_previous_block if previous else move_selection_to_next_block
-        self.selections[section_key] = mover(self.document, selection)
+        start_line, end_line = line_range
+        line_count = end_line - start_line + 1
+        total_lines = self._source_text_line_count()
+        target_start = start_line - line_count if previous else start_line + line_count
+        target_end = target_start + line_count - 1
+        if target_start < 1 or target_end > total_lines:
+            return
+
+        self._apply_source_line_selection(target_start, target_end)
+        selected = self._current_source_selection()
+        self.selections[section_key] = ManualTenderSectionSelection(
+            section_key=section_key,
+            markdown=selected,
+            start_block_id=None,
+            end_block_id=None,
+            manually_adjusted=True,
+        )
         self._render_blocks()
-        self._apply_source_selection(self.selections[section_key])
         self._update_status()
+
+    def _current_source_line_range(self) -> tuple[int, int] | None:
+        try:
+            start = self.source_text.index("sel.first")
+            end = self.source_text.index("sel.last")
+        except tk.TclError:
+            return None
+        start_line = int(start.split(".", 1)[0])
+        end_line_text, end_column_text = end.split(".", 1)
+        end_line = int(end_line_text)
+        if end_column_text == "0" and end_line > start_line:
+            end_line -= 1
+        return start_line, end_line
+
+    def _source_text_line_count(self) -> int:
+        return int(self.source_text.index("end-1c").split(".", 1)[0])
+
+    def _apply_source_line_selection(self, start_line: int, end_line: int) -> None:
+        start_index = f"{start_line}.0"
+        total_lines = self._source_text_line_count()
+        end_index = f"{end_line + 1}.0" if end_line < total_lines else f"{end_line}.end"
+        self.source_text.configure(state="normal")
+        self.source_text.tag_remove("current_selection", "1.0", "end")
+        self.source_text.tag_remove("sel", "1.0", "end")
+        self.source_text.tag_add("current_selection", start_index, end_index)
+        self.source_text.tag_add("sel", start_index, end_index)
+        self.source_text.mark_set("insert", start_index)
+        self.source_text.see(start_index)
+        self._applied_source_selection_range = None
+        self.source_text.configure(state="disabled")
 
 
 def confirm_tender_sections(

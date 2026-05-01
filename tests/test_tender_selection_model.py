@@ -2,8 +2,6 @@ from bid_writer.tender_import_models import ConvertedBlock, ManualTenderSectionS
 from bid_writer.tender_selection_model import (
     TenderSelectionDocument,
     build_default_selection,
-    move_selection_to_next_block,
-    move_selection_to_previous_block,
     selection_to_markdown,
     validate_selection_markdown,
 )
@@ -104,51 +102,6 @@ def test_build_default_selection_returns_none_for_missing_extraction_or_blocks()
 
     assert build_default_selection(document, None) is None
     assert build_default_selection(document, missing) is None
-
-
-def test_move_selection_to_adjacent_blocks_preserves_selection_width():
-    document = _document()
-    selection = build_default_selection(
-        document,
-        TenderExtractionResult("bid_requirements", "项目采购需求", "", "r1", "r1", 0.9),
-    )
-
-    previous = move_selection_to_previous_block(document, selection)
-    moved = move_selection_to_next_block(document, previous)
-
-    assert previous.start_block_id == "h1"
-    assert previous.end_block_id == "h1"
-    assert previous.manually_adjusted is True
-    assert moved.start_block_id == "r1"
-    assert moved.end_block_id == "r1"
-    assert moved.manually_adjusted is True
-
-
-def test_move_selection_handles_reversed_input_consistently():
-    document = _document()
-    selection = ManualTenderSectionSelection("bid_requirements", "", "r2", "r1", True)
-
-    previous = move_selection_to_previous_block(document, selection)
-    moved = move_selection_to_next_block(document, selection)
-
-    assert previous.start_block_id == "h1"
-    assert previous.end_block_id == "r1"
-    assert moved.start_block_id == "r2"
-    assert moved.end_block_id == "h2"
-
-
-def test_move_selection_noops_at_document_boundaries():
-    document = _document()
-    first = ManualTenderSectionSelection("bid_requirements", "first", "h1", "h1", True)
-    last = ManualTenderSectionSelection("scoring_criteria", "last", "s1", "s1", True)
-
-    previous = move_selection_to_previous_block(document, first)
-    moved = move_selection_to_next_block(document, last)
-
-    assert previous.start_block_id == "h1"
-    assert previous.end_block_id == "h1"
-    assert moved.start_block_id == "s1"
-    assert moved.end_block_id == "s1"
 
 
 def test_selection_to_markdown_uses_character_range():

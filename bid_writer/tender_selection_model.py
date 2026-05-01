@@ -86,56 +86,6 @@ def selection_to_markdown(document: TenderSelectionDocument, selection: ManualTe
     return document.markdown[start_range.start : end_range.end].strip()
 
 
-def move_selection_to_previous_block(
-    document: TenderSelectionDocument,
-    selection: ManualTenderSectionSelection,
-) -> ManualTenderSectionSelection:
-    start_block_id, end_block_id = _canonical_block_ids(document, selection.start_block_id, selection.end_block_id)
-    if start_block_id not in document.ordered_block_ids:
-        return selection
-    index = document.ordered_block_ids.index(start_block_id)
-    if index <= 0:
-        return selection
-    width = _selection_width(document, start_block_id, end_block_id)
-    new_start_index = index - 1
-    new_end_index = min(new_start_index + width - 1, len(document.ordered_block_ids) - 1)
-    return _replace_block_range(
-        document,
-        selection,
-        start_block_id=document.ordered_block_ids[new_start_index],
-        end_block_id=document.ordered_block_ids[new_end_index],
-    )
-
-
-def move_selection_to_next_block(
-    document: TenderSelectionDocument,
-    selection: ManualTenderSectionSelection,
-) -> ManualTenderSectionSelection:
-    start_block_id, end_block_id = _canonical_block_ids(document, selection.start_block_id, selection.end_block_id)
-    if end_block_id not in document.ordered_block_ids:
-        return selection
-    end_index = document.ordered_block_ids.index(end_block_id)
-    if end_index >= len(document.ordered_block_ids) - 1:
-        return selection
-    width = _selection_width(document, start_block_id, end_block_id)
-    new_end_index = end_index + 1
-    new_start_index = max(new_end_index - width + 1, 0)
-    return _replace_block_range(
-        document,
-        selection,
-        start_block_id=document.ordered_block_ids[new_start_index],
-        end_block_id=document.ordered_block_ids[new_end_index],
-    )
-
-
-def _selection_width(document: TenderSelectionDocument, start_block_id: str | None, end_block_id: str | None) -> int:
-    if start_block_id not in document.ordered_block_ids or end_block_id not in document.ordered_block_ids:
-        return 1
-    start_index = document.ordered_block_ids.index(start_block_id)
-    end_index = document.ordered_block_ids.index(end_block_id)
-    return abs(end_index - start_index) + 1
-
-
 def _replace_block_range(
     document: TenderSelectionDocument,
     selection: ManualTenderSectionSelection,
