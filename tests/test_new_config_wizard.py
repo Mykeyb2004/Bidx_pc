@@ -28,9 +28,11 @@ class StubVar:
 class StubButton:
     def __init__(self):
         self.config_calls = []
+        self.options = {}
 
     def configure(self, **kwargs):
         self.config_calls.append(kwargs)
+        self.options.update(kwargs)
 
 
 class StubFrame:
@@ -184,6 +186,16 @@ def test_sync_footer_sets_status_and_final_button_text(tmp_path: Path):
 
     assert dialog.status_var.get() == "第 5 步，共 5 步"
     assert dialog.next_button.config_calls[-1]["text"] == "保存并应用"
+
+
+def test_import_completion_reenables_next_button(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.current_step_index = 2
+
+    NewConfigWizardDialog._set_import_in_progress(dialog, True)
+    NewConfigWizardDialog._set_import_in_progress(dialog, False)
+
+    assert dialog.next_button.options["state"] == tk.NORMAL
 
 
 def test_sync_fields_updates_header_config_summary(tmp_path: Path):

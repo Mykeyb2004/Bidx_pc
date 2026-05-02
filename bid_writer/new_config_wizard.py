@@ -411,7 +411,7 @@ class NewConfigWizardDialog(tk.Toplevel):
 
         self.back_button.configure(state=tk.DISABLED if self.current_step_index == 0 else tk.NORMAL)
         next_text = "保存并应用" if self.current_step_index == total_steps - 1 else "下一步"
-        self.next_button.configure(text=next_text)
+        self.next_button.configure(text=next_text, state=tk.NORMAL)
 
         for index, button in enumerate(self.step_buttons):
             state = tk.NORMAL if index <= self.max_completed_step_index else tk.DISABLED
