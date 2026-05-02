@@ -33,6 +33,35 @@ def test_icon_registry_uses_project_tabler_assets():
         assert icon_path.suffix == ".png"
 
 
+def test_brand_assets_are_project_local():
+    assert ui_icons.BRAND_ASSETS_DIR.name == "brand"
+    assert ui_icons.brand_asset_path("logo.svg").exists()
+
+    for size in (16, 32, 64, 128):
+        path = ui_icons.brand_asset_path(f"logo_{size}.png")
+        assert path.exists(), path
+        assert path.suffix == ".png"
+
+
+def test_brand_asset_path_resolves_inside_brand_dir():
+    assert ui_icons.brand_asset_path("logo_32.png") == ui_icons.BRAND_ASSETS_DIR / "logo_32.png"
+
+
+def test_get_brand_image_rejects_unknown_size():
+    assert ui_icons.get_brand_image(object(), 24) is None
+
+
+def test_set_window_brand_icon_uses_available_brand_images(monkeypatch):
+    images = {16: object(), 32: object(), 64: object(), 128: object()}
+    calls = []
+    window = SimpleNamespace(iconphoto=lambda *args: calls.append(args))
+
+    monkeypatch.setattr(ui_icons, "get_brand_image", lambda _owner, size: images[size])
+
+    assert ui_icons.set_window_brand_icon(window) is True
+    assert calls == [(True, images[128], images[64], images[32], images[16])]
+
+
 def test_configure_icon_button_sets_image_and_left_compound(monkeypatch):
     image = object()
     configured = []
@@ -108,5 +137,23 @@ def test_get_icon_image_creates_tk_photoimage_at_runtime():
         assert image is not None
         assert image.width() == 16
         assert image.height() == 16
+    finally:
+        root.destroy()
+
+
+def test_get_brand_image_creates_tk_photoimage_at_runtime():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    try:
+        root.withdraw()
+        image = ui_icons.get_brand_image(root, 32)
+
+        assert image is not None
+        assert image.width() == 32
+        assert image.height() == 32
     finally:
         root.destroy()

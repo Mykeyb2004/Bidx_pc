@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-自动标书撰写系统核心
+标书智写核心
 """
 
 import argparse

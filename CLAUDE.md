@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an AI-powered bid writing system (自动标书撰写系统) that generates professional bid content based on Markdown outlines. The system uses Gemini models to expand headings into comprehensive bid sections with Chinese government document standards.
+This is an AI-powered bid writing system (标书智写) that generates professional bid content based on Markdown outlines. The system uses Gemini models to expand headings into comprehensive bid sections with Chinese government document standards.
 
 ## Development Commands
 
@@ -136,7 +136,7 @@ No automated test suite currently exists. When testing:
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**自动标书撰写系统**
+**标书智写**
 
 这是一个基于 Python + Tkinter 的桌面版标书撰写工具。系统读取 Markdown 大纲、招标需求和评分标准，为用户选中的章节生成可直接进入标书正文的内容，并将结果保存到本地文件。当前工作的重点不是重做产品形态，而是在现有生成链路上系统优化提示词、上下文裁剪和质量验证闭环。
 

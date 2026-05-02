@@ -15,6 +15,8 @@ from typing import Callable
 ICON_SOURCE_NAME = "Tabler Icons"
 ICONS_DIR = Path(__file__).with_name("assets") / "icons" / "tabler"
 ICON_LICENSE_PATH = ICONS_DIR / "LICENSE.tabler"
+BRAND_ASSETS_DIR = Path(__file__).with_name("assets") / "brand"
+BRAND_LOGO_SIZES = (16, 32, 64, 128)
 
 ICON_NAMES = frozenset(
     {
@@ -48,6 +50,11 @@ ICON_NAMES = frozenset(
 def icon_asset_path(name: str) -> Path:
     """Return the project-local PNG path for a logical icon name."""
     return ICONS_DIR / f"{name}.png"
+
+
+def brand_asset_path(name: str) -> Path:
+    """Return the project-local path for a brand asset."""
+    return BRAND_ASSETS_DIR / name
 
 
 def _image_cache(owner: object) -> dict[str, tk.PhotoImage]:
@@ -85,6 +92,45 @@ def get_icon_image(owner: object, name: str, *, foreground: str = "#2f3a45") -> 
         except (RuntimeError, tk.TclError):
             return None
     return cache[cache_key]
+
+
+def get_brand_image(owner: object, size: int) -> tk.PhotoImage | None:
+    """Return a cached brand logo image for a supported square PNG size."""
+    if size not in BRAND_LOGO_SIZES:
+        return None
+
+    path = brand_asset_path(f"logo_{size}.png")
+    if not path.exists():
+        return None
+
+    cache = _image_cache(owner)
+    cache_key = f"brand:{path}"
+    if cache_key not in cache:
+        try:
+            cache[cache_key] = tk.PhotoImage(file=str(path))
+        except (RuntimeError, tk.TclError):
+            return None
+    return cache[cache_key]
+
+
+def set_window_brand_icon(window: tk.Misc) -> bool:
+    """Set the Tk window icon from bundled brand PNGs when supported."""
+    images = [
+        image
+        for size in (128, 64, 32, 16)
+        if (image := get_brand_image(window, size)) is not None
+    ]
+    if not images:
+        return False
+
+    try:
+        window.iconphoto(True, *images)
+    except (AttributeError, TypeError, tk.TclError):
+        return False
+
+    for image in images:
+        _remember_image(window, image)
+    return True
 
 
 def configure_icon_button(

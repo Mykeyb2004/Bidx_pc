@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112" role="img" aria-label="标书智写 Logo">
+  <defs>
+    <linearGradient id="logoGradient" x1="18" y1="16" x2="94" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F4C81"/>
+      <stop offset="0.56" stop-color="#1D768D"/>
+      <stop offset="1" stop-color="#29A37E"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="88" height="88" rx="26" fill="url(#logoGradient)"/>
+  <path d="M36 31h25l19 19v31H36c-6 0-10-4-10-10V41c0-6 4-10 10-10Z" fill="#F9FCFF"/>
+  <path d="M61 31v18h18" fill="#D7F2ED"/>
+  <path d="M39 56h28M39 67h21" fill="none" stroke="#0F4C81" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="76" cy="70" r="13" fill="#F4C84C"/>
+  <path d="M76 62v16M68 70h16" fill="none" stroke="#103B5B" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="30" cy="28" r="3" fill="#F4C84C"/>
+  <circle cx="88" cy="35" r="3" fill="#D7F2ED"/>
+  <path d="M30 28h12M88 35h-10" fill="none" stroke="#D7F2ED" stroke-width="2" stroke-linecap="round"/>
+</svg>
