@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Optional
 
 from openai import OpenAI
 
@@ -165,7 +166,14 @@ class OutlineGenerator:
         self.config = config
         self.client_factory = client_factory or OpenAI
 
-    def generate(self) -> OutlineGenerationResult:
+    def generate(
+        self,
+        *,
+        stream: bool | None = None,
+        status_callback: Callable[[str, str], None] | None = None,
+    ) -> OutlineGenerationResult:
+        stream_enabled = self.config.generation_stream if stream is None else bool(stream)
+        self._emit_status(status_callback, "准备大纲请求", "正在准备大纲生成请求...")
         role = self._load_role()
         bid_requirements = self.config.bid_requirements.strip()
         scoring_criteria = self.config.scoring_criteria.strip()
@@ -182,7 +190,7 @@ class OutlineGenerator:
             "model": self.config.outline_model,
             "temperature": self.config.outline_temperature,
             "max_tokens": self.config.outline_max_tokens,
-            "stream": False,
+            "stream": stream_enabled,
             "messages": [
                 {"role": "system", "content": role},
                 {"role": "user", "content": self.build_user_prompt()},
@@ -193,18 +201,60 @@ class OutlineGenerator:
         if self.config.outline_seed is not None:
             options["seed"] = self.config.outline_seed
 
+        self._emit_status(status_callback, "请求模型", "正在发起大纲生成请求...")
         try:
-            response = client.chat.completions.create(**options)
+            if stream_enabled:
+                self._emit_status(status_callback, "等待首批输出", "正在请求模型并等待首批内容...")
+                raw_text = self._collect_streamed_outline(client, options, status_callback)
+            else:
+                self._emit_status(status_callback, "等待完整返回", "正在请求模型并等待完整返回...")
+                raw_text = self._collect_sync_outline(client, options)
         except Exception as exc:
             raise OutlineGenerationError(f"大纲生成请求失败：{type(exc).__name__}: {exc}") from exc
 
-        raw_text = self._extract_response_text(response)
         if not raw_text.strip():
             raise OutlineGenerationError("大纲生成返回为空。")
+        self._emit_status(status_callback, "清理与校验", "正在清理与校验大纲结果...")
         result = clean_outline_response(raw_text)
         if not result.outline_text.strip():
             raise OutlineGenerationError("大纲生成结果中未识别到 Markdown 标题。")
         return result
+
+    @staticmethod
+    def _emit_status(
+        status_callback: Callable[[str, str], None] | None,
+        stage: str,
+        message: str,
+    ) -> None:
+        if status_callback is not None:
+            status_callback(stage, message)
+
+    def _collect_sync_outline(self, client: OpenAI, options: dict[str, Any]) -> str:
+        response = client.chat.completions.create(**options)
+        return self._extract_response_text(response)
+
+    def _collect_streamed_outline(
+        self,
+        client: OpenAI,
+        options: dict[str, Any],
+        status_callback: Callable[[str, str], None] | None,
+    ) -> str:
+        response = client.chat.completions.create(**options)
+        chunks: list[str] = []
+        saw_first_token = False
+        for chunk in response:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            token = getattr(delta, "content", "") or ""
+            if not token:
+                continue
+            if not saw_first_token:
+                self._emit_status(status_callback, "接收内容", "已收到首批内容，正在流式接收大纲...")
+                saw_first_token = True
+            chunks.append(token)
+        return "".join(chunks)
 
     def _load_role(self) -> str:
         role_path = Path(self.config.outline_generation_role_file)

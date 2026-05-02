@@ -157,7 +157,7 @@ def test_generate_uses_fake_client_and_returns_clean_outline(tmp_path: Path):
     fake_client = FakeClient()
 
     generator = OutlineGenerator(config, client_factory=lambda **_kwargs: fake_client)
-    result = generator.generate()
+    result = generator.generate(stream=False)
 
     assert result.outline_text.endswith("#### 采购需求响应\n")
     call = fake_client.chat.completions.calls[0]
@@ -165,3 +165,94 @@ def test_generate_uses_fake_client_and_returns_clean_outline(tmp_path: Path):
     assert call["temperature"] == config.outline_temperature
     assert call["max_tokens"] == config.outline_max_tokens
     assert call["stream"] is False
+
+
+def test_generate_streams_tokens_and_reports_stages(tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+
+    class FakeChunk:
+        def __init__(self, token: str = "", finish_reason: str | None = None):
+            self.choices = [
+                type(
+                    "Choice",
+                    (),
+                    {
+                        "delta": type("Delta", (), {"content": token})(),
+                        "finish_reason": finish_reason,
+                    },
+                )()
+            ]
+
+    class FakeStream:
+        def __iter__(self):
+            yield FakeChunk("## 项目理解\n")
+            yield FakeChunk("### 需求分析\n")
+            yield FakeChunk("#### 采购需求响应\n")
+            yield FakeChunk(finish_reason="stop")
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            assert kwargs["stream"] is True
+            return FakeStream()
+
+    class FakeChat:
+        def __init__(self):
+            self.completions = FakeCompletions()
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = FakeChat()
+
+    stages: list[tuple[str, str]] = []
+    generator = OutlineGenerator(config, client_factory=lambda **_kwargs: FakeClient())
+    result = generator.generate(
+        status_callback=lambda stage, message: stages.append((stage, message)),
+    )
+
+    assert result.outline_text == "## 项目理解\n### 需求分析\n#### 采购需求响应\n"
+    assert ("准备大纲请求", "正在准备大纲生成请求...") in stages
+    assert ("请求模型", "正在发起大纲生成请求...") in stages
+    assert ("等待首批输出", "正在请求模型并等待首批内容...") in stages
+    assert ("接收内容", "已收到首批内容，正在流式接收大纲...") in stages
+    assert ("清理与校验", "正在清理与校验大纲结果...") in stages
+
+
+def test_generate_can_run_without_streaming_but_still_reports_stages(tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+
+    class FakeMessage:
+        content = "# 项目\n## 章\n### 节\n#### 单元\n"
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            assert kwargs["stream"] is False
+            return FakeResponse()
+
+    class FakeChat:
+        def __init__(self):
+            self.completions = FakeCompletions()
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = FakeChat()
+
+    stages: list[str] = []
+    generator = OutlineGenerator(config, client_factory=lambda **_kwargs: FakeClient())
+    result = generator.generate(
+        stream=False,
+        status_callback=lambda stage, _message: stages.append(stage),
+    )
+
+    assert result.outline_text.endswith("#### 单元\n")
+    assert stages == [
+        "准备大纲请求",
+        "请求模型",
+        "等待完整返回",
+        "清理与校验",
+    ]
