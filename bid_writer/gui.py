@@ -36,7 +36,7 @@ from .gui_state import (
     remember_last_config,
 )
 from .timing_logger import write_timing_log
-from .ui_icons import add_icon_menu_command, configure_icon_button
+from .ui_icons import add_icon_menu_command, configure_icon_button, get_brand_image, set_window_brand_icon
 
 import threading
 import queue
@@ -1544,8 +1544,7 @@ class MainWindow(tk.Tk):
         # 窗口居中
         self.center_window()
 
-        # 图标（如果有的话）
-        # self.iconbitmap('assets/icon.ico')
+        set_window_brand_icon(self)
 
         # 创建组件
         self.create_menu_bar()
@@ -1624,6 +1623,19 @@ class MainWindow(tk.Tk):
 
         self.action_bar = ttk.Frame(toolbar)
         self.action_bar.pack(fill=tk.X)
+
+        self.brand_frame = ttk.Frame(self.action_bar)
+        self.brand_frame.grid(row=0, column=0, sticky="w", padx=(0, 18))
+        brand_image = get_brand_image(self, 32)
+        if brand_image is not None:
+            brand_logo = ttk.Label(self.brand_frame, image=brand_image)
+            brand_logo.pack(side=tk.LEFT, padx=(0, 8))
+            self._brand_logo_label = brand_logo
+
+        brand_text = ttk.Frame(self.brand_frame)
+        brand_text.pack(side=tk.LEFT)
+        ttk.Label(brand_text, text=APP_DISPLAY_NAME, style="SectionTitle.TLabel").pack(anchor=tk.W)
+        ttk.Label(brand_text, text="AI bid writing workspace", style="Muted.TLabel").pack(anchor=tk.W)
 
         self.top_outline_controls = ttk.Frame(self.action_bar)
         self._create_outline_controls(self.top_outline_controls)
@@ -2122,11 +2134,16 @@ class MainWindow(tk.Tk):
         del layout_mode
         self.top_outline_controls.grid_forget()
         self.action_frame.grid_forget()
+        if hasattr(self, "brand_frame"):
+            self.brand_frame.grid_forget()
         self.action_bar.grid_columnconfigure(0, weight=0)
         self.action_bar.grid_columnconfigure(1, weight=0)
-        self.action_bar.grid_columnconfigure(0, weight=1)
-        self.top_outline_controls.grid(row=0, column=0, sticky="ew", padx=(0, 12))
-        self.action_frame.grid(row=0, column=1, sticky="se")
+        self.action_bar.grid_columnconfigure(2, weight=0)
+        self.action_bar.grid_columnconfigure(1, weight=1)
+        if hasattr(self, "brand_frame"):
+            self.brand_frame.grid(row=0, column=0, sticky="w", padx=(0, 18))
+        self.top_outline_controls.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+        self.action_frame.grid(row=0, column=2, sticky="se")
 
     def _get_control_layout_mode(self) -> str:
         """计算筛选控制区域应使用的布局模式"""
@@ -2140,6 +2157,8 @@ class MainWindow(tk.Tk):
             available_width = max(toolbar_width, self.winfo_width() - 32)
             if hasattr(self, "action_frame"):
                 available_width -= self.action_frame.winfo_reqwidth() + 24
+            if hasattr(self, "brand_frame"):
+                available_width -= self.brand_frame.winfo_reqwidth() + 18
             available_width = max(available_width, 1)
 
         required_width = (
