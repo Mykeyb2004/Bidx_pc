@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import inspect
+import queue
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -28,6 +30,10 @@ class OutlinePrepareDialog(tk.Toplevel):
         super().__init__(parent)
         self.config = config
         self.result = {"confirmed": False}
+        self._generator_factory = lambda: OutlineGenerator(self.config)
+        self._generation_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+        self._generation_poll_after_id: str | None = None
+        self._generation_in_progress = False
         self.style = setup_gui_theme(self)
         apply_window_surface(self)
         self.title("大纲准备")
@@ -118,7 +124,8 @@ class OutlinePrepareDialog(tk.Toplevel):
 
     def _set_text(self, value: str) -> None:
         self.outline_text.delete("1.0", tk.END)
-        self.outline_text.insert("1.0", value or "")
+        if value:
+            self.outline_text.insert("1.0", value)
 
     def _current_text(self) -> str:
         return self.outline_text.get("1.0", tk.END).strip()
@@ -136,20 +143,95 @@ class OutlinePrepareDialog(tk.Toplevel):
             self.confirm_button.configure(state="disabled")
 
     def _generate_outline(self) -> None:
+        self._start_generation()
+
+    def _start_generation(self) -> None:
         self.status_var.set("正在生成大纲...")
         self.validation_var.set("")
         if hasattr(self, "confirm_button"):
             self.confirm_button.configure(state="disabled")
+        self._set_text("")
+        self._generation_in_progress = True
         thread = threading.Thread(target=self._run_generate_outline, daemon=True)
         thread.start()
+        self._schedule_generation_poll()
+
+    def _schedule_generation_poll(self) -> None:
+        if self._generation_in_progress:
+            self._generation_poll_after_id = self.after(50, self._poll_generation_queue)
+
+    def _poll_generation_queue(self) -> None:
+        self._drain_generation_queue()
+        if self._generation_in_progress:
+            self._schedule_generation_poll()
 
     def _run_generate_outline(self) -> None:
+        generator = self._generator_factory()
+
+        def _publish_status(stage: str, message: str) -> None:
+            self._generation_queue.put(("status", (stage, message)))
+
+        def _publish_chunk(chunk: str) -> None:
+            if chunk:
+                self._generation_queue.put(("chunk", chunk))
+
+        generate_kwargs = self._build_generate_kwargs(generator, _publish_status, _publish_chunk)
         try:
-            result = OutlineGenerator(self.config).generate()
+            result = generator.generate(**generate_kwargs)
         except OutlineGenerationError as exc:
-            self.after(0, lambda: self._show_generation_error(str(exc)))
+            self._generation_queue.put(("error", str(exc)))
             return
-        self.after(0, lambda: self._apply_generated_outline(result.outline_text, result.warnings))
+        self._generation_queue.put(("done", result))
+
+    def _build_generate_kwargs(
+        self,
+        generator: OutlineGenerator,
+        status_callback,
+        chunk_callback,
+    ) -> dict[str, object]:
+        params = inspect.signature(generator.generate).parameters
+        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+        kwargs: dict[str, object] = {}
+        if accepts_kwargs or "stream" in params:
+            kwargs["stream"] = True
+        if accepts_kwargs or "status_callback" in params:
+            kwargs["status_callback"] = status_callback
+        if accepts_kwargs or "chunk_callback" in params:
+            kwargs["chunk_callback"] = chunk_callback
+        return kwargs
+
+    def _drain_generation_queue(self, *, stop_before_done: bool = False) -> None:
+        while True:
+            try:
+                item_type, payload = self._generation_queue.get_nowait()
+            except queue.Empty:
+                return
+
+            if item_type == "status":
+                stage, message = payload
+                self._enqueue_status(stage, message)
+                continue
+            if item_type == "chunk":
+                self._append_outline_text(payload)
+                continue
+            if item_type == "done":
+                if stop_before_done:
+                    self._generation_queue.put((item_type, payload))
+                    return
+                self._generation_in_progress = False
+                self._apply_generated_outline(payload.outline_text, payload.warnings)
+                return
+            if item_type == "error":
+                self._generation_in_progress = False
+                self._show_generation_error(payload)
+                return
+
+    def _enqueue_status(self, stage: str, message: str) -> None:
+        self.status_var.set(f"{stage}：{message}")
+
+    def _append_outline_text(self, chunk: str) -> None:
+        self.outline_text.insert(tk.END, chunk)
+        self.outline_text.see(tk.END)
 
     def _show_generation_error(self, message: str) -> None:
         self.status_var.set("大纲生成失败")

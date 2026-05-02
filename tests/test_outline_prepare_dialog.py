@@ -1,4 +1,5 @@
 from pathlib import Path
+import queue
 
 from bid_writer.config import Config
 from bid_writer.outline_prepare_dialog import OutlinePrepareDialog
@@ -7,15 +8,19 @@ from bid_writer.outline_prepare_dialog import OutlinePrepareDialog
 class FakeText:
     def __init__(self):
         self.value = ""
+        self.seen: list[str] = []
 
     def delete(self, *_args):
         self.value = ""
 
     def insert(self, _index, value):
-        self.value = value
+        self.value += value
 
     def get(self, *_args):
         return self.value
+
+    def see(self, index):
+        self.seen.append(index)
 
 
 class FakeVar:
@@ -66,6 +71,10 @@ def _dialog(config: Config) -> OutlinePrepareDialog:
     dialog.validation_var = FakeVar()
     dialog.confirm_button = FakeButton()
     dialog.destroy = lambda: None
+    dialog.after = lambda _delay, callback=None: callback() if callback is not None else None
+    dialog._generation_queue = queue.Queue()
+    dialog._generation_poll_after_id = None
+    dialog._generation_in_progress = False
     return dialog
 
 
@@ -145,3 +154,52 @@ def test_confirm_writes_outline_and_marks_result(tmp_path: Path):
     assert (tmp_path / "outline.md").read_text(encoding="utf-8") == (
         "# 新项目\n## 1. 项目理解\n### 1.1 需求分析\n#### 1.1.1 采购需求响应\n"
     )
+
+
+def test_run_generate_outline_updates_status_before_text_arrives(tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+    dialog = _dialog(config)
+
+    class FakeGenerator:
+        def generate(self, **kwargs):
+            status_callback = kwargs["status_callback"]
+            status_callback("准备大纲请求", "正在准备大纲生成请求...")
+            status_callback("等待首批输出", "正在请求模型并等待首批内容...")
+            return type("Result", (), {"outline_text": "# 项目\n## 章\n### 节\n#### 单元\n", "warnings": []})()
+
+    dialog._generator_factory = lambda: FakeGenerator()
+
+    OutlinePrepareDialog._run_generate_outline(dialog)
+    OutlinePrepareDialog._drain_generation_queue(dialog, stop_before_done=True)
+    assert "等待首批输出" in dialog.status_var.get()
+
+    OutlinePrepareDialog._drain_generation_queue(dialog)
+    assert dialog.outline_text.get("1.0", "end").startswith("# 项目")
+    assert dialog.confirm_button.states[-1] == "normal"
+
+
+def test_run_generate_outline_streams_text_into_editor_before_final_replace(tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+    dialog = _dialog(config)
+
+    class FakeGenerator:
+        def generate(self, **kwargs):
+            status_callback = kwargs["status_callback"]
+            chunk_callback = kwargs["chunk_callback"]
+            status_callback("等待首批输出", "正在请求模型并等待首批内容...")
+            chunk_callback("# 项目\n")
+            chunk_callback("## 章\n")
+            chunk_callback("### 节\n")
+            return type("Result", (), {"outline_text": "# 项目\n## 章\n### 节\n#### 单元\n", "warnings": []})()
+
+    dialog._generator_factory = lambda: FakeGenerator()
+
+    OutlinePrepareDialog._run_generate_outline(dialog)
+    assert dialog.outline_text.get("1.0", "end") == ""
+
+    OutlinePrepareDialog._drain_generation_queue(dialog, stop_before_done=True)
+    assert dialog.outline_text.get("1.0", "end") == "# 项目\n## 章\n### 节\n"
+
+    OutlinePrepareDialog._drain_generation_queue(dialog)
+    assert dialog.outline_text.get("1.0", "end") == "# 项目\n## 章\n### 节\n#### 单元\n"
+    assert dialog.confirm_button.states[-1] == "normal"
