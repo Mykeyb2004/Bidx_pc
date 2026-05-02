@@ -5,12 +5,13 @@ Tkinter GUI 主界面
 """
 
 import os
+import contextlib
 import re
 import time
-import tkinter as tk
+import ctypes
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 from typing import Any, Callable, List, Optional
 from pathlib import Path
 
@@ -102,6 +103,50 @@ PROJECT_MENU_OPEN_OUTPUT_INDEX = 8
 CHAPTER_MENU_FACT_CARD_INDEX = 1
 CONTEXT_MENU_GENERATE_INDEX = 0
 CONTEXT_MENU_FACT_CARD_INDEX = 1
+
+
+def _configure_macos_process_name(app_name: str = APP_DISPLAY_NAME) -> None:
+    """尽量在 macOS 原生层先设置进程名，供应用菜单使用。"""
+    if sys.platform != "darwin":
+        return
+
+    try:
+        libc = ctypes.CDLL(None)
+        setprogname = getattr(libc, "setprogname", None)
+        if setprogname is None:
+            return
+        encoded_name = app_name.encode("utf-8")
+        setprogname.argtypes = [ctypes.c_char_p]
+        setprogname.restype = None
+        setprogname(encoded_name)
+
+        objc = ctypes.CDLL("/usr/lib/libobjc.dylib")
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        objc.objc_msgSend.restype = ctypes.c_void_p
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+
+        nsprocessinfo = objc.objc_getClass(b"NSProcessInfo")
+        process_info_sel = objc.sel_registerName(b"processInfo")
+        set_process_name_sel = objc.sel_registerName(b"setProcessName:")
+        nsstring = objc.objc_getClass(b"NSString")
+        string_with_utf8_sel = objc.sel_registerName(b"stringWithUTF8String:")
+
+        process_info = objc.objc_msgSend(nsprocessinfo, process_info_sel)
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
+        new_name = objc.objc_msgSend(nsstring, string_with_utf8_sel, encoded_name)
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        objc.objc_msgSend(process_info, set_process_name_sel, new_name)
+    except Exception:
+        pass
+
+
+_configure_macos_process_name()
+
+import tkinter as tk
+from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
 
 @dataclass
