@@ -36,6 +36,7 @@ from .gui_state import (
     remember_last_config,
 )
 from .timing_logger import write_timing_log
+from .ui_icons import add_icon_menu_command, configure_icon_button
 
 import threading
 import queue
@@ -1595,8 +1596,8 @@ class MainWindow(tk.Tk):
 
         # 帮助菜单
         help_menu = tk.Menu(menubar, tearoff=0)
-        help_menu.add_command(label="使用说明", command=self.show_help)
-        help_menu.add_command(label="关于", command=self.show_about)
+        add_icon_menu_command(help_menu, label="使用说明", command=self.show_help, icon_name="help", owner=self)
+        add_icon_menu_command(help_menu, label="关于", command=self.show_about, icon_name="help", owner=self)
         menubar.add_cascade(label="帮助", menu=help_menu)
 
         self.config(menu=menubar)
@@ -1626,6 +1627,7 @@ class MainWindow(tk.Tk):
             padding=(12, 8),
             **_bootstyle_kwargs("info")
         )
+        configure_icon_button(self.btn_merge, self, "merge")
         self.btn_merge.pack(side=tk.LEFT, padx=6)
 
         self.btn_generate = ttk.Button(
@@ -1636,6 +1638,7 @@ class MainWindow(tk.Tk):
             default=tk.ACTIVE,
             **_bootstyle_kwargs("primary")
         )
+        configure_icon_button(self.btn_generate, self, "generate")
         self.btn_generate.pack(side=tk.LEFT, padx=(6, 0))
 
     def _create_outline_controls(self, parent: tk.Misc) -> None:
@@ -1687,44 +1690,75 @@ class MainWindow(tk.Tk):
             padding=(10, 6),
             **_bootstyle_kwargs("secondary")
         )
+        configure_icon_button(self.btn_selection_menu, self, "select")
         self.selection_tools_menu = tk.Menu(self.btn_selection_menu, tearoff=0)
-        self.selection_tools_menu.add_command(label="全选四级标题", command=self.select_all_leaf_titles)
-        self.selection_tools_menu.add_command(label="清空选择", command=self.clear_selection)
+        add_icon_menu_command(
+            self.selection_tools_menu,
+            label="全选四级标题",
+            command=self.select_all_leaf_titles,
+            icon_name="select",
+            owner=self,
+        )
+        add_icon_menu_command(
+            self.selection_tools_menu,
+            label="清空选择",
+            command=self.clear_selection,
+            icon_name="clear",
+            owner=self,
+        )
         self.btn_selection_menu["menu"] = self.selection_tools_menu
         self.btn_selection_menu.pack(side=tk.LEFT)
 
     def _populate_project_menu(self, menu: tk.Menu) -> None:
-        menu.add_command(label="新建配置...", command=self.open_new_config_editor)
-        menu.add_command(label="切换配置...", command=self.select_and_switch_config)
-        menu.add_command(label="编辑当前配置...", command=self.open_config_editor)
-        menu.add_command(label="解锁/重新准备大纲...", command=self.unlock_and_prepare_outline)
+        add_icon_menu_command(menu, label="新建配置...", command=self.open_new_config_editor, icon_name="add", owner=self)
+        add_icon_menu_command(menu, label="切换配置...", command=self.select_and_switch_config, icon_name="switch", owner=self)
+        add_icon_menu_command(menu, label="编辑当前配置...", command=self.open_config_editor, icon_name="settings", owner=self)
+        add_icon_menu_command(menu, label="解锁/重新准备大纲...", command=self.unlock_and_prepare_outline, icon_name="outline", owner=self)
         menu.add_separator()
-        menu.add_command(label="重载大纲", command=self.reload_outline)
-        menu.add_command(label="扫描输出状态", command=self.refresh_status)
+        add_icon_menu_command(menu, label="重载大纲", command=self.reload_outline, icon_name="refresh", owner=self)
+        add_icon_menu_command(menu, label="扫描输出状态", command=self.refresh_status, icon_name="scan", owner=self)
         menu.add_separator()
-        menu.add_command(label="打开输出目录", command=self.open_output_dir)
+        add_icon_menu_command(menu, label="打开输出目录", command=self.open_output_dir, icon_name="folder", owner=self)
         menu.add_separator()
-        menu.add_command(label="退出", command=self.quit)
+        add_icon_menu_command(menu, label="退出", command=self.quit, icon_name="close", owner=self)
 
     def _populate_chapter_menu(self, menu: tk.Menu) -> None:
-        menu.add_command(label="生成所选", command=self.batch_generate)
+        add_icon_menu_command(menu, label="生成所选", command=self.batch_generate, icon_name="generate", owner=self)
         MainWindow._populate_chapter_tools_menu(self, menu)
         menu.add_separator()
-        menu.add_command(label="整合标书", command=self.merge_generated_sections)
+        add_icon_menu_command(menu, label="整合标书", command=self.merge_generated_sections, icon_name="merge", owner=self)
 
     def _populate_chapter_tools_menu(self, menu: tk.Menu) -> None:
-        menu.add_command(label="提炼当前章节事实卡片", command=self.extract_selected_facts)
-        menu.add_command(label="新增事实卡片...", command=self.open_manual_fact_card_dialog)
-        menu.add_command(label="管理事实卡片", command=self.open_fact_card_library_dialog)
+        add_icon_menu_command(
+            menu,
+            label="提炼当前章节事实卡片",
+            command=self.extract_selected_facts,
+            icon_name="fact_card",
+            owner=self,
+        )
+        add_icon_menu_command(
+            menu,
+            label="新增事实卡片...",
+            command=self.open_manual_fact_card_dialog,
+            icon_name="add",
+            owner=self,
+        )
+        add_icon_menu_command(
+            menu,
+            label="管理事实卡片",
+            command=self.open_fact_card_library_dialog,
+            icon_name="settings",
+            owner=self,
+        )
 
     def _populate_view_menu(self, menu: tk.Menu) -> None:
-        menu.add_command(label="全部展开", command=self.expand_all)
+        add_icon_menu_command(menu, label="全部展开", command=self.expand_all, icon_name="expand", owner=self)
         menu.add_separator()
-        menu.add_command(label="展开至一级 (Ctrl+1)", command=self.expand_to_level_1)
-        menu.add_command(label="展开至二级 (Ctrl+2)", command=self.expand_to_level_2)
-        menu.add_command(label="展开至三级 (Ctrl+3)", command=self.expand_to_level_3)
+        add_icon_menu_command(menu, label="展开至一级 (Ctrl+1)", command=self.expand_to_level_1, icon_name="expand", owner=self)
+        add_icon_menu_command(menu, label="展开至二级 (Ctrl+2)", command=self.expand_to_level_2, icon_name="expand", owner=self)
+        add_icon_menu_command(menu, label="展开至三级 (Ctrl+3)", command=self.expand_to_level_3, icon_name="expand", owner=self)
         menu.add_separator()
-        menu.add_command(label="收缩全部 (Ctrl+0)", command=self.collapse_all)
+        add_icon_menu_command(menu, label="收缩全部 (Ctrl+0)", command=self.collapse_all, icon_name="expand", owner=self)
 
     def create_main_panes(self):
         """创建主面板"""
@@ -2155,6 +2189,7 @@ class MainWindow(tk.Tk):
             padding=(10, 6),
             **_bootstyle_kwargs("danger")
         )
+        configure_icon_button(self.btn_stop_generation, self, "stop")
         self.btn_stop_generation.pack(side=tk.RIGHT, padx=(10, 0))
         self.btn_stop_generation.config(state=tk.DISABLED)
 
@@ -2186,13 +2221,19 @@ class MainWindow(tk.Tk):
     def create_outline_context_menu(self):
         """创建章节树右键菜单。"""
         self.outline_context_menu = tk.Menu(self, tearoff=0)
-        self.outline_context_menu.add_command(
+        add_icon_menu_command(
+            self.outline_context_menu,
             label="生成所选",
             command=self.generate_context_menu_selection,
+            icon_name="generate",
+            owner=self,
         )
-        self.outline_context_menu.add_command(
+        add_icon_menu_command(
+            self.outline_context_menu,
             label="提炼事实卡片",
             command=self.extract_context_menu_facts,
+            icon_name="fact_card",
+            owner=self,
         )
         self._context_menu_heading: Optional[HeadingNode] = None
 

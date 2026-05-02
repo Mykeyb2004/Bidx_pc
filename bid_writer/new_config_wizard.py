@@ -28,6 +28,7 @@ from bid_writer.new_config_flow import (
 )
 from bid_writer.tender_import_dialog import confirm_tender_sections
 from bid_writer.tender_import_service import TenderImportError, TenderImportResult, TenderImportService
+from bid_writer.ui_icons import configure_icon_button
 
 
 SUPPORTED_TENDER_SUFFIXES = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
@@ -168,6 +169,7 @@ class NewConfigWizardDialog(tk.Toplevel):
                 command=lambda step_index=index: self._jump_to_step(step_index),
                 **_bootstyle_kwargs("secondary"),
             )
+            configure_icon_button(button, self, "outline")
             button.pack(side=tk.LEFT, fill=tk.X, expand=True)
             state_label = ttk.Label(row, textvariable=self.step_state_vars[index], style="Muted.TLabel", width=8, anchor="e")
             state_label.pack(side=tk.RIGHT, padx=(8, 0))
@@ -197,6 +199,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             command=self._go_back,
             **_bootstyle_kwargs("secondary"),
         )
+        configure_icon_button(self.back_button, self, "back")
         self.back_button.pack(side=tk.LEFT, padx=(0, 8))
         self.next_button = ttk.Button(
             actions,
@@ -204,13 +207,16 @@ class NewConfigWizardDialog(tk.Toplevel):
             command=self._go_next,
             **_bootstyle_kwargs("primary"),
         )
+        configure_icon_button(self.next_button, self, "next")
         self.next_button.pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
+        cancel_button = ttk.Button(
             actions,
             text="取消",
             command=self._cancel,
             **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.LEFT)
+        )
+        configure_icon_button(cancel_button, self, "close")
+        cancel_button.pack(side=tk.LEFT)
 
     def _create_step_frame(self, key: str, title: str, description: str) -> ttk.Frame:
         frame = ttk.Frame(self.content_container, padding=16)
@@ -251,12 +257,14 @@ class NewConfigWizardDialog(tk.Toplevel):
             justify=tk.LEFT,
         ).grid(row=0, column=0, sticky="w")
         ttk.Entry(import_card, textvariable=self.vars["source_path"]).grid(row=1, column=0, sticky="ew", pady=(10, 8))
-        ttk.Button(
+        select_source_button = ttk.Button(
             import_card,
             text="选择招标文件...",
             command=self._select_source_file,
             **_bootstyle_kwargs("primary"),
-        ).grid(row=2, column=0, sticky="w")
+        )
+        configure_icon_button(select_source_button, self, "import")
+        select_source_button.grid(row=2, column=0, sticky="w")
 
         manual_card = ttk.LabelFrame(choice_row, text="直接手动创建", padding=(12, 10))
         manual_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
@@ -268,12 +276,14 @@ class NewConfigWizardDialog(tk.Toplevel):
             wraplength=280,
             justify=tk.LEFT,
         ).grid(row=0, column=0, sticky="w")
-        ttk.Button(
+        manual_button = ttk.Button(
             manual_card,
             text="进入手动创建",
             command=self._skip_source_selection,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        )
+        configure_icon_button(manual_button, self, "add")
+        manual_button.grid(row=1, column=0, sticky="w", pady=(10, 0))
         ttk.Label(controls, textvariable=self.source_hint_var, style="Muted.TLabel", wraplength=620, justify=tk.LEFT).grid(
             row=1,
             column=0,
@@ -304,6 +314,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             command=self._run_import,
             **_bootstyle_kwargs("primary"),
         )
+        configure_icon_button(self.import_button, self, "scan")
         self.import_button.grid(row=0, column=0, sticky="w", pady=(0, 10))
         ttk.Label(form, textvariable=self.import_status_var, style="Muted.TLabel", wraplength=620, justify=tk.LEFT).grid(
             row=0,
@@ -381,12 +392,14 @@ class NewConfigWizardDialog(tk.Toplevel):
 
     def _add_path_row(self, parent: tk.Misc, row: int, label: str, key: str, *, browse_kind: str) -> ttk.Entry:
         entry = self._add_entry_row(parent, row, label, key)
-        ttk.Button(
+        browse_button = ttk.Button(
             parent,
             text="选择...",
             command=lambda: self._browse_path(key, browse_kind),
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        )
+        configure_icon_button(browse_button, self, "browse")
+        browse_button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
         return entry
 
     def _add_outline_path_row(self, parent: tk.Misc, row: int) -> ttk.Entry:
@@ -399,12 +412,14 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         entry = ttk.Entry(parent, textvariable=self.vars["outline_path"])
         entry.grid(row=row, column=1, sticky="ew", pady=6)
-        ttk.Button(
+        outline_button = ttk.Button(
             parent,
             textvariable=self.outline_path_action_var,
             command=lambda: self._browse_path("outline_path", "outline"),
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        )
+        configure_icon_button(outline_button, self, "browse")
+        outline_button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
         ttk.Label(
             parent,
             textvariable=self.outline_path_hint_var,

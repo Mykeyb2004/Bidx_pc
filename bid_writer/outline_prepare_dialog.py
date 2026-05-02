@@ -23,6 +23,7 @@ from .config_editor_dialog import (
 )
 from .outline_generator import OutlineGenerationError, OutlineGenerator, format_outline_numbering, validate_outline_text
 from .outline_prepare import OutlinePrepareError, confirm_outline_and_lock, load_existing_outline
+from .ui_icons import configure_icon_button
 
 
 class OutlinePrepareDialog(tk.Toplevel):
@@ -89,37 +90,46 @@ class OutlinePrepareDialog(tk.Toplevel):
         footer = ttk.Frame(self, padding=(16, 0, 16, 16))
         footer.grid(row=2, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
-        ttk.Button(
+        load_button = ttk.Button(
             footer,
             text="读取已有大纲",
             command=self._load_existing_outline,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Button(
+        )
+        configure_icon_button(load_button, self, "outline")
+        load_button.grid(row=0, column=0, sticky="w")
+        generate_button = ttk.Button(
             footer,
             text="生成大纲",
             command=self._generate_outline,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(
+        )
+        configure_icon_button(generate_button, self, "generate")
+        generate_button.grid(row=0, column=1, padx=(8, 0))
+        format_button = ttk.Button(
             footer,
             text="格式化大纲",
             command=self._format_current_text,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=2, padx=(8, 0))
+        )
+        configure_icon_button(format_button, self, "format")
+        format_button.grid(row=0, column=2, padx=(8, 0))
         self.confirm_button = ttk.Button(
             footer,
             text="确认大纲并进入扩写",
             command=self._confirm,
             **_bootstyle_kwargs("primary"),
         )
+        configure_icon_button(self.confirm_button, self, "next")
         self.confirm_button.grid(row=0, column=3, padx=(8, 0))
-        ttk.Button(
+        cancel_button = ttk.Button(
             footer,
             text="取消",
             command=self._cancel,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=4, padx=(8, 0))
+        )
+        configure_icon_button(cancel_button, self, "close")
+        cancel_button.grid(row=0, column=4, padx=(8, 0))
 
     def _set_text(self, value: str) -> None:
         self.outline_text.delete("1.0", tk.END)

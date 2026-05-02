@@ -31,6 +31,7 @@ from .gui import (
 )
 from .tender_import_dialog import confirm_extracted_sections_preview
 from .tender_import_service import TenderImportError, TenderImportService
+from .ui_icons import configure_icon_button
 
 
 CONFIG_EDITOR_DEFAULT_WIDTH = 1120
@@ -385,33 +386,41 @@ class ConfigEditorDialog(tk.Toplevel):
         footer.grid(row=2, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
 
-        ttk.Button(
+        reload_button = ttk.Button(
             footer,
             text="恢复加载值",
             command=self._reload_from_disk,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=0, column=0, sticky="w")
+        )
+        configure_icon_button(reload_button, self, "refresh")
+        reload_button.grid(row=0, column=0, sticky="w")
 
         actions = ttk.Frame(footer)
         actions.grid(row=0, column=1, sticky="e")
-        ttk.Button(
+        save_as_button = ttk.Button(
             actions,
             text="另存为",
             command=self._save_as,
             **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
+        )
+        configure_icon_button(save_as_button, self, "folder")
+        save_as_button.pack(side=tk.LEFT, padx=(0, 8))
+        save_button = ttk.Button(
             actions,
             text="保存",
             command=self._save_current,
             **_bootstyle_kwargs("primary"),
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(
+        )
+        configure_icon_button(save_button, self, "save")
+        save_button.pack(side=tk.LEFT, padx=(0, 8))
+        close_button = ttk.Button(
             actions,
             text="关闭",
             command=self._on_close,
             **_bootstyle_kwargs("secondary"),
-        ).pack(side=tk.LEFT)
+        )
+        configure_icon_button(close_button, self, "close")
+        close_button.pack(side=tk.LEFT)
 
     def _create_right_panel(self) -> None:
         env_frame = ttk.LabelFrame(self.right_panel, text="连接状态", padding=12)
@@ -479,6 +488,7 @@ class ConfigEditorDialog(tk.Toplevel):
                 command=self._import_tender_document,
                 **_bootstyle_kwargs("secondary"),
             )
+            configure_icon_button(import_button, self, "import")
             import_button.pack(side=tk.LEFT)
             self._register_tooltip(import_button, "project.tender_import")
             ttk.Label(
@@ -823,6 +833,7 @@ class ConfigEditorDialog(tk.Toplevel):
             command=lambda current_key=key, kind=browse_kind, rel=relative_to: self._browse_path(current_key, kind, rel),
             **_bootstyle_kwargs("secondary"),
         )
+        configure_icon_button(browse_button, self, "browse")
         browse_button.grid(row=row, column=2, sticky="e", padx=(8, PATH_BROWSE_BUTTON_RIGHT_GUTTER), pady=5)
         self._register_tooltip(browse_button, key)
 

@@ -1,7 +1,7 @@
 project:
   root_dir: /Users/zhangqijin/Documents/Temp/藤县民政局
-  bidder_name: xxy
-  outline_locked: true
+  bidder_name: xx德
+  outline_locked: false
   outline_generation:
     role_file: ./roles/标书架构师.md
   inputs:
