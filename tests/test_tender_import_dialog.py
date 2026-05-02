@@ -216,7 +216,13 @@ def test_manual_dialog_starts_with_empty_target_editor_and_source_hint(monkeypat
         assert dialog.result.cancelled is True
         assert dialog.confirmed == {}
         assert "不能为空" in dialog.status_var.get()
-        assert warnings == [("选区不能为空", "选区不能为空。", {"parent": dialog})]
+        assert warnings == [
+            (
+                "目标编辑框不能为空",
+                "目标编辑框不能为空。请先在源文区选择文本并点击“使用选区”，或直接填写目标编辑框。",
+                {"parent": dialog},
+            )
+        ]
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
@@ -248,6 +254,41 @@ def test_manual_dialog_use_selection_replaces_target_editor():
         dialog._use_source_selection()
 
         assert dialog.target_text.get("1.0", "end-1c") == "## 项目采购需求"
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_use_selection_keeps_highlighted_source_when_tk_selection_is_lost(monkeypatch):
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        infos = []
+        monkeypatch.setattr(
+            "bid_writer.tender_import_dialog.messagebox.showinfo",
+            lambda title, message, **kwargs: infos.append((title, message, kwargs)),
+        )
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+        dialog.source_text.configure(state="normal")
+        dialog.source_text.tag_remove("sel", "1.0", "end")
+        dialog.source_text.configure(state="disabled")
+
+        dialog._use_source_selection()
+
+        assert infos == []
+        assert "项目采购需求" in dialog.target_text.get("1.0", "end-1c")
+        assert "服务内容" in dialog.target_text.get("1.0", "end-1c")
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()

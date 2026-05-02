@@ -148,10 +148,10 @@ def _canonical_block_ids(
 def validate_selection_markdown(section_key: str, markdown: str) -> list[str]:
     text = markdown.strip()
     if not text:
-        return ["选区不能为空。"]
+        return ["目标编辑框不能为空。"]
     warnings: list[str] = []
     if len(text) < 20:
-        warnings.append("选区内容较短，请确认是否完整。")
+        warnings.append("目标内容较短，请确认是否完整。")
     if section_key == "bid_requirements":
         hits = sum(1 for term in REQUIREMENT_TERMS if term in text)
         if hits < 2:

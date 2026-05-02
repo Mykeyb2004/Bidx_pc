@@ -136,7 +136,14 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         source_frame.columnconfigure(0, weight=1)
         source_frame.rowconfigure(1, weight=1)
         ttk.Label(source_frame, text="Markdown 源文").grid(row=0, column=0, sticky="w")
-        self.source_text = tk.Text(source_frame, wrap="word", undo=False, borderwidth=1, relief="solid")
+        self.source_text = tk.Text(
+            source_frame,
+            wrap="word",
+            undo=False,
+            borderwidth=1,
+            relief="solid",
+            exportselection=False,
+        )
         source_scroll = ttk.Scrollbar(source_frame, orient="vertical", command=self.source_text.yview)
         self.source_text.configure(yscrollcommand=source_scroll.set)
         self.source_text.grid(row=1, column=0, sticky="nsew")
@@ -145,7 +152,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.insert("1.0", self.document.markdown)
         self.source_text.tag_configure("source_hint", background="#fff2b8")
         self.source_text.tag_configure("current_selection", background="#cfe8ff")
-        self.source_text.configure(state="disabled")
+        self.source_text.bind("<Key>", lambda _event: "break")
 
         target_frame = ttk.Frame(self, padding=(6, 12, 12, 12))
         target_frame.grid(row=0, column=2, sticky="nsew")
@@ -177,6 +184,12 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             return ""
         return selected
 
+    def _current_highlighted_source_text(self) -> str:
+        if self._applied_source_selection_range is None:
+            return ""
+        start, end = self._applied_source_selection_range
+        return self.source_text.get(f"1.0+{start}c", f"1.0+{end}c").strip()
+
     def _current_source_char_range(self) -> tuple[int, int] | None:
         try:
             start = self.source_text.index("sel.first")
@@ -188,7 +201,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         return start_offset, end_offset
 
     def _use_source_selection(self) -> None:
-        selected = self._current_source_selection()
+        selected = self._current_source_selection() or self._current_highlighted_source_text()
         if not selected:
             messagebox.showinfo("需要手动选择", "请先在源文区选择文本。", parent=self)
             return
@@ -207,11 +220,9 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self._applied_source_selection_range = None
         if hint is None:
             self.source_text.see("1.0")
-            self.source_text.configure(state="disabled")
             return
         range_start, range_end = self._hint_char_range(hint)
         if range_start is None or range_end is None:
-            self.source_text.configure(state="disabled")
             return
         start_index = f"1.0+{range_start}c"
         end_index = f"1.0+{range_end}c"
@@ -220,7 +231,6 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.mark_set("insert", start_index)
         self.source_text.see(start_index)
         self._applied_source_selection_range = (range_start, range_end)
-        self.source_text.configure(state="disabled")
 
     def _hint_char_range(self, hint: TenderSourceHint) -> tuple[int | None, int | None]:
         start_range = self.document.block_ranges.get(hint.start_block_id)
@@ -240,7 +250,11 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         blocking = [warning for warning in warnings if "不能为空" in warning]
         if blocking:
             self._update_status(blocking)
-            messagebox.showwarning("选区不能为空", blocking[0], parent=self)
+            messagebox.showwarning(
+                "目标编辑框不能为空",
+                "目标编辑框不能为空。请先在源文区选择文本并点击“使用选区”，或直接填写目标编辑框。",
+                parent=self,
+            )
             return
         if warnings and not messagebox.askyesno("确认选区", "\n".join([*warnings, "是否继续存入？"]), parent=self):
             self._update_status(warnings)
@@ -391,8 +405,10 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.tag_add("sel", start_index, end_index)
         self.source_text.mark_set("insert", start_index)
         self.source_text.see(start_index)
-        self._applied_source_selection_range = None
-        self.source_text.configure(state="disabled")
+        self._applied_source_selection_range = (
+            len(self.source_text.get("1.0", start_index)),
+            len(self.source_text.get("1.0", end_index)),
+        )
 
     def _apply_source_char_selection(self, start: int, end: int) -> None:
         start_index = f"1.0+{start}c"
@@ -404,8 +420,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         self.source_text.tag_add("sel", start_index, end_index)
         self.source_text.mark_set("insert", start_index)
         self.source_text.see(start_index)
-        self._applied_source_selection_range = None
-        self.source_text.configure(state="disabled")
+        self._applied_source_selection_range = (start, end)
 
 
 def _build_source_navigation_ranges(
