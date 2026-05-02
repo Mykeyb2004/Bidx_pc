@@ -20,6 +20,19 @@ def test_icon_registry_covers_main_bid_actions():
     }.issubset(ui_icons.ICON_NAMES)
 
 
+def test_icon_registry_uses_project_tabler_assets():
+    assert ui_icons.ICON_SOURCE_NAME == "Tabler Icons"
+    assert ui_icons.ICONS_DIR.name == "tabler"
+    assert ui_icons.ICON_LICENSE_PATH.exists()
+    assert "MIT License" in ui_icons.ICON_LICENSE_PATH.read_text(encoding="utf-8")
+    assert "_BITMAP_DATA" not in vars(ui_icons)
+
+    for icon_name in ui_icons.ICON_NAMES:
+        icon_path = ui_icons.icon_asset_path(icon_name)
+        assert icon_path.exists(), icon_path
+        assert icon_path.suffix == ".png"
+
+
 def test_configure_icon_button_sets_image_and_left_compound(monkeypatch):
     image = object()
     configured = []
@@ -81,7 +94,7 @@ def test_menu_command_keeps_image_reference_when_supported(monkeypatch):
     assert getattr(menu, "_bid_writer_icon_images") == [image]
 
 
-def test_get_icon_image_creates_tk_bitmap_at_runtime():
+def test_get_icon_image_creates_tk_photoimage_at_runtime():
     ensure_tk_runtime()
     try:
         root = tk.Tk()

@@ -12,7 +12,7 @@ from bid_writer.macos_stderr_filter import suppress_native_macos_stderr_noise
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
-        description="自动标书撰写系统"
+        description="标书智写"
     )
     parser.add_argument(
         "--config", "-c",

@@ -1,4 +1,4 @@
-# 自动标书撰写系统
+# 标书智写
 
 基于 Python + Tkinter 的桌面版标书撰写工具。程序读取 Markdown 大纲、采购需求和评分标准，调用兼容 OpenAI Chat Completions 的模型服务，为选中的章节生成标书正文，并把结果保存为本地 `.md` 文件。
 

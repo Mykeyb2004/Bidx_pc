@@ -16,6 +16,8 @@ from bid_writer.gui import (
     apply_window_surface,
     setup_gui_theme,
 )
+from bid_writer.config_editor_tooltips import get_tooltip_text
+from bid_writer.hover_tooltip import HoverTooltip
 from bid_writer.new_config_flow import (
     NewConfigWizardState,
     build_editor_document_from_state,
@@ -85,6 +87,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._import_ui_requests: queue.Queue[_ImportUiRequest] = queue.Queue()
         self._import_result_queue: queue.Queue[_ImportWorkerOutcome] = queue.Queue()
         self._import_poll_after_id: str | None = None
+        self._tooltips: list[HoverTooltip] = []
         self.state = build_manual_state(
             project_root=initial_config_path.parent,
             config_path=initial_config_path,
@@ -171,6 +174,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             )
             configure_icon_button(button, self, "outline")
             button.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self._register_tooltip(button, f"new_config.step.{step.key}")
             state_label = ttk.Label(row, textvariable=self.step_state_vars[index], style="Muted.TLabel", width=8, anchor="e")
             state_label.pack(side=tk.RIGHT, padx=(8, 0))
             self.step_buttons.append(button)
@@ -201,6 +205,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(self.back_button, self, "back")
         self.back_button.pack(side=tk.LEFT, padx=(0, 8))
+        self._register_tooltip(self.back_button, "new_config.footer.back")
         self.next_button = ttk.Button(
             actions,
             text="下一步",
@@ -209,6 +214,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(self.next_button, self, "next")
         self.next_button.pack(side=tk.LEFT, padx=(0, 8))
+        self._register_tooltip(self.next_button, "new_config.footer.next")
         cancel_button = ttk.Button(
             actions,
             text="取消",
@@ -217,6 +223,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(cancel_button, self, "close")
         cancel_button.pack(side=tk.LEFT)
+        self._register_tooltip(cancel_button, "new_config.footer.cancel")
 
     def _create_step_frame(self, key: str, title: str, description: str) -> ttk.Frame:
         frame = ttk.Frame(self.content_container, padding=16)
@@ -256,7 +263,9 @@ class NewConfigWizardDialog(tk.Toplevel):
             wraplength=280,
             justify=tk.LEFT,
         ).grid(row=0, column=0, sticky="w")
-        ttk.Entry(import_card, textvariable=self.vars["source_path"]).grid(row=1, column=0, sticky="ew", pady=(10, 8))
+        source_entry = ttk.Entry(import_card, textvariable=self.vars["source_path"])
+        source_entry.grid(row=1, column=0, sticky="ew", pady=(10, 8))
+        self._register_tooltip(source_entry, "new_config.source_path")
         select_source_button = ttk.Button(
             import_card,
             text="选择招标文件...",
@@ -265,6 +274,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(select_source_button, self, "import")
         select_source_button.grid(row=2, column=0, sticky="w")
+        self._register_tooltip(select_source_button, "new_config.source.select_file")
 
         manual_card = ttk.LabelFrame(choice_row, text="直接手动创建", padding=(12, 10))
         manual_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
@@ -284,6 +294,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(manual_button, self, "add")
         manual_button.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self._register_tooltip(manual_button, "new_config.source.manual_create")
         ttk.Label(controls, textvariable=self.source_hint_var, style="Muted.TLabel", wraplength=620, justify=tk.LEFT).grid(
             row=1,
             column=0,
@@ -296,8 +307,8 @@ class NewConfigWizardDialog(tk.Toplevel):
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
-        self._add_path_row(form, 0, "项目根目录", "project_root", browse_kind="dir")
-        self._add_path_row(form, 1, "配置文件保存位置", "config_path", browse_kind="file")
+        self._add_path_row(form, 0, "项目根目录", "project_root", browse_kind="dir", tooltip_key="new_config.location.project_root")
+        self._add_path_row(form, 1, "配置文件保存位置", "config_path", browse_kind="file", tooltip_key="new_config.location.config_path")
 
     def _build_materials_step(self) -> None:
         frame = self._create_step_frame(
@@ -316,6 +327,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(self.import_button, self, "scan")
         self.import_button.grid(row=0, column=0, sticky="w", pady=(0, 10))
+        self._register_tooltip(self.import_button, "new_config.materials.import")
         ttk.Label(form, textvariable=self.import_status_var, style="Muted.TLabel", wraplength=620, justify=tk.LEFT).grid(
             row=0,
             column=1,
@@ -323,8 +335,8 @@ class NewConfigWizardDialog(tk.Toplevel):
             padx=(10, 0),
             pady=(0, 10),
         )
-        self._add_path_row(form, 1, "采购需求文件", "requirements_path", browse_kind="file")
-        self._add_path_row(form, 2, "评分标准文件", "scoring_path", browse_kind="file")
+        self._add_path_row(form, 1, "采购需求文件", "requirements_path", browse_kind="file", tooltip_key="new_config.materials.requirements")
+        self._add_path_row(form, 2, "评分标准文件", "scoring_path", browse_kind="file", tooltip_key="new_config.materials.scoring")
 
     def _build_basics_step(self) -> None:
         frame = self._create_step_frame("basics", "基础设置", "填写投标主体、大纲来源和输出目录。")
@@ -334,18 +346,20 @@ class NewConfigWizardDialog(tk.Toplevel):
         bidder_box = ttk.LabelFrame(form, text="投标主体", padding=(12, 10))
         bidder_box.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
         bidder_box.columnconfigure(1, weight=1)
-        self._add_entry_row(bidder_box, 0, "投标主体名称", "bidder_name")
+        self._add_entry_row(bidder_box, 0, "投标主体名称", "bidder_name", tooltip_key="new_config.basics.bidder_name")
 
         source_box = ttk.LabelFrame(form, text="大纲来源", padding=(12, 10))
         source_box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
         source_box.columnconfigure(1, weight=1)
 
-        ttk.Radiobutton(
+        existing_radio = ttk.Radiobutton(
             source_box,
             text="已有 Markdown 大纲",
             value="existing",
             variable=self.vars["outline_source"],
-        ).grid(row=0, column=0, sticky="w")
+        )
+        existing_radio.grid(row=0, column=0, sticky="w")
+        self._register_tooltip(existing_radio, "new_config.basics.outline_source.existing")
         ttk.Label(
             source_box,
             text="选择一个已经存在的 .md 大纲文件，系统会直接读取它。",
@@ -354,12 +368,14 @@ class NewConfigWizardDialog(tk.Toplevel):
             justify=tk.LEFT,
         ).grid(row=0, column=1, sticky="w", padx=(10, 0))
 
-        ttk.Radiobutton(
+        generate_radio = ttk.Radiobutton(
             source_box,
             text="生成后保存",
             value="generate",
             variable=self.vars["outline_source"],
-        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        )
+        generate_radio.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self._register_tooltip(generate_radio, "new_config.basics.outline_source.generate")
         ttk.Label(
             source_box,
             text="先保留保存位置，后续在大纲准备窗口生成完毕后写入这里。",
@@ -371,8 +387,8 @@ class NewConfigWizardDialog(tk.Toplevel):
         outline_box = ttk.LabelFrame(form, text="大纲文件与输出", padding=(12, 10))
         outline_box.grid(row=2, column=0, columnspan=3, sticky="ew")
         outline_box.columnconfigure(1, weight=1)
-        self._add_outline_path_row(outline_box, 0)
-        self._add_path_row(outline_box, 2, "输出目录", "output_dir", browse_kind="dir")
+        self._add_outline_path_row(outline_box, 0, tooltip_key="new_config.basics.outline_path")
+        self._add_path_row(outline_box, 2, "输出目录", "output_dir", browse_kind="dir", tooltip_key="new_config.basics.output_dir")
 
     def _build_review_step(self) -> None:
         frame = self._create_step_frame("review", "保存确认", "保存前再核对一次配置摘要，确认后将切换到新配置。")
@@ -384,14 +400,27 @@ class NewConfigWizardDialog(tk.Toplevel):
             justify=tk.LEFT,
         ).grid(row=2, column=0, sticky="ew", pady=(18, 0))
 
-    def _add_entry_row(self, parent: tk.Misc, row: int, label: str, key: str) -> ttk.Entry:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=6)
+    def _add_entry_row(self, parent: tk.Misc, row: int, label: str, key: str, *, tooltip_key: str | None = None) -> ttk.Entry:
+        label_widget = ttk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=(0, 10), pady=6)
         entry = ttk.Entry(parent, textvariable=self.vars[key])
         entry.grid(row=row, column=1, sticky="ew", pady=6)
+        if tooltip_key is not None:
+            self._register_tooltip(label_widget, tooltip_key)
+            self._register_tooltip(entry, tooltip_key)
         return entry
 
-    def _add_path_row(self, parent: tk.Misc, row: int, label: str, key: str, *, browse_kind: str) -> ttk.Entry:
-        entry = self._add_entry_row(parent, row, label, key)
+    def _add_path_row(
+        self,
+        parent: tk.Misc,
+        row: int,
+        label: str,
+        key: str,
+        *,
+        browse_kind: str,
+        tooltip_key: str | None = None,
+    ) -> ttk.Entry:
+        entry = self._add_entry_row(parent, row, label, key, tooltip_key=tooltip_key)
         browse_button = ttk.Button(
             parent,
             text="选择...",
@@ -400,10 +429,13 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         configure_icon_button(browse_button, self, "browse")
         browse_button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        if tooltip_key is not None:
+            self._register_tooltip(browse_button, tooltip_key)
         return entry
 
-    def _add_outline_path_row(self, parent: tk.Misc, row: int) -> ttk.Entry:
-        ttk.Label(parent, textvariable=self.outline_path_label_var).grid(
+    def _add_outline_path_row(self, parent: tk.Misc, row: int, *, tooltip_key: str | None = None) -> ttk.Entry:
+        label_widget = ttk.Label(parent, textvariable=self.outline_path_label_var)
+        label_widget.grid(
             row=row,
             column=0,
             sticky="w",
@@ -427,6 +459,10 @@ class NewConfigWizardDialog(tk.Toplevel):
             wraplength=620,
             justify=tk.LEFT,
         ).grid(row=row + 1, column=0, columnspan=3, sticky="ew", padx=(0, 0), pady=(0, 6))
+        if tooltip_key is not None:
+            self._register_tooltip(label_widget, tooltip_key)
+            self._register_tooltip(entry, tooltip_key)
+            self._register_tooltip(outline_button, tooltip_key)
         return entry
 
     def _go_next(self) -> None:
@@ -744,6 +780,12 @@ class NewConfigWizardDialog(tk.Toplevel):
                 ]
             )
         )
+
+    def _register_tooltip(self, widget: tk.Misc, key: str) -> None:
+        text = get_tooltip_text(key)
+        if not text:
+            return
+        self._tooltips.append(HoverTooltip(widget, text))
 
     def _skip_source_selection(self) -> None:
         self.vars["source_path"].set("")

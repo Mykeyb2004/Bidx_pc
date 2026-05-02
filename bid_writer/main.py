@@ -341,7 +341,7 @@ def main(config_path: Optional[str] = None):
     """GUI 启动入口"""
     if config_path is None:
         parser = argparse.ArgumentParser(
-            description="自动标书撰写系统"
+            description="标书智写"
         )
         parser.add_argument(
             "-c", "--config",
@@ -351,7 +351,7 @@ def main(config_path: Optional[str] = None):
         parser.add_argument(
             "--version",
             action="version",
-            version="自动标书撰写系统 v1.0.0"
+            version="标书智写 v1.0.0"
         )
         args = parser.parse_args()
         config_path = args.config

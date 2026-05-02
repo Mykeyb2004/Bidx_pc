@@ -1,7 +1,7 @@
 [project]
 name = "bid-writer"
 version = "1.0.0"
-description = "自动标书撰写系统 - 基于AI的智能标书内容生成工具"
+description = "标书智写 - 基于AI的智能标书内容生成工具"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tkinter GUI 主界面
-自动标书撰写系统的桌面版界面
+标书智写的桌面版界面
 """
 
 import os
@@ -44,6 +44,7 @@ import sys
 
 
 DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
+APP_DISPLAY_NAME = "标书智写"
 GUI_THEME_NAME = os.environ.get("BID_WRITER_GUI_THEME", "litera")
 GUI_FALLBACK_THEME = "clam"
 GUI_FONT_DELTA_ENV = "BID_WRITER_GUI_FONT_DELTA"
@@ -232,6 +233,14 @@ def ensure_tk_runtime() -> None:
             os.environ["TK_LIBRARY"] = str(tk_dirs[version])
             _TK_ENV_READY = True
             return
+
+
+def _set_tk_app_name(root: tk.Misc, app_name: str = APP_DISPLAY_NAME) -> None:
+    """设置 Tk 应用名，用于 macOS 顶部应用菜单等原生外壳显示。"""
+    try:
+        root.tk.call("tk", "appname", app_name)
+    except tk.TclError:
+        pass
 
 
 def _display_path(path: Path, base_dir: Path) -> str:
@@ -1494,6 +1503,7 @@ class MainWindow(tk.Tk):
     def __init__(self, bid_writer: BidWriter, outline_preloaded: bool = False):
         ensure_tk_runtime()
         super().__init__()
+        _set_tk_app_name(self)
         self.style = setup_gui_theme(self)
         apply_window_surface(self)
 
@@ -1517,7 +1527,7 @@ class MainWindow(tk.Tk):
         self.tree_node_map = {}
 
         # 窗口配置
-        self.title("自动标书撰写系统 - GUI版")
+        self.title(f"{APP_DISPLAY_NAME} - GUI版")
         target_width, target_height = _compute_main_window_target_size(
             screen_width=self.winfo_screenwidth(),
             screen_height=self.winfo_screenheight(),
@@ -2206,7 +2216,7 @@ class MainWindow(tk.Tk):
     def update_window_context(self):
         """更新窗口标题和当前配置显示"""
         config_name = self.bid_writer.config.config_path.name
-        self.title(f"自动标书撰写系统 - GUI版 [{config_name}]")
+        self.title(f"{APP_DISPLAY_NAME} - GUI版 [{config_name}]")
         self.config_text.set(config_name)
 
     def create_expand_menu(self):
@@ -4443,7 +4453,7 @@ class MainWindow(tk.Tk):
 
     def show_about(self):
         """显示关于"""
-        about_text = """自动标书撰写系统（GUI版）
+        about_text = f"""{APP_DISPLAY_NAME}（GUI版）
 
 版本：1.0.0
 基于：Python + Tkinter + 可选 ttkbootstrap 主题

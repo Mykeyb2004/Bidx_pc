@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from bid_writer.gui import ensure_tk_runtime
+from bid_writer.config_editor_tooltips import get_tooltip_text
 from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS
 from bid_writer.tender_import_models import (
     ManualTenderConfirmationResult,
@@ -67,6 +68,7 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
     dialog.source_hint_var = StubVar("")
     dialog.import_status_var = StubVar("")
     dialog.review_summary_var = StubVar("")
+    dialog._tooltips = []
     dialog.step_state_vars = [StubVar("") for _ in WIZARD_STEPS]
     dialog.back_button = StubButton()
     dialog.next_button = StubButton()
@@ -115,6 +117,45 @@ def test_wizard_steps_use_user_facing_titles():
         "基础设置",
         "保存确认",
     ]
+
+
+def test_new_config_wizard_tooltips_cover_core_controls():
+    keys = [
+        "new_config.step.source",
+        "new_config.step.location",
+        "new_config.step.materials",
+        "new_config.step.basics",
+        "new_config.step.review",
+        "new_config.source_path",
+        "new_config.source.select_file",
+        "new_config.source.manual_create",
+        "new_config.materials.import",
+        "new_config.outline_source.existing",
+        "new_config.outline_source.generate",
+        "new_config.footer.back",
+        "new_config.footer.next",
+        "new_config.footer.cancel",
+    ]
+
+    for key in keys:
+        assert get_tooltip_text(key).strip(), f"missing tooltip: {key}"
+
+
+def test_register_tooltip_uses_shared_hover_tooltip(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    created = []
+
+    class FakeHoverTooltip:
+        def __init__(self, widget, text, *, delay_ms=450):
+            created.append((widget, text, delay_ms))
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.HoverTooltip", FakeHoverTooltip)
+
+    widget = StubButton()
+    NewConfigWizardDialog._register_tooltip(dialog, widget, "new_config.source.select_file")
+
+    assert created == [(widget, get_tooltip_text("new_config.source.select_file"), 450)]
+    assert len(dialog._tooltips) == 1
 
 
 def test_constructor_builds_initial_wizard_shell(tmp_path: Path):
