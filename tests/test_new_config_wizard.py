@@ -1,4 +1,6 @@
 from pathlib import Path
+import queue
+import threading
 import tkinter as tk
 from types import SimpleNamespace
 
@@ -80,6 +82,12 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
         manual_inputs=True,
     )
     return dialog
+
+
+def _run_import_job_inline(dialog: NewConfigWizardDialog, job) -> None:
+    NewConfigWizardDialog._run_import_worker(dialog, job)
+    outcome = dialog._import_result_queue.get_nowait()
+    NewConfigWizardDialog._finish_import(dialog, outcome)
 
 
 def test_wizard_defines_five_steps():
@@ -398,6 +406,7 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
         ),
     )
     dialog._sync_fields_from_state = lambda: synced.append(True)
+    dialog._start_import_worker = lambda job: _run_import_job_inline(dialog, job)
 
     NewConfigWizardDialog._run_import(dialog)
 
@@ -411,6 +420,58 @@ def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatc
     assert existing_backup not in dialog.state.created_paths
     assert scoring_backup not in dialog.state.created_paths
     assert synced == [True]
+
+
+def test_run_import_starts_background_worker_without_running_import_inline(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    source = tmp_path / "招标文件.pdf"
+    source.write_text("fake", encoding="utf-8")
+    dialog.state.source_path = source
+    dialog.vars["source_path"].set(str(source))
+    import_calls = []
+    worker_jobs = []
+
+    class FakeService:
+        def import_document(self, **kwargs):
+            import_calls.append(kwargs)
+            return SimpleNamespace(
+                cancelled=False,
+                requirements_path=tmp_path / "项目要求" / "项目采购需求.md",
+                scoring_path=tmp_path / "项目要求" / "评分标准.md",
+                import_dir=tmp_path / ".bid_writer" / "imports" / "pending",
+                created_paths=(),
+            )
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.copy_source_file_if_needed", lambda _state: None)
+    monkeypatch.setattr("bid_writer.new_config_wizard.TenderImportService", lambda: FakeService())
+    dialog._start_import_worker = lambda job: worker_jobs.append(job)
+
+    NewConfigWizardDialog._run_import(dialog)
+
+    assert worker_jobs
+    assert import_calls == []
+    assert "正在" in dialog.import_status_var.get()
+
+
+def test_import_worker_marshals_ui_callbacks_to_main_queue(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog._import_ui_requests = queue.Queue()
+    result_values = []
+
+    def worker():
+        result_values.append(NewConfigWizardDialog._run_on_import_ui(dialog, lambda: "ok"))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    request = dialog._import_ui_requests.get(timeout=1)
+
+    assert result_values == []
+
+    request.result = request.callback()
+    request.event.set()
+    thread.join(timeout=1)
+
+    assert result_values == ["ok"]
 
 
 def test_run_import_reports_manual_confirmation_cancelled(monkeypatch, tmp_path: Path):
@@ -449,6 +510,7 @@ def test_run_import_reports_manual_confirmation_cancelled(monkeypatch, tmp_path:
         lambda _parent, **_kwargs: confirm_calls.append(_kwargs)
         or ManualTenderConfirmationResult(cancelled=True),
     )
+    dialog._start_import_worker = lambda job: _run_import_job_inline(dialog, job)
 
     NewConfigWizardDialog._run_import(dialog)
 

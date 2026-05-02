@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import queue
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -24,7 +27,7 @@ from bid_writer.new_config_flow import (
     should_copy_source_file,
 )
 from bid_writer.tender_import_dialog import confirm_tender_sections
-from bid_writer.tender_import_service import TenderImportError, TenderImportService
+from bid_writer.tender_import_service import TenderImportError, TenderImportResult, TenderImportService
 
 
 SUPPORTED_TENDER_SUFFIXES = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
@@ -34,6 +37,27 @@ SUPPORTED_TENDER_SUFFIXES = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
 class WizardStep:
     key: str
     title: str
+
+
+@dataclass(frozen=True)
+class _ImportJob:
+    state: NewConfigWizardState
+    existing_paths: set[Path]
+
+
+@dataclass
+class _ImportUiRequest:
+    callback: Callable[[], object]
+    event: threading.Event
+    result: object | None = None
+    error: BaseException | None = None
+
+
+@dataclass(frozen=True)
+class _ImportWorkerOutcome:
+    job: _ImportJob
+    result: TenderImportResult | None = None
+    error: BaseException | None = None
 
 
 WIZARD_STEPS = [
@@ -56,6 +80,10 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.result: dict[str, Path | None] = {"saved_path": None, "apply_path": None}
         self.current_step_index = 0
         self.max_completed_step_index = 0
+        self._import_in_progress = False
+        self._import_ui_requests: queue.Queue[_ImportUiRequest] = queue.Queue()
+        self._import_result_queue: queue.Queue[_ImportWorkerOutcome] = queue.Queue()
+        self._import_poll_after_id: str | None = None
         self.state = build_manual_state(
             project_root=initial_config_path.parent,
             config_path=initial_config_path,
@@ -234,12 +262,13 @@ class NewConfigWizardDialog(tk.Toplevel):
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
-        ttk.Button(
+        self.import_button = ttk.Button(
             form,
             text="开始抽取",
             command=self._run_import,
             **_bootstyle_kwargs("primary"),
-        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        )
+        self.import_button.grid(row=0, column=0, sticky="w", pady=(0, 10))
         ttk.Label(form, textvariable=self.import_status_var, style="Muted.TLabel", wraplength=620, justify=tk.LEFT).grid(
             row=0,
             column=1,
@@ -373,6 +402,13 @@ class NewConfigWizardDialog(tk.Toplevel):
         total_steps = len(WIZARD_STEPS)
         step_number = self.current_step_index + 1
         self.status_var.set(f"第 {step_number} 步，共 {total_steps} 步")
+        if getattr(self, "_import_in_progress", False):
+            self.back_button.configure(state=tk.DISABLED)
+            self.next_button.configure(state=tk.DISABLED)
+            for button in self.step_buttons:
+                button.configure(state=tk.DISABLED)
+            return
+
         self.back_button.configure(state=tk.DISABLED if self.current_step_index == 0 else tk.NORMAL)
         next_text = "保存并应用" if self.current_step_index == total_steps - 1 else "下一步"
         self.next_button.configure(text=next_text)
@@ -408,6 +444,9 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.destroy()
 
     def _cancel(self) -> None:
+        if getattr(self, "_import_in_progress", False):
+            messagebox.showwarning("正在抽取", "招标文件正在转换和抽取，请等待完成后再关闭向导。", parent=self)
+            return
         if self.state.created_paths:
             choice = messagebox.askyesnocancel(
                 "取消新建配置",
@@ -599,6 +638,10 @@ class NewConfigWizardDialog(tk.Toplevel):
             self.vars[key].set(str(Path(selected).expanduser().resolve()))
 
     def _run_import(self) -> None:
+        if getattr(self, "_import_in_progress", False):
+            messagebox.showinfo("正在抽取", "招标文件正在转换和抽取，请稍候。", parent=self)
+            return
+
         self._sync_state_from_fields()
         if self.state.source_path is None:
             messagebox.showwarning("缺少招标文件", "请先选择招标文件，或手动选择采购需求和评分标准文件。", parent=self)
@@ -606,25 +649,116 @@ class NewConfigWizardDialog(tk.Toplevel):
 
         self.state.project_root.mkdir(parents=True, exist_ok=True)
         existing_paths = self._snapshot_existing_import_paths()
+        job = _ImportJob(state=self._snapshot_import_state(), existing_paths=existing_paths)
+        self._import_ui_requests = queue.Queue()
+        self._import_result_queue = queue.Queue()
+        self._set_import_in_progress(True)
+        self.import_status_var.set("正在转换和抽取招标文件，请稍候...")
+        self._start_import_worker(job)
+
+    def _snapshot_import_state(self) -> NewConfigWizardState:
+        return NewConfigWizardState(
+            source_path=self.state.source_path,
+            project_root=self.state.project_root,
+            config_path=self.state.config_path,
+            import_dir=self.state.import_dir,
+            should_copy_source=self.state.should_copy_source,
+            source_copy_path=self.state.source_copy_path,
+            copied_source_path=self.state.copied_source_path,
+            requirements_path=self.state.requirements_path,
+            scoring_path=self.state.scoring_path,
+            outline_path=self.state.outline_path,
+            output_dir=self.state.output_dir,
+            bidder_name=self.state.bidder_name,
+            created_paths=list(getattr(self.state, "created_paths", [])),
+            manual_inputs=self.state.manual_inputs,
+        )
+
+    def _start_import_worker(self, job: _ImportJob) -> None:
+        threading.Thread(target=lambda: self._run_import_worker(job), daemon=True).start()
+        self._schedule_import_poll()
+
+    def _run_import_worker(self, job: _ImportJob) -> None:
         try:
-            copy_source_file_if_needed(self.state)
+            copy_source_file_if_needed(job.state)
             result = TenderImportService().import_document(
-                source_path=self.state.source_path,
-                project_root=self.state.project_root,
-                import_dir=self.state.import_dir,
-                confirm_overwrite=self._confirm_overwrite,
-                confirm_sections=lambda **kwargs: confirm_tender_sections(self, **kwargs),
+                source_path=job.state.source_path,
+                project_root=job.state.project_root,
+                import_dir=job.state.import_dir,
+                confirm_overwrite=lambda path: self._run_on_import_ui(lambda: self._confirm_overwrite(path)),
+                confirm_sections=lambda **kwargs: self._run_on_import_ui(
+                    lambda: confirm_tender_sections(self, **kwargs)
+                ),
             )
+            outcome = _ImportWorkerOutcome(job=job, result=result)
         except TenderImportError as exc:
-            self.import_status_var.set("导入失败，可手动填写资料文件。")
-            messagebox.showerror("导入失败", str(exc), parent=self)
-            return
+            outcome = _ImportWorkerOutcome(job=job, error=exc)
         except Exception as exc:
-            self.import_status_var.set("导入失败，可手动填写资料文件。")
-            messagebox.showerror("导入失败", f"{type(exc).__name__}: {exc}", parent=self)
+            outcome = _ImportWorkerOutcome(job=job, error=exc)
+        self._import_result_queue.put(outcome)
+
+    def _run_on_import_ui(self, callback: Callable[[], object]) -> object:
+        if threading.current_thread() is threading.main_thread():
+            return callback()
+        request = _ImportUiRequest(callback=callback, event=threading.Event())
+        self._import_ui_requests.put(request)
+        request.event.wait()
+        if request.error is not None:
+            raise request.error
+        return request.result
+
+    def _schedule_import_poll(self) -> None:
+        try:
+            self._import_poll_after_id = self.after(50, self._poll_import_queues)
+        except (AttributeError, tk.TclError):
+            self._import_poll_after_id = None
+
+    def _poll_import_queues(self) -> None:
+        self._drain_import_ui_requests()
+        try:
+            outcome = self._import_result_queue.get_nowait()
+        except queue.Empty:
+            if getattr(self, "_import_in_progress", False):
+                self._schedule_import_poll()
             return
 
-        self._register_new_created_paths(result.created_paths, existing_paths)
+        self._finish_import(outcome)
+
+    def _drain_import_ui_requests(self) -> None:
+        while True:
+            try:
+                request = self._import_ui_requests.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                request.result = request.callback()
+            except BaseException as exc:
+                request.error = exc
+            finally:
+                request.event.set()
+
+    def _finish_import(self, outcome: _ImportWorkerOutcome) -> None:
+        self._adopt_import_worker_state(outcome.job.state)
+        self._set_import_in_progress(False)
+        if outcome.error is not None:
+            self.import_status_var.set("导入失败，可手动填写资料文件。")
+            if isinstance(outcome.error, TenderImportError):
+                messagebox.showerror("导入失败", str(outcome.error), parent=self)
+            else:
+                messagebox.showerror(
+                    "导入失败",
+                    f"{type(outcome.error).__name__}: {outcome.error}",
+                    parent=self,
+                )
+            return
+
+        result = outcome.result
+        if result is None:
+            self.import_status_var.set("导入失败，可手动填写资料文件。")
+            messagebox.showerror("导入失败", "导入服务未返回结果。", parent=self)
+            return
+
+        self._register_new_created_paths(result.created_paths, outcome.job.existing_paths)
         if result.cancelled:
             self.state.requirements_path = None
             self.state.scoring_path = None
@@ -636,6 +770,27 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.state.scoring_path = result.scoring_path
         self._sync_fields_from_state()
         self.import_status_var.set(f"导入完成：{result.import_dir}")
+
+    def _adopt_import_worker_state(self, worker_state: NewConfigWizardState) -> None:
+        self.state.source_copy_path = worker_state.source_copy_path
+        self.state.copied_source_path = worker_state.copied_source_path
+        for path in worker_state.created_paths:
+            register_created_path(self.state, path)
+
+    def _set_import_in_progress(self, is_in_progress: bool) -> None:
+        self._import_in_progress = is_in_progress
+        state = tk.DISABLED if is_in_progress else tk.NORMAL
+        if hasattr(self, "import_button"):
+            self.import_button.configure(state=state)
+        if is_in_progress:
+            if hasattr(self, "back_button"):
+                self.back_button.configure(state=tk.DISABLED)
+            if hasattr(self, "next_button"):
+                self.next_button.configure(state=tk.DISABLED)
+            for button in getattr(self, "step_buttons", []):
+                button.configure(state=tk.DISABLED)
+        elif hasattr(self, "back_button") and hasattr(self, "next_button"):
+            self._sync_footer()
 
     def _snapshot_existing_import_paths(self) -> set[Path]:
         requirements = self.state.project_root / "项目要求" / "项目采购需求.md"

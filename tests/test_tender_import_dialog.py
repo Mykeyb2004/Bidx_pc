@@ -8,7 +8,6 @@ from bid_writer.gui import ensure_tk_runtime
 from bid_writer.tender_import_dialog import (
     ManualTenderSectionConfirmDialog,
     SECTION_LABELS,
-    _build_source_navigation_ranges,
     build_confirmation_status,
     build_initial_section_selection,
     build_low_confidence_preview,
@@ -40,90 +39,11 @@ def _conversion() -> TenderConversionResult:
     )
 
 
-def _uneven_chapter_conversion() -> TenderConversionResult:
-    blocks = [
-        ConvertedBlock(
-            "r0",
-            "tender.md",
-            "md",
-            "heading",
-            "## 第一章 项目采购需求",
-            "第一章 项目采购需求",
-            1,
-            heading_level=2,
-            heading_title="第一章 项目采购需求",
-        ),
-        ConvertedBlock("r1", "tender.md", "md", "paragraph", "服务内容包括调查、成果提交和验收。\n技术要求详见本章。", "服务内容包括调查、成果提交和验收。", 2),
-        ConvertedBlock("r2", "tender.md", "md", "paragraph", "服务范围覆盖全县。", "服务范围覆盖全县。", 3),
-        ConvertedBlock("r3", "tender.md", "md", "paragraph", "补充要求第一行。\n补充要求第二行。", "补充要求第一行。", 4),
-        ConvertedBlock(
-            "s0",
-            "tender.md",
-            "md",
-            "heading",
-            "## 第二章 评分标准",
-            "第二章 评分标准",
-            5,
-            heading_level=2,
-            heading_title="第二章 评分标准",
-        ),
-        ConvertedBlock("s1", "tender.md", "md", "table", "| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |", "| 评分项 | 分值 |", 6),
-        ConvertedBlock(
-            "c0",
-            "tender.md",
-            "md",
-            "heading",
-            "## 第三章 合同条款",
-            "第三章 合同条款",
-            7,
-            heading_level=2,
-            heading_title="第三章 合同条款",
-        ),
-        ConvertedBlock("c1", "tender.md", "md", "paragraph", "合同正文。", "合同正文。", 8),
-    ]
-    return TenderConversionResult(
-        source_path=Path("tender.md"),
-        output_dir=Path(".bid_writer/imports/test"),
-        converted_markdown_path=Path(".bid_writer/imports/test/converted.md"),
-        conversion_map_path=Path(".bid_writer/imports/test/conversion_map.json"),
-        blocks=blocks,
-    )
-
-
-def _docx_toc_body_heading_conversion() -> TenderConversionResult:
-    blocks = [
-        ConvertedBlock("cover", "tender.docx", "docx", "paragraph", "第二册", "第二册", 1),
-        ConvertedBlock("toc", "tender.docx", "docx", "paragraph", "目      录", "目      录", 2),
-        ConvertedBlock("toc_req", "tender.docx", "docx", "paragraph", "第八章  货物需求一览表及技术规格\t67", "第八章  货物需求一览表及技术规格\t67", 3),
-        ConvertedBlock("toc_score", "tender.docx", "docx", "paragraph", "第九章  评标方法和标准\t69", "第九章  评标方法和标准\t69", 4),
-        ConvertedBlock("notice", "tender.docx", "docx", "heading", "# 招标公告", "招标公告", 5, heading_level=1, heading_title="招标公告"),
-        ConvertedBlock("notice_body", "tender.docx", "docx", "paragraph", "采购需求：本项目为15号楼研究生公寓采购配套家具。", "采购需求：本项目为15号楼研究生公寓采购配套家具。", 6),
-        ConvertedBlock("req", "tender.docx", "docx", "heading", "# 货物需求一览表及技术规格", "货物需求一览表及技术规格", 7, heading_level=1, heading_title="货物需求一览表及技术规格"),
-        ConvertedBlock("req_body", "tender.docx", "docx", "paragraph", "采购服务内容包括家具、技术规格、样品、验收和售后要求。", "采购服务内容包括家具、技术规格、样品、验收和售后要求。", 8),
-        ConvertedBlock("score", "tender.docx", "docx", "heading", "# 评标方法和标准", "评标方法和标准", 9, heading_level=1, heading_title="评标方法和标准"),
-        ConvertedBlock("score_intro", "tender.docx", "docx", "paragraph", "本项目采用综合评分法。", "本项目采用综合评分法。", 10),
-        ConvertedBlock("score_sub", "tender.docx", "docx", "heading", "# 一、资格审查表", "一、资格审查表", 11, heading_level=1, heading_title="一、资格审查表"),
-        ConvertedBlock("score_body", "tender.docx", "docx", "table", "| 评分项 | 评分标准 | 分值 |\n| --- | --- | --- |\n| 技术方案 | 完整得30分 | 30分 |", "| 评分项 | 评分标准 | 分值 |", 12),
-    ]
-    return TenderConversionResult(
-        source_path=Path("tender.docx"),
-        output_dir=Path(".bid_writer/imports/test"),
-        converted_markdown_path=Path(".bid_writer/imports/test/converted.md"),
-        conversion_map_path=Path(".bid_writer/imports/test/conversion_map.json"),
-        blocks=blocks,
-    )
-
-
-def _selected_line_range(text: tk.Text) -> tuple[int, int]:
-    start = int(text.index("sel.first").split(".", 1)[0])
-    end = int(text.index("sel.last").split(".", 1)[0])
-    if text.index("sel.last").split(".", 1)[1] == "0":
-        end -= 1
-    return start, end
-
-
-def _selected_text(text: tk.Text) -> str:
-    return text.get("sel.first", "sel.last")
+def _tagged_text(text: tk.Text, tag_name: str) -> str:
+    ranges = text.tag_ranges(tag_name)
+    if not ranges:
+        return ""
+    return text.get(ranges[0], ranges[1])
 
 
 def test_manual_selection_dataclass_keeps_block_range():
@@ -202,8 +122,9 @@ def test_manual_dialog_starts_with_empty_target_editor_and_source_hint(monkeypat
         dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
 
         assert dialog.target_text.get("1.0", "end-1c") == ""
-        assert "项目采购需求" in _selected_text(dialog.source_text)
-        assert "服务内容" in _selected_text(dialog.source_text)
+        assert "项目采购需求" in _tagged_text(dialog.source_text, "source_hint")
+        assert "服务内容" in _tagged_text(dialog.source_text, "source_hint")
+        assert dialog.source_text.tag_ranges("current_selection") == ()
 
         warnings = []
         monkeypatch.setattr(
@@ -219,7 +140,7 @@ def test_manual_dialog_starts_with_empty_target_editor_and_source_hint(monkeypat
         assert warnings == [
             (
                 "目标编辑框不能为空",
-                "目标编辑框不能为空。请先在源文区选择文本并点击“使用选区”，或直接填写目标编辑框。",
+                "目标编辑框不能为空。请先在源文区选择文本并点击“使用人工所选”，或点击“使用系统推荐”，或直接填写目标编辑框。",
                 {"parent": dialog},
             )
         ]
@@ -229,38 +150,7 @@ def test_manual_dialog_starts_with_empty_target_editor_and_source_hint(monkeypat
         root.destroy()
 
 
-def test_manual_dialog_use_selection_replaces_target_editor():
-    ensure_tk_runtime()
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"Tk is not available: {exc}")
-
-    dialog = None
-    try:
-        root.withdraw()
-        extraction = TenderSectionExtraction(
-            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
-            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
-        )
-        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
-
-        dialog._use_source_selection()
-
-        assert "项目采购需求" in dialog.target_text.get("1.0", "end-1c")
-        assert "服务内容" in dialog.target_text.get("1.0", "end-1c")
-
-        dialog._apply_source_char_selection(0, len("## 项目采购需求"))
-        dialog._use_source_selection()
-
-        assert dialog.target_text.get("1.0", "end-1c") == "## 项目采购需求"
-    finally:
-        if dialog is not None and dialog.winfo_exists():
-            dialog.destroy()
-        root.destroy()
-
-
-def test_manual_dialog_use_selection_keeps_highlighted_source_when_tk_selection_is_lost(monkeypatch):
+def test_manual_dialog_use_selection_requires_user_selected_source(monkeypatch):
     ensure_tk_runtime()
     try:
         root = tk.Tk()
@@ -280,15 +170,160 @@ def test_manual_dialog_use_selection_keeps_highlighted_source_when_tk_selection_
             scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
         )
         dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
-        dialog.source_text.configure(state="normal")
+
+        dialog._use_source_selection()
+
+        assert dialog.target_text.get("1.0", "end-1c") == ""
+        assert infos == [("需要手动选择", "请先在源文区选择文本。", {"parent": dialog})]
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_user_selection_gets_blue_highlight_and_replaces_target_editor():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        dialog.source_text.tag_add("sel", "1.0", "4.0")
+        dialog._sync_source_selection_highlight()
+        dialog._use_source_selection()
+
+        assert "项目采购需求" in _tagged_text(dialog.source_text, "current_selection")
+        assert "服务内容" in _tagged_text(dialog.source_text, "current_selection")
+        assert "项目采购需求" in dialog.target_text.get("1.0", "end-1c")
+        assert "服务内容" in dialog.target_text.get("1.0", "end-1c")
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_syncs_blue_highlight_while_dragging_source_selection():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        assert dialog.source_text.bind("<B1-Motion>")
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_shows_manual_and_system_buttons_and_selection_instructions():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+
+        button_texts = [
+            child.cget("text")
+            for child in dialog.winfo_children()[0].winfo_children()
+            if isinstance(child, ttk.Button)
+        ]
+
+        assert "使用人工所选" in button_texts
+        assert "使用系统推荐" in button_texts
+        assert "使用选区" not in button_texts
+        assert "上一章节" not in button_texts
+        assert "下一章节" not in button_texts
+        assert "Shift+点击" in dialog.selection_help_var.get()
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_use_selection_keeps_user_highlight_when_tk_selection_is_lost(monkeypatch):
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        infos = []
+        monkeypatch.setattr(
+            "bid_writer.tender_import_dialog.messagebox.showinfo",
+            lambda title, message, **kwargs: infos.append((title, message, kwargs)),
+        )
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+        dialog.source_text.tag_add("sel", "1.0", "4.0")
+        dialog._sync_source_selection_highlight()
         dialog.source_text.tag_remove("sel", "1.0", "end")
-        dialog.source_text.configure(state="disabled")
 
         dialog._use_source_selection()
 
         assert infos == []
+        assert "项目采购需求" in _tagged_text(dialog.source_text, "current_selection")
         assert "项目采购需求" in dialog.target_text.get("1.0", "end-1c")
         assert "服务内容" in dialog.target_text.get("1.0", "end-1c")
+    finally:
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        root.destroy()
+
+
+def test_manual_dialog_use_system_recommendation_replaces_target_editor():
+    ensure_tk_runtime()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is not available: {exc}")
+
+    dialog = None
+    try:
+        root.withdraw()
+        extraction = TenderSectionExtraction(
+            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r1", 0.91),
+            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
+        )
+        dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction)
+        dialog.target_text.insert("1.0", "用户已经输入的内容")
+
+        dialog._use_system_recommendation()
+
+        assert dialog.target_text.get("1.0", "end-1c") == "## 项目采购需求\n\n服务内容包括成果提交和验收。"
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
@@ -312,9 +347,13 @@ def test_manual_dialog_saves_edited_target_editor_content():
         )
         dialog = ManualTenderSectionConfirmDialog(root, _conversion(), extraction, save_section=saved.append)
 
+        dialog.source_text.tag_add("sel", "1.0", "4.0")
+        dialog._sync_source_selection_highlight()
         dialog._use_source_selection()
         dialog.target_text.insert("end", "\n\n人工补充说明。")
         dialog._save_current_section()
+        dialog.source_text.tag_add("sel", "5.0", "end")
+        dialog._sync_source_selection_highlight()
         dialog._use_source_selection()
         dialog.target_text.delete("1.0", "end")
         dialog.target_text.insert("1.0", "## 评分标准\n\n| 评分项 | 分值 |\n| --- | --- |\n| 服务 | 10分 |\n\n人工调整评分。")
@@ -338,71 +377,7 @@ def test_manual_dialog_saves_edited_target_editor_content():
         root.destroy()
 
 
-def test_manual_dialog_chapter_buttons_move_source_selection_by_detected_boundaries():
-    ensure_tk_runtime()
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"Tk is not available: {exc}")
-
-    dialog = None
-    try:
-        root.withdraw()
-        extraction = TenderSectionExtraction(
-            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r3", 0.91),
-            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
-        )
-        dialog = ManualTenderSectionConfirmDialog(root, _uneven_chapter_conversion(), extraction)
-
-        assert "第一章 项目采购需求" in _selected_text(dialog.source_text)
-        assert "服务范围覆盖全县" in _selected_text(dialog.source_text)
-
-        dialog._move_next()
-
-        assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
-        assert "10分" in _selected_text(dialog.source_text)
-        assert "第三章 合同条款" not in _selected_text(dialog.source_text)
-        assert dialog.target_text.get("1.0", "end-1c") == ""
-
-        dialog._move_previous()
-
-        assert _selected_text(dialog.source_text).lstrip().startswith("## 第一章 项目采购需求")
-        assert "服务范围覆盖全县" in _selected_text(dialog.source_text)
-        assert dialog.target_text.get("1.0", "end-1c") == ""
-    finally:
-        if dialog is not None and dialog.winfo_exists():
-            dialog.destroy()
-        root.destroy()
-
-
-def test_manual_dialog_navigation_does_not_overwrite_existing_target_editor():
-    ensure_tk_runtime()
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"Tk is not available: {exc}")
-
-    dialog = None
-    try:
-        root.withdraw()
-        extraction = TenderSectionExtraction(
-            requirements=TenderExtractionResult("bid_requirements", "项目采购需求", "", "r0", "r3", 0.91),
-            scoring=TenderExtractionResult("scoring_criteria", "评分标准", "", "s0", "s1", 0.92),
-        )
-        dialog = ManualTenderSectionConfirmDialog(root, _uneven_chapter_conversion(), extraction)
-        dialog.target_text.insert("1.0", "用户已经整理好的目标内容")
-
-        dialog._move_next()
-
-        assert dialog.target_text.get("1.0", "end-1c") == "用户已经整理好的目标内容"
-        assert _selected_text(dialog.source_text).lstrip().startswith("## 第二章 评分标准")
-    finally:
-        if dialog is not None and dialog.winfo_exists():
-            dialog.destroy()
-        root.destroy()
-
-
-def test_manual_dialog_uses_chapter_navigation_button_labels():
+def test_manual_dialog_removes_chapter_navigation_buttons():
     ensure_tk_runtime()
     try:
         root = tk.Tk()
@@ -424,26 +399,16 @@ def test_manual_dialog_uses_chapter_navigation_button_labels():
             if isinstance(child, ttk.Button)
         ]
 
-        assert "上一章节" in button_texts
-        assert "下一章节" in button_texts
+        assert "上一章节" not in button_texts
+        assert "下一章节" not in button_texts
+        assert "使用人工所选" in button_texts
+        assert "使用系统推荐" in button_texts
         assert "向前扩展" not in button_texts
         assert "向后扩展" not in button_texts
     finally:
         if dialog is not None and dialog.winfo_exists():
             dialog.destroy()
         root.destroy()
-
-
-def test_navigation_ranges_ignore_toc_rows_and_include_body_headings():
-    document = TenderSelectionDocument.from_blocks(_docx_toc_body_heading_conversion().blocks)
-
-    major_ranges, _fallback_ranges = _build_source_navigation_ranges(document)
-    excerpts = [document.markdown[item.start : item.end] for item in major_ranges]
-
-    assert not any("第八章  货物需求一览表及技术规格\t67" in item for item in excerpts)
-    assert not any("第九章  评标方法和标准\t69" in item for item in excerpts)
-    assert any(item.startswith("# 货物需求一览表及技术规格") and "验收和售后要求" in item for item in excerpts)
-    assert any(item.startswith("# 评标方法和标准") and "一、资格审查表" in item and "完整得30分" in item for item in excerpts)
 
 
 def test_low_confidence_preview_includes_confidence_and_excerpt():
