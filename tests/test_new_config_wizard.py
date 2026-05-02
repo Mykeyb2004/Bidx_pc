@@ -54,10 +54,14 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
         "config_path": StubVar(str(tmp_path / "config.yaml")),
         "requirements_path": StubVar(str(tmp_path / "项目要求" / "项目采购需求.md")),
         "scoring_path": StubVar(str(tmp_path / "项目要求" / "评分标准.md")),
+        "outline_source": StubVar("generate"),
         "outline_path": StubVar(str(tmp_path / "投标大纲.md")),
         "output_dir": StubVar(str(tmp_path / "output")),
         "bidder_name": StubVar(""),
     }
+    dialog.outline_path_label_var = StubVar("大纲保存位置")
+    dialog.outline_path_action_var = StubVar("选择保存位置...")
+    dialog.outline_path_hint_var = StubVar("可以先不创建文件；进入大纲准备窗口后会在此位置生成大纲。")
     dialog.status_var = StubVar("")
     dialog.config_summary_var = StubVar("")
     dialog.source_hint_var = StubVar("")
@@ -205,6 +209,105 @@ def test_sync_fields_updates_header_config_summary(tmp_path: Path):
     NewConfigWizardDialog._sync_fields_from_state(dialog)
 
     assert dialog.config_summary_var.get() == f"目标配置：{tmp_path / 'config_推导项目.yaml'}"
+
+
+def test_outline_source_generate_allows_missing_outline_file(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.current_step_index = 3
+    dialog.vars["bidder_name"].set("测试公司")
+    dialog.vars["outline_source"].set("generate")
+    dialog.vars["outline_path"].set(str(tmp_path / "new_outline.md"))
+
+    ok = NewConfigWizardDialog._validate_current_step(dialog)
+
+    assert ok is True
+
+
+def test_outline_source_existing_requires_existing_outline_file(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.current_step_index = 3
+    dialog.vars["bidder_name"].set("测试公司")
+    dialog.vars["outline_source"].set("existing")
+    dialog.vars["outline_path"].set(str(tmp_path / "missing_outline.md"))
+    shown_errors = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+
+    ok = NewConfigWizardDialog._validate_current_step(dialog)
+
+    assert ok is False
+    assert shown_errors and "大纲文件不存在" in shown_errors[0][1]
+
+
+def test_outline_source_ui_updates_labels_and_hint(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["outline_source"].set("existing")
+
+    NewConfigWizardDialog._sync_outline_source_ui(dialog)
+
+    assert dialog.outline_path_label_var.get() == "已有大纲文件"
+    assert dialog.outline_path_action_var.get() == "选择已有文件..."
+    assert "Markdown 大纲文件" in dialog.outline_path_hint_var.get()
+
+    dialog.vars["outline_source"].set("generate")
+    NewConfigWizardDialog._sync_outline_source_ui(dialog)
+
+    assert dialog.outline_path_label_var.get() == "大纲保存位置"
+    assert dialog.outline_path_action_var.get() == "选择保存位置..."
+    assert "保存后" in dialog.outline_path_hint_var.get()
+
+
+def test_outline_browse_uses_save_dialog_for_generate_mode(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["outline_source"].set("generate")
+    selected = tmp_path / "generated_outline.md"
+    calls = []
+
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
+        lambda *args, **kwargs: calls.append(("save", kwargs)) or str(selected),
+    )
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.askopenfilename",
+        lambda *args, **kwargs: calls.append(("open", kwargs)) or "",
+    )
+
+    NewConfigWizardDialog._browse_path(dialog, "outline_path", "outline")
+
+    assert calls and calls[0][0] == "save"
+    assert dialog.vars["outline_path"].get() == str(selected)
+
+
+def test_outline_browse_uses_open_dialog_for_existing_mode(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["outline_source"].set("existing")
+    selected = tmp_path / "existing_outline.md"
+    calls = []
+
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
+        lambda *args, **kwargs: calls.append(("save", kwargs)) or "",
+    )
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.askopenfilename",
+        lambda *args, **kwargs: calls.append(("open", kwargs)) or str(selected),
+    )
+
+    NewConfigWizardDialog._browse_path(dialog, "outline_path", "outline")
+
+    assert calls and calls[0][0] == "open"
+    assert dialog.vars["outline_path"].get() == str(selected)
+
+
+def test_sync_review_summary_mentions_outline_source(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["outline_source"].set("existing")
+
+    NewConfigWizardDialog._sync_review_summary(dialog)
+
+    assert "大纲来源：已有 Markdown 大纲" in dialog.review_summary_var.get()
 
 
 def test_project_root_change_rebases_default_material_paths(tmp_path: Path):
