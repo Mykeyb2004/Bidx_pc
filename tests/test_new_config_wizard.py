@@ -67,6 +67,7 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
     dialog.source_hint_var = StubVar("")
     dialog.import_status_var = StubVar("")
     dialog.review_summary_var = StubVar("")
+    dialog.step_state_vars = [StubVar("") for _ in WIZARD_STEPS]
     dialog.back_button = StubButton()
     dialog.next_button = StubButton()
     dialog.step_buttons = []
@@ -103,6 +104,16 @@ def test_wizard_defines_five_steps():
         "materials",
         "basics",
         "review",
+    ]
+
+
+def test_wizard_steps_use_user_facing_titles():
+    assert [step.title for step in WIZARD_STEPS] == [
+        "选择起点",
+        "项目位置",
+        "资料整理",
+        "基础设置",
+        "保存确认",
     ]
 
 
@@ -185,11 +196,19 @@ def test_jump_to_previous_step_does_not_validate_current_incomplete_step(tmp_pat
 def test_sync_footer_sets_status_and_final_button_text(tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.current_step_index = len(WIZARD_STEPS) - 1
+    dialog.max_completed_step_index = 3
 
     NewConfigWizardDialog._sync_footer(dialog)
 
     assert dialog.status_var.get() == "第 5 步，共 5 步"
     assert dialog.next_button.config_calls[-1]["text"] == "保存并应用"
+    assert [var.get() for var in dialog.step_state_vars] == [
+        "已完成",
+        "已完成",
+        "已完成",
+        "已完成",
+        "当前",
+    ]
 
 
 def test_import_completion_reenables_next_button(tmp_path: Path):
@@ -209,6 +228,35 @@ def test_sync_fields_updates_header_config_summary(tmp_path: Path):
     NewConfigWizardDialog._sync_fields_from_state(dialog)
 
     assert dialog.config_summary_var.get() == f"目标配置：{tmp_path / 'config_推导项目.yaml'}"
+
+
+def test_source_hint_mentions_manual_creation_when_no_tender_selected(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["source_path"].set("")
+    dialog.state.source_path = None
+    dialog.state.manual_inputs = True
+
+    NewConfigWizardDialog._sync_source_hint(dialog)
+
+    assert "手动创建" in dialog.source_hint_var.get()
+
+
+def test_outline_source_controls_use_user_facing_terms(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["outline_source"].set("existing")
+
+    NewConfigWizardDialog._sync_outline_source_ui(dialog)
+
+    assert dialog.outline_path_label_var.get() == "已有大纲文件"
+    assert dialog.outline_path_action_var.get() == "选择已有大纲..."
+    assert "Markdown 大纲文件" in dialog.outline_path_hint_var.get()
+
+    dialog.vars["outline_source"].set("generate")
+    NewConfigWizardDialog._sync_outline_source_ui(dialog)
+
+    assert dialog.outline_path_label_var.get() == "大纲保存位置"
+    assert dialog.outline_path_action_var.get() == "选择保存位置..."
+    assert "生成完毕后" in dialog.outline_path_hint_var.get()
 
 
 def test_outline_source_generate_allows_missing_outline_file(tmp_path: Path):
@@ -248,7 +296,7 @@ def test_outline_source_ui_updates_labels_and_hint(tmp_path: Path):
     NewConfigWizardDialog._sync_outline_source_ui(dialog)
 
     assert dialog.outline_path_label_var.get() == "已有大纲文件"
-    assert dialog.outline_path_action_var.get() == "选择已有文件..."
+    assert dialog.outline_path_action_var.get() == "选择已有大纲..."
     assert "Markdown 大纲文件" in dialog.outline_path_hint_var.get()
 
     dialog.vars["outline_source"].set("generate")
@@ -256,7 +304,7 @@ def test_outline_source_ui_updates_labels_and_hint(tmp_path: Path):
 
     assert dialog.outline_path_label_var.get() == "大纲保存位置"
     assert dialog.outline_path_action_var.get() == "选择保存位置..."
-    assert "保存后" in dialog.outline_path_hint_var.get()
+    assert "生成完毕后" in dialog.outline_path_hint_var.get()
 
 
 def test_outline_browse_uses_save_dialog_for_generate_mode(monkeypatch, tmp_path: Path):
@@ -304,10 +352,12 @@ def test_outline_browse_uses_open_dialog_for_existing_mode(monkeypatch, tmp_path
 def test_sync_review_summary_mentions_outline_source(tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["outline_source"].set("existing")
+    dialog.state.output_dir = tmp_path / "results"
 
     NewConfigWizardDialog._sync_review_summary(dialog)
 
     assert "大纲来源：已有 Markdown 大纲" in dialog.review_summary_var.get()
+    assert f"输出目录：{tmp_path / 'results'}" in dialog.review_summary_var.get()
 
 
 def test_project_root_change_rebases_default_material_paths(tmp_path: Path):

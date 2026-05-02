@@ -61,11 +61,11 @@ class _ImportWorkerOutcome:
 
 
 WIZARD_STEPS = [
-    WizardStep("source", "资料来源"),
+    WizardStep("source", "选择起点"),
     WizardStep("location", "项目位置"),
-    WizardStep("materials", "项目材料"),
-    WizardStep("basics", "基本信息"),
-    WizardStep("review", "确认保存"),
+    WizardStep("materials", "资料整理"),
+    WizardStep("basics", "基础设置"),
+    WizardStep("review", "保存确认"),
 ]
 
 
@@ -98,6 +98,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.source_hint_var = tk.StringVar(value="")
         self.import_status_var = tk.StringVar(value="")
         self.review_summary_var = tk.StringVar(value="")
+        self.step_state_vars = [tk.StringVar(value="") for _ in WIZARD_STEPS]
         self.outline_path_label_var = tk.StringVar(value="大纲保存位置")
         self.outline_path_action_var = tk.StringVar(value="选择保存位置...")
         self.outline_path_hint_var = tk.StringVar(
@@ -159,13 +160,17 @@ class NewConfigWizardDialog(tk.Toplevel):
         sidebar.grid(row=0, column=0, sticky="ns")
         ttk.Label(sidebar, text="步骤", style="SummaryLabel.TLabel").pack(anchor="w", pady=(0, 10))
         for index, step in enumerate(WIZARD_STEPS):
+            row = ttk.Frame(sidebar)
+            row.pack(fill=tk.X, pady=4)
             button = ttk.Button(
-                sidebar,
+                row,
                 text=f"{index + 1}. {step.title}",
                 command=lambda step_index=index: self._jump_to_step(step_index),
                 **_bootstyle_kwargs("secondary"),
             )
-            button.pack(fill=tk.X, pady=4)
+            button.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            state_label = ttk.Label(row, textvariable=self.step_state_vars[index], style="Muted.TLabel", width=8, anchor="e")
+            state_label.pack(side=tk.RIGHT, padx=(8, 0))
             self.step_buttons.append(button)
 
         self.content_container = ttk.Frame(body)
@@ -224,36 +229,60 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _build_source_step(self) -> None:
         frame = self._create_step_frame(
             "source",
-            "资料来源",
-            "先选择招标文件，系统会把项目根目录设为招标文件所在目录，并推导配置路径；也可以跳过导入，后续手动填写资料文件。",
+            "选择起点",
+            "先选招标文件开始，系统会自动推导项目位置；也可以直接走手动创建，后续再补资料文件。",
         )
         controls = ttk.Frame(frame)
         controls.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         controls.columnconfigure(0, weight=1)
-        ttk.Label(controls, text="招标文件").grid(row=0, column=0, sticky="w")
-        ttk.Entry(controls, textvariable=self.vars["source_path"]).grid(row=1, column=0, sticky="ew", pady=(4, 8))
+        choice_row = ttk.Frame(controls)
+        choice_row.grid(row=0, column=0, sticky="ew")
+        choice_row.columnconfigure(0, weight=1)
+        choice_row.columnconfigure(1, weight=1)
+
+        import_card = ttk.LabelFrame(choice_row, text="从招标文件开始", padding=(12, 10))
+        import_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        import_card.columnconfigure(0, weight=1)
+        ttk.Label(
+            import_card,
+            text="适合你手上已经有招标文件，希望系统帮你推导项目目录并自动整理资料。",
+            style="Muted.TLabel",
+            wraplength=280,
+            justify=tk.LEFT,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Entry(import_card, textvariable=self.vars["source_path"]).grid(row=1, column=0, sticky="ew", pady=(10, 8))
         ttk.Button(
-            controls,
+            import_card,
             text="选择招标文件...",
             command=self._select_source_file,
             **_bootstyle_kwargs("primary"),
-        ).grid(row=1, column=1, sticky="e", padx=(8, 0), pady=(4, 8))
+        ).grid(row=2, column=0, sticky="w")
+
+        manual_card = ttk.LabelFrame(choice_row, text="直接手动创建", padding=(12, 10))
+        manual_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        manual_card.columnconfigure(0, weight=1)
+        ttk.Label(
+            manual_card,
+            text="适合先建立项目骨架，再手动指定采购需求、评分标准和大纲文件。",
+            style="Muted.TLabel",
+            wraplength=280,
+            justify=tk.LEFT,
+        ).grid(row=0, column=0, sticky="w")
         ttk.Button(
-            controls,
-            text="跳过导入，手动填写",
+            manual_card,
+            text="进入手动创建",
             command=self._skip_source_selection,
             **_bootstyle_kwargs("secondary"),
-        ).grid(row=2, column=0, sticky="w")
+        ).grid(row=1, column=0, sticky="w", pady=(10, 0))
         ttk.Label(controls, textvariable=self.source_hint_var, style="Muted.TLabel", wraplength=620, justify=tk.LEFT).grid(
-            row=3,
+            row=1,
             column=0,
-            columnspan=2,
             sticky="ew",
             pady=(10, 0),
         )
 
     def _build_location_step(self) -> None:
-        frame = self._create_step_frame("location", "项目位置", "确认项目根目录与配置文件保存位置。")
+        frame = self._create_step_frame("location", "项目位置", "确认系统推导出的项目根目录和配置文件保存位置。")
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
@@ -263,8 +292,8 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _build_materials_step(self) -> None:
         frame = self._create_step_frame(
             "materials",
-            "项目材料",
-            "可先自动抽取采购需求和评分标准；抽取失败或无需导入时，直接填写已有资料文件路径。",
+            "资料整理",
+            "可以先自动抽取采购需求和评分标准；如果不导入，也可以直接指定已有文件。",
         )
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
@@ -287,14 +316,17 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._add_path_row(form, 2, "评分标准文件", "scoring_path", browse_kind="file")
 
     def _build_basics_step(self) -> None:
-        frame = self._create_step_frame("basics", "基本信息", "填写新项目启动前必须确认的信息，并明确大纲来源。")
+        frame = self._create_step_frame("basics", "基础设置", "填写投标主体、大纲来源和输出目录。")
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
-        self._add_entry_row(form, 0, "投标主体名称", "bidder_name")
+        bidder_box = ttk.LabelFrame(form, text="投标主体", padding=(12, 10))
+        bidder_box.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        bidder_box.columnconfigure(1, weight=1)
+        self._add_entry_row(bidder_box, 0, "投标主体名称", "bidder_name")
 
         source_box = ttk.LabelFrame(form, text="大纲来源", padding=(12, 10))
-        source_box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+        source_box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
         source_box.columnconfigure(1, weight=1)
 
         ttk.Radiobutton(
@@ -305,7 +337,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             source_box,
-            text="选择一个已经存在的 .md 大纲文件。",
+            text="选择一个已经存在的 .md 大纲文件，系统会直接读取它。",
             style="Muted.TLabel",
             wraplength=540,
             justify=tk.LEFT,
@@ -319,17 +351,20 @@ class NewConfigWizardDialog(tk.Toplevel):
         ).grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Label(
             source_box,
-            text="先保留保存位置，后续在大纲准备窗口生成并写入。",
+            text="先保留保存位置，后续在大纲准备窗口生成完毕后写入这里。",
             style="Muted.TLabel",
             wraplength=540,
             justify=tk.LEFT,
         ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(8, 0))
 
-        self._add_outline_path_row(form, 2)
-        self._add_path_row(form, 4, "输出目录", "output_dir", browse_kind="dir")
+        outline_box = ttk.LabelFrame(form, text="大纲文件与输出", padding=(12, 10))
+        outline_box.grid(row=2, column=0, columnspan=3, sticky="ew")
+        outline_box.columnconfigure(1, weight=1)
+        self._add_outline_path_row(outline_box, 0)
+        self._add_path_row(outline_box, 2, "输出目录", "output_dir", browse_kind="dir")
 
     def _build_review_step(self) -> None:
-        frame = self._create_step_frame("review", "确认保存", "检查配置摘要，保存后将切换到新配置。")
+        frame = self._create_step_frame("review", "保存确认", "保存前再核对一次配置摘要，确认后将切换到新配置。")
         ttk.Label(
             frame,
             textvariable=self.review_summary_var,
@@ -489,6 +524,13 @@ class NewConfigWizardDialog(tk.Toplevel):
         for index, button in enumerate(self.step_buttons):
             state = tk.NORMAL if index <= self.max_completed_step_index else tk.DISABLED
             button.configure(state=state)
+        for index, state_var in enumerate(getattr(self, "step_state_vars", [])):
+            if index < self.current_step_index:
+                state_var.set("已完成")
+            elif index == self.current_step_index:
+                state_var.set("当前")
+            else:
+                state_var.set("已完成" if index <= self.max_completed_step_index else "未开始")
 
     def _save_and_apply(self) -> None:
         try:
@@ -634,7 +676,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         if not hasattr(self, "source_hint_var"):
             return
         if self.state.source_path is None:
-            self.source_hint_var.set("未选择招标文件时，将按手动资料路径创建配置。")
+            self.source_hint_var.set("未选择招标文件时，将直接进入手动创建流程，按你指定的资料路径创建配置。")
             return
         if self.state.should_copy_source and self.state.source_copy_path is not None:
             self.source_hint_var.set(f"招标文件位于项目外，导入时将复制到：{self.state.source_copy_path}")
@@ -655,7 +697,7 @@ class NewConfigWizardDialog(tk.Toplevel):
 
         if outline_source == "existing":
             self.outline_path_label_var.set("已有大纲文件")
-            self.outline_path_action_var.set("选择已有文件...")
+            self.outline_path_action_var.set("选择已有大纲...")
             self.outline_path_hint_var.set(
                 "选择一个已经存在的 Markdown 大纲文件，保存后系统会直接读取它。"
             )
@@ -663,7 +705,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             self.outline_path_label_var.set("大纲保存位置")
             self.outline_path_action_var.set("选择保存位置...")
             self.outline_path_hint_var.set(
-                "可以先不创建文件；保存后再进入大纲准备窗口时，会在此位置生成大纲。"
+                "可以先不创建文件；生成完毕后再进入大纲准备窗口时，会在此位置写入大纲。"
             )
 
     def _sync_review_summary(self) -> None:
