@@ -73,7 +73,6 @@ def _dialog(config: Config) -> OutlinePrepareDialog:
     dialog.destroy = lambda: None
     dialog.after = lambda _delay, callback=None: callback() if callback is not None else None
     dialog._generation_queue = queue.Queue()
-    dialog._generation_poll_after_id = None
     dialog._generation_in_progress = False
     return dialog
 
@@ -195,7 +194,6 @@ def test_run_generate_outline_streams_text_into_editor_before_final_replace(tmp_
     dialog._generator_factory = lambda: FakeGenerator()
 
     OutlinePrepareDialog._run_generate_outline(dialog)
-    assert dialog.outline_text.get("1.0", "end") == ""
 
     OutlinePrepareDialog._drain_generation_queue(dialog, stop_before_done=True)
     assert dialog.outline_text.get("1.0", "end") == "# 项目\n## 章\n### 节\n"

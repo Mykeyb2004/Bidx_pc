@@ -171,6 +171,7 @@ class OutlineGenerator:
         *,
         stream: bool | None = None,
         status_callback: Callable[[str, str], None] | None = None,
+        chunk_callback: Callable[[str], None] | None = None,
     ) -> OutlineGenerationResult:
         stream_enabled = self.config.generation_stream if stream is None else bool(stream)
         self._emit_status(status_callback, "准备大纲请求", "正在准备大纲生成请求...")
@@ -205,7 +206,12 @@ class OutlineGenerator:
         try:
             if stream_enabled:
                 self._emit_status(status_callback, "等待首批输出", "正在请求模型并等待首批内容...")
-                raw_text = self._collect_streamed_outline(client, options, status_callback)
+                raw_text = self._collect_streamed_outline(
+                    client,
+                    options,
+                    status_callback,
+                    chunk_callback=chunk_callback,
+                )
             else:
                 self._emit_status(status_callback, "等待完整返回", "正在请求模型并等待完整返回...")
                 raw_text = self._collect_sync_outline(client, options)
@@ -238,6 +244,8 @@ class OutlineGenerator:
         client: OpenAI,
         options: dict[str, Any],
         status_callback: Callable[[str, str], None] | None,
+        *,
+        chunk_callback: Callable[[str], None] | None = None,
     ) -> str:
         response = client.chat.completions.create(**options)
         chunks: list[str] = []
@@ -254,6 +262,8 @@ class OutlineGenerator:
                 self._emit_status(status_callback, "接收内容", "已收到首批内容，正在流式接收大纲...")
                 saw_first_token = True
             chunks.append(token)
+            if chunk_callback is not None:
+                chunk_callback(token)
         return "".join(chunks)
 
     def _load_role(self) -> str:

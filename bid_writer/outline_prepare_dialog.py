@@ -32,7 +32,6 @@ class OutlinePrepareDialog(tk.Toplevel):
         self.result = {"confirmed": False}
         self._generator_factory = lambda: OutlineGenerator(self.config)
         self._generation_queue: queue.Queue[tuple[str, object]] = queue.Queue()
-        self._generation_poll_after_id: str | None = None
         self._generation_in_progress = False
         self.style = setup_gui_theme(self)
         apply_window_surface(self)
@@ -158,7 +157,7 @@ class OutlinePrepareDialog(tk.Toplevel):
 
     def _schedule_generation_poll(self) -> None:
         if self._generation_in_progress:
-            self._generation_poll_after_id = self.after(50, self._poll_generation_queue)
+            self.after(50, self._poll_generation_queue)
 
     def _poll_generation_queue(self) -> None:
         self._drain_generation_queue()
@@ -193,7 +192,7 @@ class OutlinePrepareDialog(tk.Toplevel):
         accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
         kwargs: dict[str, object] = {}
         if accepts_kwargs or "stream" in params:
-            kwargs["stream"] = True
+            kwargs["stream"] = self.config.generation_stream
         if accepts_kwargs or "status_callback" in params:
             kwargs["status_callback"] = status_callback
         if accepts_kwargs or "chunk_callback" in params:
@@ -274,4 +273,5 @@ class OutlinePrepareDialog(tk.Toplevel):
 
     def _cancel(self) -> None:
         self.result["confirmed"] = False
+        self._generation_in_progress = False
         self.destroy()
