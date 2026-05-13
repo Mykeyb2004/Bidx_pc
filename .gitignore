@@ -4,6 +4,7 @@
 /log/
 /build/
 /dist/
+/release/
 __pycache__/
 *.pyc
 *.pyo
@@ -19,8 +20,12 @@ __pycache__/
 .omx/
 .worktrees/
 .superpowers/
+.venv/
 
 # Ignore config YAML and backups
 *.yaml
 *.yml
 *.bak
+!roles/tender_section_boundaries.yaml
+!tests/fixtures/*.yaml
+!tests/fixtures/**/*.yaml

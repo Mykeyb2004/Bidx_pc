@@ -1,5 +1,15 @@
 # Findings
 
+## CS 模式改造讨论基线发现
+- `Config._load_local_env()` 当前会按配置文件目录读取 `.env` / `.env.local`，随后大量模型连接参数只从环境变量读取；这是 CS 化时最直接的替换点，可以改为 `ServerConfigProvider` 从服务端获取账号有效配置。
+- `Config.api_base_url` / `api_key` / `model` / `temperature` / `max_tokens` / `timeout` / `retries` 目前分别暴露给正文生成、大纲生成、章节写作计划、辅助校验、embedding 等模块；若要避免客户端持有真实模型 key，应统一抽象模型网关客户端。
+- `AIWriter.__init__()` 当前直接创建 OpenAI 客户端，`prepare_generation()` 在本地组装 messages，`expand_raw()` 直接调用 `chat.completions.create()`；这是“本地组 prompt，服务端代理调用”的核心切入点。
+- `OutlineGenerator`、`ChapterWritingPlanGenerator`、`LLMVerifier`、`H2ProjectBackgroundGenerator._compute_summary()`、`FactCardExtractor`、`ChapterFactExtractor`、`EmbeddingStore` 都存在模型或 embedding 调用，不能只改 `AIWriter`。
+- `roles/system_gate_rules.md` 当前固定从配置文件目录下读取，且 `AIWriter.build_system_prompt()` 会把它与角色 prompt 拼成 system prompt；迁到数据库后，需要保证服务端规则版本可审计，且客户端本地缓存缺失时 fail fast。
+- `GenerationTraceSession` 当前会把 system prompt、user prompt、request options、生成输出写到本地 trace；CS 模式下建议继续本地保存完整 trace，服务端只保存脱敏摘要、账号、模型、token、规则版本和错误信息。
+- 当前生成后处理 `_finalize_generated_content()` 只做投标主体称谓规范化和轻量问题检测，不依赖服务端，适合留在本地。
+- `FileSaver`、输出合并、事实卡片库、本地正文读取都围绕本地文件系统构建；符合“生成文本尽量本地处理”的原则，不建议首版迁移。
+
 ## 知识库方案阶段一规划相关发现
 - `docs/knowledge_base_plan.md` 现已统一 `chapter_facts` 缓存为单文件 `.{bid_writer}/chapter_facts.json`，并补充了避免落地分叉的实现约束。
 - 当前真正进入模型的 user prompt 是由 `AIWriter.build_prompt_result()` 中的 `_append_prompt_section(...)` 组装的；仅修改 `_PROMPT_CONTRACT_BLOCKS` 不会自动把 `knowledge_context` 注入到真实 prompt。

@@ -244,8 +244,27 @@ fact_cards:
     assert [card.id for card in all_cards] == ["card-a", "card-b"]
 
 
-def test_fact_card_store_reads_tracked_statistics_config_cards():
-    config_path = Path(__file__).resolve().parents[1] / "config_统计台账.yaml"
+def test_fact_card_store_reads_tracked_statistics_config_cards(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: fact-card-2
+      name: 文化统计指标体系
+      content: 文化领域统计指标体系采用机构运行、业务产出、市场消费、资金投入、人员配置五大维度。
+      scope: local
+      enforcement: strong
+      active: true
+      source:
+        type: chapter_extract
+        chapter_path: 项目 > 技术方案 > 质量保障措施
+      category: 指标
+      created_at: "2026-04-27T07:18:32+00:00"
+      updated_at: "2026-04-27T07:18:32+00:00"
+""",
+    )
     store = FactCardStore(Config(str(config_path)))
 
     cards = store.list_cards(active_only=False)

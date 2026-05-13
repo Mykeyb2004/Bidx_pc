@@ -6,6 +6,7 @@ GUI 状态持久化
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -24,7 +25,18 @@ class GUIState:
 
 
 def _base_dir(base_dir: Optional[Path] = None) -> Path:
-    return (base_dir or Path.cwd()).resolve()
+    if base_dir is not None:
+        return base_dir.resolve()
+    return get_default_base_dir()
+
+
+def get_default_base_dir() -> Path:
+    """返回 GUI 启动时默认读写配置和状态文件的目录。"""
+    if getattr(sys, "frozen", False):
+        executable = getattr(sys, "executable", "")
+        if executable:
+            return Path(executable).expanduser().resolve().parent
+    return Path.cwd().resolve()
 
 
 def get_state_file(base_dir: Optional[Path] = None) -> Path:
@@ -124,7 +136,9 @@ def remember_generation_dialog_settings(
 
 def get_startup_config_candidates(
     explicit_config_path: Optional[str] = None,
-    base_dir: Optional[Path] = None
+    base_dir: Optional[Path] = None,
+    *,
+    include_discovered_configs: bool = True,
 ) -> list[str]:
     """获取启动时的候选配置文件列表"""
     base = _base_dir(base_dir)
@@ -150,23 +164,30 @@ def get_startup_config_candidates(
     add_candidate(state.last_config_path)
     add_candidate("config.yaml")
 
-    for pattern in ("config*.yaml", "config*.yml"):
-        for path in sorted(base.glob(pattern), key=lambda item: item.name.lower()):
-            if not path.is_file():
-                continue
-            if "example" in path.name.lower():
-                continue
-            add_candidate(str(path))
+    if include_discovered_configs:
+        for pattern in ("config*.yaml", "config*.yml"):
+            for path in sorted(base.glob(pattern), key=lambda item: item.name.lower()):
+                if not path.is_file():
+                    continue
+                if "example" in path.name.lower():
+                    continue
+                add_candidate(str(path))
 
     return [str(path) for path in candidates]
 
 
 def resolve_startup_config(
     explicit_config_path: Optional[str] = None,
-    base_dir: Optional[Path] = None
+    base_dir: Optional[Path] = None,
+    *,
+    include_discovered_configs: bool = True,
 ) -> str:
     """解析启动时应优先使用的配置文件"""
-    for candidate in get_startup_config_candidates(explicit_config_path, base_dir):
+    for candidate in get_startup_config_candidates(
+        explicit_config_path,
+        base_dir,
+        include_discovered_configs=include_discovered_configs,
+    ):
         resolved = resolve_config_path(candidate, base_dir)
         if resolved.exists() and resolved.is_file():
             return str(resolved)

@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-05-02
+- 新任务：讨论当前本地版切换为 CS 模式的架构边界，原则是尽可能让生成文本和项目文件继续本地处理，把模型调用、账号模型套餐、参数与系统规则迁到服务端 API / 数据库。
+- 已按技能要求先读取 `using-superpowers`、`brainstorming` 与 `planning-with-files`，本轮只分析和讨论，不做业务代码改造。
+- 已检查仓库状态，发现仅有 `config_藤县民政局.yaml` 存在未提交改动，本轮避开该文件。
+- 已读取项目现有 `task_plan.md`、`findings.md`、`progress.md`、`pyproject.toml`，确认项目已有长期 planning 记录，应在现有文件顶部续接本轮分析。
+- 已梳理 `bid_writer/config.py`：
+  - `.env` / `.env.local` 由配置文件目录加载
+  - 正文、大纲、辅助模型、embedding 参数均主要从环境变量读取
+  - `roles/system_gate_rules.md` 为固定本地文件来源
+- 已梳理主要模型调用点：
+  - 正文生成：`bid_writer/ai_writer.py`
+  - 大纲生成：`bid_writer/outline_generator.py`
+  - full_context 章节写作计划：`bid_writer/chapter_writing_plan.py`
+  - 评分候选 verifier / 分类：`bid_writer/llm_verifier.py`
+  - H2 项目背景摘要：`bid_writer/h2_project_background.py`
+  - 事实卡片提炼：`bid_writer/fact_card_extractor.py`
+  - 章节 facts 提炼：`bid_writer/chapter_fact_extractor.py`
+  - embedding：`bid_writer/embedding_store.py`
+- 初步结论：首版最稳妥的 CS 化是“本地组装 prompt + 服务端模型网关调用 + 本地后处理/保存”，服务端负责账号、套餐、参数、门禁规则版本、真实模型 key 和用量审计。
+- 已将本轮讨论基线补充到 `task_plan.md` 与 `findings.md`。
+
 ## 2026-04-14
 - 用户显式调用 `planning-with-files`，开始为“知识库方案阶段一（用户手写知识注入）”建立文件化规划。
 - 已读取技能模板与项目内现有 `task_plan.md`、`findings.md`、`progress.md`，确认本仓库已经持续使用这三份 planning 文件，需要在现有内容上续接而不是重新初始化。

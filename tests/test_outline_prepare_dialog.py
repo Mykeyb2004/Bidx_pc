@@ -201,3 +201,42 @@ def test_run_generate_outline_streams_text_into_editor_before_final_replace(tmp_
     OutlinePrepareDialog._drain_generation_queue(dialog)
     assert dialog.outline_text.get("1.0", "end") == "# 项目\n## 章\n### 节\n#### 单元\n"
     assert dialog.confirm_button.states[-1] == "normal"
+
+
+def test_generate_outline_prompts_for_env_local_before_model_request(monkeypatch, tmp_path: Path):
+    config = Config(str(_write_config(tmp_path)))
+    dialog = _dialog(config)
+    starts = []
+    opened: list[Path] = []
+    prompts: list[str] = []
+
+    dialog._start_generation = lambda: starts.append(True)
+    monkeypatch.setattr(
+        "bid_writer.outline_prepare_dialog.messagebox.askyesno",
+        lambda _title, message, **_kwargs: prompts.append(message) or True,
+    )
+    monkeypatch.setattr(
+        "bid_writer.outline_prepare_dialog.open_file_for_edit",
+        lambda path: opened.append(Path(path)),
+    )
+
+    OutlinePrepareDialog._generate_outline(dialog)
+
+    assert starts == []
+    assert (tmp_path / ".env.local").exists()
+    assert opened == [tmp_path / ".env.local"]
+    assert "BID_WRITER_API_KEY=你的 API Key" in prompts[0]
+    assert "BID_WRITER_OUTLINE_API_KEY=你的 API Key" in prompts[0]
+    assert "已打开" in dialog.status_var.get()
+
+
+def test_generate_outline_continues_when_env_local_is_configured(tmp_path: Path):
+    (tmp_path / ".env.local").write_text("BID_WRITER_API_KEY=test-key\n", encoding="utf-8")
+    config = Config(str(_write_config(tmp_path)))
+    dialog = _dialog(config)
+    starts = []
+    dialog._start_generation = lambda: starts.append(True)
+
+    OutlinePrepareDialog._generate_outline(dialog)
+
+    assert starts == [True]

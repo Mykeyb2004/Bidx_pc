@@ -31,10 +31,18 @@ from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
 from .outline_prepare import set_outline_locked
 from .gui_state import (
+    get_default_base_dir,
     get_startup_config_candidates,
     load_gui_state,
     remember_generation_dialog_settings,
     remember_last_config,
+)
+from .env_local_prompt import (
+    build_default_env_local_content as _build_default_env_local_content,
+    ensure_env_local_file as _ensure_env_local_file,
+    get_env_local_path_for_config as _get_env_local_path_for_config,
+    open_file_for_edit as _open_file_for_edit,
+    prompt_missing_model_config,
 )
 from .timing_logger import write_timing_log
 from .ui_icons import add_icon_menu_command, configure_icon_button, get_brand_image, set_window_brand_icon
@@ -45,6 +53,7 @@ import sys
 
 
 DEFAULT_CONFIG_FILES = {"config.yaml", "config.yml"}
+NEW_CONFIG_REQUEST = "__bid_writer_new_config__"
 APP_DISPLAY_NAME = "标书智写"
 GUI_THEME_NAME = os.environ.get("BID_WRITER_GUI_THEME", "litera")
 GUI_FALLBACK_THEME = "clam"
@@ -321,6 +330,32 @@ def _can_use_ttkbootstrap() -> bool:
     _TTKBOOTSTRAP_READY = True
     _TTKBOOTSTRAP_MODULE = ttkbootstrap_module
     return True
+
+
+def _reset_ttkbootstrap_style_if_needed(root: tk.Misc) -> None:
+    """Clear a dead ttkbootstrap singleton before creating widgets for a new root."""
+    if _TTKBOOTSTRAP_MODULE is None:
+        return
+
+    style_cls = getattr(_TTKBOOTSTRAP_MODULE, "Style", None)
+    if style_cls is None:
+        return
+
+    existing_style = getattr(style_cls, "instance", None)
+    if existing_style is None:
+        return
+
+    existing_master = getattr(existing_style, "master", None)
+    if existing_master is root:
+        return
+
+    try:
+        if existing_master is not None and existing_master.winfo_exists():
+            return
+    except (AttributeError, tk.TclError, RuntimeError):
+        pass
+
+    style_cls.instance = None
 
 
 def _safe_named_font(name: str) -> Optional[tkfont.Font]:
@@ -1025,7 +1060,48 @@ def style_canvas_widget(widget: tk.Canvas) -> None:
 def style_paned_window(widget: tk.PanedWindow) -> None:
     """统一 PanedWindow 分隔色，避免出现突兀的硬编码色块。"""
     palette = _get_gui_color_palette(widget)
-    widget.configure(background=palette.border_color)
+    widget.configure(background=palette.surface_background)
+
+
+def _configure_surface_styles(style: ttk.Style, palette: GuiColorPalette, *, muted_foreground: str) -> None:
+    """让展示类 ttk 控件底色跟随窗口底色，视觉上接近透明。"""
+    surface = palette.surface_background
+    input_background = palette.input_background
+    input_foreground = palette.input_foreground
+
+    for style_name in (
+        "TFrame",
+        "TLabelframe",
+        "TLabelframe.Label",
+        "TLabel",
+        "TCheckbutton",
+        "TRadiobutton",
+        "TMenubutton",
+        "TNotebook",
+        "TNotebook.Tab",
+        "Horizontal.TPanedwindow",
+        "Vertical.TPanedwindow",
+    ):
+        style.configure(style_name, background=surface)
+
+    for style_name in ("TCheckbutton", "TRadiobutton", "TMenubutton"):
+        style.map(style_name, background=[("active", surface), ("!disabled", surface)])
+
+    style.configure("TButton", background=surface)
+    style.configure("TEntry", fieldbackground=input_background, foreground=input_foreground)
+    style.configure("TCombobox", fieldbackground=input_background, foreground=input_foreground)
+    style.configure("TSpinbox", fieldbackground=input_background, foreground=input_foreground)
+    style.configure(
+        "Treeview",
+        background=surface,
+        fieldbackground=surface,
+        foreground=input_foreground,
+    )
+    style.configure("Treeview.Heading", background=surface, foreground=input_foreground)
+    style.configure("SummaryLabel.TLabel", background=surface, foreground=input_foreground)
+    style.configure("SummaryValue.TLabel", background=surface, foreground=input_foreground)
+    style.configure("SectionTitle.TLabel", background=surface, foreground=input_foreground)
+    style.configure("Muted.TLabel", background=surface, foreground=muted_foreground)
 
 
 class TreeviewHoverTooltip:
@@ -1153,6 +1229,7 @@ def _configure_named_fonts(profile: GuiScaleProfile) -> None:
 def setup_gui_theme(master: tk.Misc) -> ttk.Style:
     """为当前 Tk 应用启用统一主题和基础控件样式。"""
     root = master._root()
+    _reset_ttkbootstrap_style_if_needed(root)
     profile = _get_gui_scale_profile(root)
     existing_style = getattr(root, "_bid_writer_style", None)
     if existing_style is not None:
@@ -1173,6 +1250,8 @@ def setup_gui_theme(master: tk.Misc) -> ttk.Style:
         style.theme_use(GUI_FALLBACK_THEME)
 
     muted_foreground = "#5f6b7a"
+    palette = _build_gui_color_palette(style)
+    _configure_surface_styles(style, palette, muted_foreground=muted_foreground)
     style.configure("TButton", padding=profile.button_padding)
     style.configure("TEntry", padding=profile.field_padding)
     style.configure("TCombobox", padding=profile.field_padding)
@@ -1184,7 +1263,6 @@ def setup_gui_theme(master: tk.Misc) -> ttk.Style:
     style.configure("SectionTitle.TLabel", font=("TkDefaultFont", profile.default_font_size, "bold"))
     style.configure("Muted.TLabel", foreground=muted_foreground)
 
-    palette = _build_gui_color_palette(style)
     setattr(root, "_bid_writer_gui_color_palette", palette)
     setattr(root, "_bid_writer_bootstrap_style", bootstrap_style)
     setattr(root, "_bid_writer_style", style)
@@ -1245,11 +1323,20 @@ def discover_config_files(base_dir: Optional[Path] = None) -> list[Path]:
 class ConfigSelectionDialog(tk.Toplevel):
     """配置文件选择对话框"""
 
-    def __init__(self, parent, initial_path: Optional[str] = None):
+    def __init__(
+        self,
+        parent,
+        initial_path: Optional[str] = None,
+        *,
+        base_dir: Optional[Path] = None,
+        allow_new_config: bool = False,
+    ):
         super().__init__(parent)
+        self.style = setup_gui_theme(self)
         apply_window_surface(self)
 
-        self.base_dir = Path.cwd().resolve()
+        self.base_dir = (base_dir or get_default_base_dir()).resolve()
+        self.allow_new_config = allow_new_config
         self.result: Optional[str] = None
         self._config_map: dict[str, Path] = {}
 
@@ -1291,7 +1378,11 @@ class ConfigSelectionDialog(tk.Toplevel):
 
         ttk.Label(
             container,
-            text="默认列出当前目录下的 config*.yaml，可点击“浏览...”选择其它 YAML 文件。",
+            text=(
+                "未发现配置时，可新建配置；也可以浏览选择已有 YAML 文件。"
+                if self.allow_new_config
+                else "默认列出当前目录下的 config*.yaml，可点击“浏览...”选择其它 YAML 文件。"
+            ),
             style="Muted.TLabel",
         ).pack(anchor=tk.W, pady=(6, 16))
 
@@ -1326,6 +1417,16 @@ class ConfigSelectionDialog(tk.Toplevel):
 
         button_frame = ttk.Frame(container)
         button_frame.pack(anchor=tk.E)
+
+        if self.allow_new_config:
+            ttk.Button(
+                button_frame,
+                text="新建配置...",
+                command=self._on_new_config,
+                width=12,
+                padding=(12, 6),
+                **_bootstyle_kwargs("primary")
+            ).pack(side=tk.LEFT, padx=6)
 
         ttk.Button(
             button_frame,
@@ -1414,7 +1515,10 @@ class ConfigSelectionDialog(tk.Toplevel):
         selected_key = self.config_var.get().strip()
         selected_path = self._config_map.get(selected_key)
         if not selected_path:
-            self.info_var.set("未发现可用配置文件，请点击“浏览...”选择 YAML 配置。")
+            if self.allow_new_config:
+                self.info_var.set("未发现可用配置文件，请新建配置，或点击“浏览...”选择已有 YAML 配置。")
+            else:
+                self.info_var.set("未发现可用配置文件，请点击“浏览...”选择 YAML 配置。")
             self._fit_to_content()
             return
 
@@ -1429,6 +1533,10 @@ class ConfigSelectionDialog(tk.Toplevel):
             return
 
         self.result = str(selected_path)
+        self.destroy()
+
+    def _on_new_config(self) -> None:
+        self.result = NEW_CONFIG_REQUEST
         self.destroy()
 
     def _on_cancel(self) -> None:
@@ -1491,7 +1599,13 @@ class ConfigSelectionDialog(tk.Toplevel):
             pass
 
 
-def choose_config_file(parent=None, initial_path: Optional[str] = None) -> Optional[str]:
+def choose_config_file(
+    parent=None,
+    initial_path: Optional[str] = None,
+    *,
+    base_dir: Optional[Path] = None,
+    allow_new_config: bool = False,
+) -> Optional[str]:
     """打开配置文件选择对话框"""
     ensure_tk_runtime()
 
@@ -1504,7 +1618,12 @@ def choose_config_file(parent=None, initial_path: Optional[str] = None) -> Optio
         dialog_parent.withdraw()
         owns_root = True
 
-    dialog = ConfigSelectionDialog(dialog_parent, initial_path=initial_path)
+    dialog = ConfigSelectionDialog(
+        dialog_parent,
+        initial_path=initial_path,
+        base_dir=base_dir,
+        allow_new_config=allow_new_config,
+    )
     dialog_parent.wait_window(dialog)
     result = dialog.result
 
@@ -1514,12 +1633,36 @@ def choose_config_file(parent=None, initial_path: Optional[str] = None) -> Optio
     return result
 
 
-def _build_startup_bid_writer(config_path: Optional[str] = None) -> tuple[BidWriter, bool]:
+def _prepare_unlocked_startup_outline(parent: tk.Misc, bid_writer: BidWriter) -> bool:
+    """启动阶段为未锁定大纲的新配置打开大纲准备窗口。"""
+    if bid_writer.config.outline_locked:
+        return True
+
+    from .outline_prepare_dialog import OutlinePrepareDialog
+
+    dialog = OutlinePrepareDialog(parent, bid_writer.config)
+    parent.wait_window(dialog)
+    if not dialog.result.get("confirmed"):
+        return False
+    bid_writer.reload_config()
+    return True
+
+
+def _build_startup_bid_writer(
+    config_path: Optional[str] = None,
+    *,
+    base_dir: Optional[Path] = None,
+    prepare_parent: Optional[tk.Misc] = None,
+) -> tuple[BidWriter, bool]:
     """按候选顺序构建启动时使用的 BidWriter"""
     fallback_bid_writer: Optional[BidWriter] = None
     last_error: Optional[Exception] = None
 
-    for candidate in get_startup_config_candidates(config_path):
+    for candidate in get_startup_config_candidates(
+        config_path,
+        base_dir=base_dir,
+        include_discovered_configs=config_path is not None,
+    ):
         try:
             bid_writer = BidWriter(candidate)
         except Exception as e:
@@ -1528,6 +1671,10 @@ def _build_startup_bid_writer(config_path: Optional[str] = None) -> tuple[BidWri
 
         if fallback_bid_writer is None:
             fallback_bid_writer = bid_writer
+
+        if prepare_parent is not None and not _prepare_unlocked_startup_outline(prepare_parent, bid_writer):
+            last_error = FileNotFoundError("大纲准备已取消")
+            continue
 
         if bid_writer.load_outline():
             return bid_writer, True
@@ -1540,6 +1687,67 @@ def _build_startup_bid_writer(config_path: Optional[str] = None) -> tuple[BidWri
         return fallback_bid_writer, False
 
     raise FileNotFoundError(str(last_error) if last_error else "未找到可用配置文件")
+
+
+def _open_new_config_wizard_for_startup(parent: tk.Misc, base_dir: Path) -> Optional[str]:
+    """启动阶段打开新建配置向导，返回可应用的配置路径。"""
+    from .new_config_wizard import NewConfigWizardDialog
+
+    default_path = base_dir / "config_新项目.yaml"
+    dialog = NewConfigWizardDialog(parent, default_path)
+    parent.wait_window(dialog)
+    apply_path = dialog.result.get("apply_path")
+    if not apply_path:
+        return None
+    return str(Path(apply_path).expanduser().resolve())
+
+
+def _recover_startup_bid_writer(
+    config_path: Optional[str],
+    *,
+    base_dir: Path,
+    startup_error: Exception,
+) -> Optional[tuple[BidWriter, bool]]:
+    """找不到启动配置时，引导用户新建或选择配置。"""
+    del startup_error
+    root = tk.Tk()
+    setup_gui_theme(root)
+    set_window_brand_icon(root)
+    root.withdraw()
+
+    try:
+        while True:
+            selected_config = choose_config_file(
+                parent=root,
+                initial_path=config_path or str(base_dir / "config.yaml"),
+                base_dir=base_dir,
+                allow_new_config=True,
+            )
+            if selected_config == NEW_CONFIG_REQUEST:
+                selected_config = _open_new_config_wizard_for_startup(root, base_dir)
+                if not selected_config:
+                    continue
+
+            if not selected_config:
+                messagebox.showinfo("未加载配置", "未选择或新建配置，程序将退出。", parent=root)
+                return None
+
+            try:
+                return _build_startup_bid_writer(
+                    selected_config,
+                    base_dir=base_dir,
+                )
+            except Exception as exc:
+                messagebox.showerror(
+                    "配置加载失败",
+                    f"无法使用所选配置：\n{exc}\n\n请新建配置，或选择其它 YAML 配置文件。",
+                    parent=root,
+                )
+    finally:
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
 
 
 class MainWindow(tk.Tk):
@@ -1567,6 +1775,7 @@ class MainWindow(tk.Tk):
         self._preserve_workspace_on_sync = False
         self.is_modal_workflow_active = False
         self._outline_tree_tooltips: dict[str, str] = {}
+        self._env_local_prompted_dirs: set[Path] = set()
 
         # 树节点到HeadingNode的映射
         self.tree_node_map = {}
@@ -1608,12 +1817,22 @@ class MainWindow(tk.Tk):
         self.after_idle(lambda: self.schedule_responsive_layout(force=True))
 
         # 加载大纲
+        startup_outline_prepare_needed = (
+            not outline_preloaded
+            and not self.bid_writer.config.outline_locked
+        )
         if outline_preloaded:
             self._sync_loaded_outline(reset_tree_view=True)
             self.status_text.set("大纲加载完成")
+        elif startup_outline_prepare_needed:
+            self.status_text.set("请先准备投标大纲")
+            self.update_action_states()
         else:
             self.load_outline(preserve_tree_view=False, reset_tree_view=True)
+        self._schedule_env_local_check()
         self._schedule_startup_activation()
+        if startup_outline_prepare_needed:
+            self._schedule_startup_outline_prepare()
 
     def _create_info_item(self, parent, label: str, textvariable: tk.StringVar, padx: tuple[int, int] = (0, 18)):
         """创建顶部信息项"""
@@ -1624,6 +1843,86 @@ class MainWindow(tk.Tk):
 
     def _schedule_startup_activation(self) -> None:
         self.after(50, lambda: _activate_window(self))
+
+    def _schedule_startup_outline_prepare(self) -> None:
+        self.after(180, self._prepare_startup_outline_if_needed)
+
+    def _prepare_startup_outline_if_needed(self) -> None:
+        """启动进入工作台后，为未锁定大纲的新配置打开准备窗口。"""
+        if self.bid_writer.config.outline_locked:
+            return
+
+        if not self._prepare_unlocked_outline(self.bid_writer):
+            self.status_text.set("大纲准备已取消，可从“项目 -> 继续准备大纲...”继续")
+            self.update_action_states()
+            return
+
+        self.load_outline(preserve_tree_view=False, reset_tree_view=True)
+
+    def _schedule_env_local_check(self) -> None:
+        self.after(350, self._maybe_prompt_missing_env_local)
+
+    def _maybe_prompt_missing_env_local(self) -> None:
+        """缺少本地模型配置时，提示用户创建并填写 `.env.local`。"""
+        config = self.bid_writer.config
+        config_path = config.config_path.expanduser().resolve()
+        config_dir = config_path.parent
+        if config_dir in self._env_local_prompted_dirs:
+            return
+        if config.api_key:
+            return
+
+        self._env_local_prompted_dirs.add(config_dir)
+        result = prompt_missing_model_config(
+            config,
+            parent=self,
+            purpose="startup",
+            ask_yes_no=messagebox.askyesno,
+            show_error=messagebox.showerror,
+            show_warning=messagebox.showwarning,
+            open_editor=_open_file_for_edit,
+        )
+        if result.configured:
+            return
+        if result.opened:
+            self.status_text.set(".env.local 已打开，填写保存后请重启软件")
+        elif result.created:
+            self.status_text.set(".env.local 已准备好，请手动填写模型连接")
+        else:
+            self.status_text.set("尚未配置模型连接，生成前请填写 .env.local")
+
+    def _reload_config_before_env_check(self) -> bool:
+        """尝试重新读取配置，让刚保存的 `.env.local` 在本次点击中生效。"""
+        try:
+            self.bid_writer.reload_config()
+        except Exception as exc:
+            messagebox.showerror("配置加载失败", f"重新读取配置失败：\n{exc}", parent=self)
+            self.status_text.set("配置重新读取失败")
+            return False
+        return True
+
+    def _ensure_chapter_generation_model_configured(self) -> bool:
+        """扩写章节前检查主生成模型连接。"""
+        if not self.bid_writer.config.api_key and not self._reload_config_before_env_check():
+            return False
+        result = prompt_missing_model_config(
+            self.bid_writer.config,
+            parent=self,
+            purpose="chapter",
+            ask_yes_no=messagebox.askyesno,
+            show_error=messagebox.showerror,
+            show_warning=messagebox.showwarning,
+            open_editor=_open_file_for_edit,
+        )
+        if result.configured:
+            return True
+        if result.opened:
+            self.status_text.set(".env.local 已打开，保存后请重新载入当前配置再扩写")
+        elif result.created:
+            self.status_text.set(".env.local 已准备好，请手动填写模型连接")
+        else:
+            self.status_text.set("尚未配置模型连接，扩写章节前请填写 .env.local")
+        return False
 
     def center_window(self):
         """居中窗口"""
@@ -2662,12 +2961,13 @@ class MainWindow(tk.Tk):
     def _configure_heading_tree_tags(self, tree: ttk.Treeview) -> None:
         """统一配置大纲树状态颜色与当前焦点高亮。"""
         profile = _get_gui_scale_profile(tree)
+        palette = _get_gui_color_palette(tree)
         tree.tag_configure("completed", foreground="#1f7a4d")
         tree.tag_configure("partial", foreground="#8a5a00")
         tree.tag_configure("pending", foreground="#666666")
         tree.tag_configure(
             "current_focus",
-            background="#dbeafe",
+            background=palette.surface_background,
             foreground="#0f172a",
             font=("TkDefaultFont", profile.compact_font_size, "bold"),
         )
@@ -3058,6 +3358,9 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已重载配置: {selected_path.name}")
         else:
             self.status_text.set(f"已切换配置: {selected_path.name}")
+        schedule_env_check = getattr(self, "_schedule_env_local_check", None)
+        if callable(schedule_env_check):
+            schedule_env_check()
         return True
 
     def _prepare_unlocked_outline(self, bid_writer: BidWriter) -> bool:
@@ -3137,6 +3440,8 @@ class MainWindow(tk.Tk):
         selected_headings = self._get_selected_leaf_headings()
         if not selected_headings:
             messagebox.showwarning("警告", "请先选择要生成的四级标题", parent=self)
+            return
+        if not self._ensure_chapter_generation_model_configured():
             return
 
         # 获取生成参数
@@ -4535,7 +4840,18 @@ class MainWindow(tk.Tk):
 def run_gui(config_path: Optional[str] = None):
     """运行GUI应用"""
     ensure_tk_runtime()
-    bid_writer, outline_preloaded = _build_startup_bid_writer(config_path)
+    base_dir = get_default_base_dir()
+    try:
+        bid_writer, outline_preloaded = _build_startup_bid_writer(config_path, base_dir=base_dir)
+    except FileNotFoundError as exc:
+        recovered = _recover_startup_bid_writer(
+            config_path,
+            base_dir=base_dir,
+            startup_error=exc,
+        )
+        if recovered is None:
+            return
+        bid_writer, outline_preloaded = recovered
     app = MainWindow(bid_writer, outline_preloaded=outline_preloaded)
     app.mainloop()
 

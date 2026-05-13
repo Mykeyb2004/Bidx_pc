@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from bid_writer.gui import (
+    _activate_window,
     _bootstyle_kwargs,
     _compute_screen_limited_dialog_size,
     _set_centered_window_geometry,
@@ -34,6 +35,17 @@ from bid_writer.ui_icons import configure_icon_button
 
 
 SUPPORTED_TENDER_SUFFIXES = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
+
+
+def _has_visible_parent(parent: tk.Misc | None) -> bool:
+    """Return whether a dialog should be transient for its parent window."""
+    if parent is None:
+        return False
+
+    try:
+        return bool(parent.winfo_exists()) and parent.state() != "withdrawn"
+    except (AttributeError, tk.TclError):
+        return False
 
 
 @dataclass(frozen=True)
@@ -121,12 +133,18 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         _set_centered_window_geometry(self, window_size.width, window_size.height)
         self.minsize(window_size.min_width, window_size.min_height)
-        self.transient(parent)
+        if _has_visible_parent(parent):
+            self.transient(parent)
         self.grab_set()
 
         self._create_widgets()
         self._show_step()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self._show_dialog()
+
+    def _show_dialog(self) -> None:
+        """Make the wizard visible even when launched from a hidden startup root."""
+        _activate_window(self)
 
     def _create_vars(self) -> dict[str, tk.StringVar]:
         return {
