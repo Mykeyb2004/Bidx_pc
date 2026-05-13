@@ -8,7 +8,7 @@ import pytest
 
 from bid_writer.gui import ensure_tk_runtime
 from bid_writer.config_editor_tooltips import get_tooltip_text
-from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS
+from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS, _has_visible_parent
 from bid_writer.tender_import_models import (
     ManualTenderConfirmationResult,
     ManualTenderSectionSelection,
@@ -42,6 +42,18 @@ class StubFrame:
 
     def tkraise(self):
         self.raised = True
+
+
+class StubParent:
+    def __init__(self, state: str = "normal", exists: bool = True):
+        self._state = state
+        self._exists = exists
+
+    def winfo_exists(self):
+        return self._exists
+
+    def state(self):
+        return self._state
 
 
 def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
@@ -117,6 +129,23 @@ def test_wizard_steps_use_user_facing_titles():
         "基础设置",
         "保存确认",
     ]
+
+
+def test_has_visible_parent_skips_withdrawn_startup_root():
+    assert _has_visible_parent(StubParent(state="normal")) is True
+    assert _has_visible_parent(StubParent(state="withdrawn")) is False
+    assert _has_visible_parent(StubParent(exists=False)) is False
+    assert _has_visible_parent(None) is False
+
+
+def test_show_dialog_activates_wizard(monkeypatch):
+    activated = []
+    monkeypatch.setattr("bid_writer.new_config_wizard._activate_window", lambda window: activated.append(window))
+    dialog = SimpleNamespace()
+
+    NewConfigWizardDialog._show_dialog(dialog)
+
+    assert activated == [dialog]
 
 
 def test_new_config_wizard_tooltips_cover_core_controls():

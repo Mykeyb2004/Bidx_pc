@@ -144,6 +144,7 @@ def test_batch_generate_starts_without_secondary_confirmation(monkeypatch):
 
     window = SimpleNamespace(
         _get_selected_leaf_headings=lambda: [heading],
+        _ensure_chapter_generation_model_configured=lambda: True,
         _get_generation_params=lambda _headings: ("补充资质", 1200, 0, True, ["card-a"]),
         bid_writer=SimpleNamespace(
             config=SimpleNamespace(

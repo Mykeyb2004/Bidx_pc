@@ -45,6 +45,8 @@ cp config.example.yaml config.yaml
 cp .env.example .env.local
 ```
 
+如果启动、点击“生成大纲”或点击“生成所选”时没有找到可用的模型 API Key，GUI 会提示创建并打开 `.env.local`，并在弹窗中给出需要填写的配置文本。
+
 至少需要准备主生成模型的连接参数：
 
 ```dotenv
@@ -106,12 +108,12 @@ uv run python run.py --config config_公共服务满意度_auto.yaml
 说明：
 
 - 该 workflow 产出的是 Windows 可执行文件，需要在 Windows 环境运行。
-- 首次启动时，仍需要准备配置文件和模型相关环境变量。
+- 首次启动时，仍需要准备模型相关环境变量；如果同级目录没有上次成功配置或 `config.yaml`，软件会提示新建配置或浏览/选择已有配置。
 - 常见发版命令示例：`git tag v1.0.0 && git push origin v1.0.0`
 
 ## 使用流程
 
-1. 启动后，程序会按“显式参数 -> 上次成功配置 -> `config.yaml` -> 当前目录下其它 `config*.yaml`”的顺序寻找配置文件；也可以通过“项目 -> 新建配置...”从默认模板创建新的 `config_*.yaml`。
+1. 启动后，程序会按“显式参数 -> 上次成功配置 -> `config.yaml`”的顺序自动加载配置；打包后的 EXE 默认以 `bid-writer.exe` 所在目录为同目录。若这些配置不可用，会弹出配置选择窗口，可新建配置，也可选择或浏览已有 YAML 配置。
 2. 新建配置保存并应用后，若 `project.outline_locked: false`，系统会先进入“大纲准备”窗口。
 3. 点击“确认大纲并进入扩写”后，大纲会自动格式化并固定，配置会更新为 `project.outline_locked: true`。
 4. 加载大纲后，在左侧树中搜索、筛选并选择要生成的叶子章节。

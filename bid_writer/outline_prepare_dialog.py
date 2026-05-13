@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from .config import Config
+from .env_local_prompt import open_file_for_edit, prompt_missing_model_config
 from .config_editor_dialog import (
     CONFIG_EDITOR_DEFAULT_HEIGHT,
     CONFIG_EDITOR_DEFAULT_WIDTH,
@@ -152,7 +153,42 @@ class OutlinePrepareDialog(tk.Toplevel):
             self.confirm_button.configure(state="disabled")
 
     def _generate_outline(self) -> None:
+        if not self._ensure_outline_generation_model_configured():
+            return
         self._start_generation()
+
+    def _reload_config_before_env_check(self) -> bool:
+        """重新读取配置，让刚保存的 `.env.local` 可以立即参与检查。"""
+        try:
+            self.config.reload()
+        except Exception as exc:
+            messagebox.showerror("配置加载失败", f"重新读取配置失败：\n{exc}", parent=self)
+            self.status_var.set("配置重新读取失败")
+            return False
+        return True
+
+    def _ensure_outline_generation_model_configured(self) -> bool:
+        """生成大纲前检查大纲/主生成模型连接。"""
+        if not self.config.outline_api_key and not self._reload_config_before_env_check():
+            return False
+        result = prompt_missing_model_config(
+            self.config,
+            parent=self,
+            purpose="outline",
+            ask_yes_no=messagebox.askyesno,
+            show_error=messagebox.showerror,
+            show_warning=messagebox.showwarning,
+            open_editor=open_file_for_edit,
+        )
+        if result.configured:
+            return True
+        if result.opened:
+            self.status_var.set(".env.local 已打开，保存后请重新载入当前配置再生成大纲")
+        elif result.created:
+            self.status_var.set(".env.local 已准备好，请手动填写模型连接")
+        else:
+            self.status_var.set("尚未配置模型连接，生成大纲前请填写 .env.local")
+        return False
 
     def _start_generation(self) -> None:
         self.status_var.set("正在生成大纲...")

@@ -6,6 +6,7 @@ from collections.abc import Callable
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from .gui import apply_window_surface, setup_gui_theme, style_text_widget
 from .tender_import_models import (
     ManualTenderConfirmationResult,
     ManualTenderSectionSelection,
@@ -64,6 +65,8 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         save_section: Callable[[ManualTenderSectionSelection], None] | None = None,
     ) -> None:
         super().__init__(parent)
+        self.style = setup_gui_theme(self)
+        apply_window_surface(self)
         self.title("确认招标文件章节")
         self.geometry("1180x720")
         self.minsize(920, 560)
@@ -140,6 +143,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
             relief="solid",
             exportselection=False,
         )
+        style_text_widget(self.source_text)
         source_scroll = ttk.Scrollbar(source_frame, orient="vertical", command=self.source_text.yview)
         self.source_text.configure(yscrollcommand=source_scroll.set)
         self.source_text.grid(row=1, column=0, sticky="nsew")
@@ -159,6 +163,7 @@ class ManualTenderSectionConfirmDialog(tk.Toplevel):
         target_frame.rowconfigure(1, weight=1)
         ttk.Label(target_frame, text="目标编辑框").grid(row=0, column=0, sticky="w")
         self.target_text = tk.Text(target_frame, wrap="word", undo=True, borderwidth=1, relief="solid")
+        style_text_widget(self.target_text)
         target_scroll = ttk.Scrollbar(target_frame, orient="vertical", command=self.target_text.yview)
         self.target_text.configure(yscrollcommand=target_scroll.set)
         self.target_text.grid(row=1, column=0, sticky="nsew")

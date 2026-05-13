@@ -4,6 +4,7 @@
 /log/
 /build/
 /dist/
+/release/
 __pycache__/
 *.pyc
 *.pyo
@@ -19,3 +20,4 @@ __pycache__/
 .omx/
 .worktrees/
 .superpowers/
+.venv/
