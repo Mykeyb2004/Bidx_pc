@@ -13,6 +13,7 @@ from bid_writer.gui import (
     _format_batch_generation_failure_message,
     _format_heading_tree_title,
     _format_workspace_char_count,
+    _set_centered_window_geometry,
     _shift_hex_color,
 )
 
@@ -95,6 +96,56 @@ class _FakeStartupActivationWindow:
     def after(self, delay_ms, callback):
         self.scheduled_delays.append(delay_ms)
         self.scheduled_callbacks.append(callback)
+
+
+class _FakeGeometryParent:
+    def __init__(self, *, x: int, y: int, width: int, height: int, viewable: bool = True):
+        self._x = x
+        self._y = y
+        self._width = width
+        self._height = height
+        self._viewable = viewable
+
+    def winfo_viewable(self):
+        return self._viewable
+
+    def update_idletasks(self):
+        pass
+
+    def winfo_rootx(self):
+        return self._x
+
+    def winfo_rooty(self):
+        return self._y
+
+    def winfo_width(self):
+        return self._width
+
+    def winfo_height(self):
+        return self._height
+
+
+class _FakeGeometryWindow:
+    def __init__(self, parent: _FakeGeometryParent):
+        self.master = parent
+        self.geometry_spec = ""
+        self.idle_callbacks = []
+
+    def winfo_screenwidth(self):
+        return 1920
+
+    def winfo_screenheight(self):
+        return 1080
+
+    def geometry(self, geometry_spec):
+        self.geometry_spec = geometry_spec
+
+    def after_idle(self, callback):
+        self.idle_callbacks.append(callback)
+
+    def run_idle_callbacks(self):
+        for callback in self.idle_callbacks:
+            callback()
 
 
 def test_compute_gui_font_delta_keeps_standard_display_unchanged():
@@ -245,6 +296,44 @@ def test_compute_centered_window_geometry_uses_screen_center():
     )
 
     assert geometry == "887x499+239+134"
+
+
+def test_set_centered_window_geometry_follows_parent_on_right_monitor():
+    parent = _FakeGeometryParent(x=2200, y=100, width=1400, height=900)
+    window = _FakeGeometryWindow(parent)
+
+    _set_centered_window_geometry(window, width=800, height=600)
+
+    assert window.geometry_spec == "800x600+2500+250"
+
+
+def test_set_centered_window_geometry_supports_parent_on_negative_coordinate_monitor():
+    parent = _FakeGeometryParent(x=-1600, y=-900, width=1200, height=800)
+    window = _FakeGeometryWindow(parent)
+
+    _set_centered_window_geometry(window, width=800, height=600)
+
+    assert window.geometry_spec == "800x600+-1400+-800"
+
+
+def test_set_centered_window_geometry_uses_screen_center_when_parent_is_hidden():
+    parent = _FakeGeometryParent(x=2200, y=100, width=1400, height=900, viewable=False)
+    window = _FakeGeometryWindow(parent)
+
+    _set_centered_window_geometry(window, width=800, height=600)
+
+    assert window.geometry_spec == "800x600+560+240"
+
+
+def test_set_centered_window_geometry_reapplies_position_after_window_manager_layout():
+    parent = _FakeGeometryParent(x=-1600, y=100, width=1200, height=800)
+    window = _FakeGeometryWindow(parent)
+
+    _set_centered_window_geometry(window, width=800, height=600)
+    window.geometry_spec = "800x600+-1888+261"
+    window.run_idle_callbacks()
+
+    assert window.geometry_spec == "800x600+-1400+200"
 
 
 def test_screen_limited_dialog_size_caps_target_and_minimum_to_display():

@@ -731,21 +731,52 @@ def _compute_centered_window_geometry(
     height: int,
     screen_width: int,
     screen_height: int,
+    anchor_bounds: Optional[tuple[int, int, int, int]] = None,
 ) -> str:
-    x = max(0, (screen_width - width) // 2)
-    y = max(0, (screen_height - height) // 2)
+    if anchor_bounds is None:
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+    else:
+        anchor_x, anchor_y, anchor_width, anchor_height = anchor_bounds
+        x = anchor_x + (anchor_width - width) // 2
+        y = anchor_y + (anchor_height - height) // 2
     return f"{width}x{height}+{x}+{y}"
 
 
 def _set_centered_window_geometry(window: tk.Misc, width: int, height: int) -> None:
-    window.geometry(
-        _compute_centered_window_geometry(
-            width=width,
-            height=height,
-            screen_width=window.winfo_screenwidth(),
-            screen_height=window.winfo_screenheight(),
-        )
-    )
+    def _apply_geometry() -> None:
+        anchor_bounds: Optional[tuple[int, int, int, int]] = None
+        parent = getattr(window, "master", None)
+        try:
+            if parent is not None and parent.winfo_viewable():
+                parent.update_idletasks()
+                anchor_bounds = (
+                    parent.winfo_rootx(),
+                    parent.winfo_rooty(),
+                    parent.winfo_width(),
+                    parent.winfo_height(),
+                )
+        except (AttributeError, tk.TclError, TypeError, ValueError):
+            anchor_bounds = None
+
+        try:
+            window.geometry(
+                _compute_centered_window_geometry(
+                    width=width,
+                    height=height,
+                    screen_width=window.winfo_screenwidth(),
+                    screen_height=window.winfo_screenheight(),
+                    anchor_bounds=anchor_bounds,
+                )
+            )
+        except (AttributeError, tk.TclError, TypeError, ValueError):
+            return
+
+    _apply_geometry()
+    try:
+        window.after_idle(_apply_geometry)
+    except (AttributeError, tk.TclError):
+        pass
 
 
 def _activate_window(window: tk.Misc) -> None:
