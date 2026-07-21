@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import bid_writer.gui as gui
 from bid_writer.gui import (
     MainWindow,
@@ -146,6 +148,23 @@ class _FakeGeometryWindow:
     def run_idle_callbacks(self):
         for callback in self.idle_callbacks:
             callback()
+
+
+class _FakeStatusVar:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def set(self, value):
+        self.calls.append(("status", value))
+
+
+class _FakeMainWindowForGenerationFailure:
+    def __init__(self):
+        self.calls = []
+        self.status_text = _FakeStatusVar(self.calls)
+
+    def _show_generation_failure_in_workspace(self, heading, feedback):
+        self.calls.append(("workspace", heading.full_path, feedback.workspace_body_text))
 
 
 def test_compute_gui_font_delta_keeps_standard_display_unchanged():
@@ -409,6 +428,34 @@ def test_build_generation_error_feedback_for_partial_output_connection_error():
     assert feedback.append_to_workspace
     assert "已返回内容会保留在工作区" in feedback.workspace_body_text
     assert "接收模型输出" in feedback.workspace_body_text
+
+
+def test_report_generation_failure_shows_dialog_before_workspace_update(monkeypatch):
+    fake_window = _FakeMainWindowForGenerationFailure()
+    heading = SimpleNamespace(title="服务保障", full_path="项目 > 服务保障")
+    feedback = gui.GenerationErrorFeedback(
+        stage_label="接收模型输出",
+        category_title="无法连接模型服务",
+        short_message="无法连接模型服务：连接失败",
+        status_text="扩写失败：服务保障（无法连接模型服务）",
+        workspace_meta_text="扩写失败：无法连接模型服务（阶段：接收模型输出）",
+        workspace_body_text="本次扩写未能完成。",
+        dialog_title="章节扩写失败",
+        dialog_message="章节“服务保障”扩写失败。",
+    )
+
+    def fake_showerror(title, message, parent):
+        fake_window.calls.append(("dialog", title, message, parent))
+
+    monkeypatch.setattr(gui.messagebox, "showerror", fake_showerror)
+
+    gui.MainWindow._report_generation_failure(fake_window, heading, feedback, show_dialog=True)
+
+    assert fake_window.calls == [
+        ("status", feedback.status_text),
+        ("dialog", feedback.dialog_title, feedback.dialog_message, fake_window),
+        ("workspace", heading.full_path, feedback.workspace_body_text),
+    ]
 
 
 def test_format_batch_generation_failure_message_summarizes_titles():

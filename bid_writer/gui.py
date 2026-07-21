@@ -2442,7 +2442,6 @@ class MainWindow(tk.Tk):
         show_dialog: bool,
     ) -> None:
         """统一处理扩写失败后的工作区、状态栏和弹窗。"""
-        self._show_generation_failure_in_workspace(heading, feedback)
         self.status_text.set(feedback.status_text)
         if show_dialog:
             messagebox.showerror(
@@ -2450,6 +2449,7 @@ class MainWindow(tk.Tk):
                 feedback.dialog_message,
                 parent=self,
             )
+        self._show_generation_failure_in_workspace(heading, feedback)
 
     def on_window_resize(self, event):
         """窗口尺寸变化后刷新自适应布局"""
