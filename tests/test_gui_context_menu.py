@@ -45,6 +45,22 @@ class _FakeTree:
         self.focus_calls.append(item_id)
 
 
+class _FakeVar:
+    def __init__(self):
+        self.values: list[str] = []
+
+    def set(self, value):
+        self.values.append(value)
+
+
+class _FakeProgressBar:
+    def __init__(self):
+        self.config_calls: list[dict[str, object]] = []
+
+    def configure(self, **kwargs):
+        self.config_calls.append(kwargs)
+
+
 def _heading(title: str, *, children=None):
     return SimpleNamespace(title=title, full_path=f"根 > {title}", children=children or [])
 
@@ -167,4 +183,38 @@ def test_batch_generate_starts_without_secondary_confirmation(monkeypatch):
                 "auto_extract_facts": False,
             },
         )
+    ]
+
+
+def test_do_batch_generate_refreshes_completed_status_before_next_heading():
+    first = _heading("质量控制")
+    second = _heading("服务保障")
+    generated_titles: list[str] = []
+    events: list[tuple[str, object]] = []
+
+    def generate_into_workspace(heading, *_args, **_kwargs):
+        events.append(("generate", heading.title))
+        generated_titles.append(heading.title)
+        return "success"
+
+    def refresh_status():
+        events.append(("refresh", tuple(generated_titles)))
+
+    window = SimpleNamespace(
+        progress_bar=_FakeProgressBar(),
+        batch_progress_text=_FakeVar(),
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=lambda: None,
+        update_idletasks=lambda: None,
+        _generate_into_workspace=generate_into_workspace,
+        refresh_status=refresh_status,
+    )
+
+    MainWindow._do_batch_generate(window, [first, second], "", 1200, 0)
+
+    assert events[:3] == [
+        ("generate", "质量控制"),
+        ("refresh", ("质量控制",)),
+        ("generate", "服务保障"),
     ]

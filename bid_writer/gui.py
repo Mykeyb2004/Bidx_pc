@@ -3562,6 +3562,19 @@ class MainWindow(tk.Tk):
                     fail_count += 1
                     failed_titles.append(heading.title)
 
+                self._preserve_workspace_on_sync = True
+                try:
+                    self.refresh_status()
+                finally:
+                    self._preserve_workspace_on_sync = False
+                self.progress_bar.configure(value=i)
+                self.batch_progress_text.set(f"{i} / {total}")
+                if result == "success":
+                    self.status_text.set(f"[{i}/{total}] 已完成: {heading.title}")
+                else:
+                    self.status_text.set(f"[{i}/{total}] 生成失败: {heading.title}")
+                self.update_idletasks()
+
                 if self.stop_requested:
                     stopped_early = True
                     break
@@ -3570,11 +3583,6 @@ class MainWindow(tk.Tk):
             self.stop_requested = False
             self.update_action_states()
 
-        self._preserve_workspace_on_sync = True
-        try:
-            self.refresh_status()
-        finally:
-            self._preserve_workspace_on_sync = False
         self.progress_bar.configure(value=(completed_count if stopped_early else total))
         self.batch_progress_text.set(f"{completed_count if stopped_early else total} / {total}")
         self.task_text.set("当前任务: 空闲")
