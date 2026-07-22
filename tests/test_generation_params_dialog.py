@@ -194,3 +194,29 @@ def test_save_fact_card_references_keeps_generation_params_dialog_open(monkeypat
     assert saved_calls == [
         ("项目 > 质量控制", ["card-a"], {"should_reference_fact_cards": False})
     ]
+
+
+def test_save_fact_card_references_applies_to_multiple_headings(monkeypatch):
+    buttons, dialogs = _install_generation_dialog_fakes(monkeypatch)
+    saved_calls = []
+    headings = [
+        SimpleNamespace(title="质量控制", full_path="项目 > 质量控制"),
+        SimpleNamespace(title="进度保障", full_path="项目 > 进度保障"),
+    ]
+
+    def wait_window(_dialog):
+        buttons["保存事实卡片引用关系"].command()
+        assert dialogs[0].destroy_calls == 0
+
+    window = _fake_generation_window(wait_window)
+    window.bid_writer.save_chapter_default_fact_cards = (
+        lambda chapter_path, selections, **kwargs: saved_calls.append((chapter_path, selections, kwargs))
+    )
+
+    result = MainWindow._get_generation_params(window, headings)
+
+    assert result is None
+    assert saved_calls == [
+        ("项目 > 质量控制", ["card-a"], {"should_reference_fact_cards": True}),
+        ("项目 > 进度保障", ["card-a"], {"should_reference_fact_cards": True}),
+    ]

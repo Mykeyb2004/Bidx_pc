@@ -4379,10 +4379,9 @@ class MainWindow(tk.Tk):
         if self.bid_writer.config.fact_cards_enabled:
             fact_card_frame = ttk.Frame(dialog)
             fact_card_frame.pack(pady=(0, 12), padx=20, fill=tk.BOTH, expand=True)
+            from .fact_card_dialogs import FactCardSelectionPanel
 
             if is_single_heading:
-                from .fact_card_dialogs import FactCardSelectionPanel
-
                 heading = headings[0]
                 all_active_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
                 fact_card_state = self.bid_writer.get_chapter_default_fact_card_state(heading)
@@ -4415,13 +4414,34 @@ class MainWindow(tk.Tk):
                 fact_card_panel.pack(fill=tk.BOTH, expand=True)
 
             else:
+                all_active_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
+                fact_card_dialog_state = self._build_generation_fact_card_dialog_state(
+                    all_active_cards,
+                    initial_selections=[],
+                    should_reference_fact_cards=True,
+                )
                 fact_card_mode_var.set(True)
+                ttk.Checkbutton(
+                    fact_card_frame,
+                    text="批量生成启用事实卡片模式",
+                    variable=fact_card_mode_var,
+                ).pack(anchor=tk.W, pady=(0, 8))
                 ttk.Label(
                     fact_card_frame,
-                    text="批量生成会自动加入启用的全局事实卡片，并读取各章节已保存的局部事实卡片引用关系；本次不提供整批共享临时局部卡片选择。",
+                    text=(
+                        f"点击“保存事实卡片引用关系”会用当前选择覆盖所选 {len(headings)} 个章节的已保存关系；"
+                        "批量生成仍会按章节读取已保存引用关系。"
+                    ),
                     justify=tk.LEFT,
                     wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
-                ).pack(anchor=tk.W)
+                ).pack(anchor=tk.W, pady=(0, 8))
+
+                fact_card_panel = FactCardSelectionPanel(
+                    fact_card_frame,
+                    cards=fact_card_dialog_state.available_cards,
+                    initial_selections=fact_card_dialog_state.initial_selections,
+                )
+                fact_card_panel.pack(fill=tk.BOTH, expand=True)
 
         # 按钮
         button_frame = ttk.Frame(dialog)
@@ -4435,20 +4455,25 @@ class MainWindow(tk.Tk):
             )
 
         def save_fact_card_references(show_message: bool) -> bool:
-            if not is_single_heading or fact_card_panel is None:
+            if fact_card_panel is None:
                 return False
-            heading = headings[0]
             selections_to_save = collect_fact_card_selections() or []
-            self.bid_writer.save_chapter_default_fact_cards(
-                heading.full_path,
-                selections_to_save,
-                should_reference_fact_cards=bool(fact_card_mode_var.get()),
-            )
-            self.status_text.set(f"已保存事实卡片引用关系：{heading.title}")
+            for heading in headings:
+                self.bid_writer.save_chapter_default_fact_cards(
+                    heading.full_path,
+                    selections_to_save,
+                    should_reference_fact_cards=bool(fact_card_mode_var.get()),
+                )
+            if is_single_heading:
+                self.status_text.set(f"已保存事实卡片引用关系：{headings[0].title}")
+                message = "已保存事实卡片引用关系。"
+            else:
+                self.status_text.set(f"已保存 {len(headings)} 个章节的事实卡片引用关系")
+                message = f"已保存 {len(headings)} 个章节的事实卡片引用关系。"
             if show_message:
                 messagebox.showinfo(
                     "已保存",
-                    "已保存事实卡片引用关系。",
+                    message,
                     parent=dialog,
                 )
             return True
@@ -4506,7 +4531,7 @@ class MainWindow(tk.Tk):
             **_bootstyle_kwargs("secondary")
         )
         save_defaults_button.pack(side=tk.LEFT, padx=5)
-        if not (is_single_heading and fact_card_panel is not None):
+        if fact_card_panel is None:
             save_defaults_button.configure(state="disabled")
         ttk.Button(
             button_frame,
