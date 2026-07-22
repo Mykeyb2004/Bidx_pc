@@ -4,7 +4,7 @@ import tkinter as tk
 
 import pytest
 
-from bid_writer import config_editor_dialog
+from bid_writer import config_editor_dialog, gui
 from bid_writer.gui import MainWindow, _ensure_env_local_file
 
 
@@ -103,6 +103,8 @@ def test_update_action_states_configures_project_menu_commands_only(tmp_path):
 
     MainWindow.update_action_states(fake_window)
 
+    assert fake_window.btn_generate.config_calls[-1]["text"] == "终止生成"
+    assert fake_window.btn_generate.config_calls[-1]["state"] == tk.NORMAL
     assert project_menu.configured_entries == [
         ("新建配置...", tk.DISABLED),
         ("切换配置...", tk.DISABLED),
@@ -112,6 +114,34 @@ def test_update_action_states_configures_project_menu_commands_only(tmp_path):
         ("扫描输出状态", tk.DISABLED),
         ("打开输出目录", tk.DISABLED),
     ]
+
+
+def test_update_action_states_uses_stop_icon_while_generating(monkeypatch, tmp_path):
+    fake_window = _fake_window(tmp_path / "config.yaml")
+    fake_window.bid_writer.parser = object()
+    fake_window.is_generating = True
+    fake_window.is_modal_workflow_active = False
+    fake_window.visible_leaf_count = 0
+    fake_window.generated_leaf_count = 0
+    fake_window.selection_text = _FakeVar()
+    fake_window.btn_generate = _FakeWidget()
+    fake_window.btn_merge = _FakeWidget()
+    fake_window.btn_selection_menu = _FakeWidget()
+    fake_window.selection_tools_menu = _FakeSelectionToolsMenu()
+    fake_window.search_entry = _FakeWidget()
+    fake_window.status_filter_combo = _FakeWidget()
+    fake_window._get_selected_leaf_headings = lambda: []
+    fake_window.schedule_responsive_layout = lambda: None
+    icon_names: list[str] = []
+    monkeypatch.setattr(
+        gui,
+        "configure_icon_button",
+        lambda _button, _owner, icon_name: icon_names.append(icon_name),
+    )
+
+    MainWindow.update_action_states(fake_window)
+
+    assert icon_names[-1] == "stop"
 
 
 def test_update_action_states_disables_old_project_during_modal_workflow(tmp_path):

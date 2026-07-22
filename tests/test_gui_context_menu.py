@@ -198,6 +198,19 @@ def test_batch_generate_starts_without_secondary_confirmation(monkeypatch):
     ]
 
 
+def test_generate_button_requests_stop_when_batch_generation_is_active():
+    actions: list[str] = []
+    window = SimpleNamespace(
+        is_generating=True,
+        request_stop_generation=lambda: actions.append("stop"),
+        batch_generate=lambda: actions.append("generate"),
+    )
+
+    MainWindow.handle_generate_button(window)
+
+    assert actions == ["stop"]
+
+
 def test_do_batch_generate_refreshes_completed_status_before_next_heading():
     first = _heading("质量控制")
     second = _heading("服务保障")
@@ -230,6 +243,108 @@ def test_do_batch_generate_refreshes_completed_status_before_next_heading():
         ("refresh", ("质量控制",)),
         ("generate", "服务保障"),
     ]
+
+
+def test_single_generation_renders_stop_button_before_generating():
+    heading = _heading("质量控制")
+    events: list[tuple[str, str]] = []
+    button_text = {"value": "生成所选 1"}
+
+    def update_action_states():
+        button_text["value"] = "终止生成" if window.is_generating else "生成所选 1"
+
+    window = SimpleNamespace(
+        progress_bar=_FakeProgressBar(),
+        batch_progress_text=_FakeVar(),
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=update_action_states,
+        update=lambda: events.append(("render", button_text["value"])),
+        update_idletasks=lambda: None,
+        _generate_into_workspace=lambda *_args, **_kwargs: events.append(
+            ("generate", button_text["value"])
+        ) or "success",
+        refresh_status=lambda: None,
+    )
+
+    MainWindow._do_batch_generate(window, [heading], "", 1200, 0)
+
+    assert events[:2] == [
+        ("render", "终止生成"),
+        ("generate", "终止生成"),
+    ]
+
+
+def test_do_batch_generate_keeps_previous_results_when_current_generation_is_stopped():
+    first = _heading("质量控制")
+    second = _heading("服务保障")
+    third = _heading("实施安排")
+    generated_titles: list[str] = []
+    refreshed_titles: list[tuple[str, ...]] = []
+
+    def generate_into_workspace(heading, *_args, **_kwargs):
+        generated_titles.append(heading.title)
+        return "success" if heading is first else "stopped"
+
+    def refresh_status():
+        refreshed_titles.append(tuple(generated_titles))
+
+    window = SimpleNamespace(
+        progress_bar=_FakeProgressBar(),
+        batch_progress_text=_FakeVar(),
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=lambda: None,
+        update_idletasks=lambda: None,
+        _generate_into_workspace=generate_into_workspace,
+        refresh_status=refresh_status,
+    )
+
+    MainWindow._do_batch_generate(window, [first, second, third], "", 1200, 0)
+
+    assert generated_titles == ["质量控制", "服务保障"]
+    assert refreshed_titles == [("质量控制",)]
+    assert window.batch_progress_text.values[-1] == "1 / 3"
+    assert window.status_text.values[-1] == "批量生成已停止 - 成功: 1, 失败: 0"
+
+
+def test_stopped_current_generation_is_not_saved():
+    heading = _heading("服务保障")
+    saves: list[str] = []
+    workspace_meta: list[str] = []
+
+    class _FakeGenerationSession:
+        def __init__(self, _parent, _heading):
+            pass
+
+        def start_generation(self, *_args, **_kwargs):
+            pass
+
+        def wait_completion(self):
+            return "当前章节正文", 7, None
+
+        def close(self):
+            pass
+
+    window = SimpleNamespace(
+        stop_requested=True,
+        GenerationSession=_FakeGenerationSession,
+        bid_writer=SimpleNamespace(
+            resolve_generation_fact_cards=lambda *_args, **_kwargs: [],
+            ai_writer=SimpleNamespace(),
+            file_saver=SimpleNamespace(save=lambda *_args: saves.append("save")),
+        ),
+        _show_generated_content_in_workspace=lambda *_args, **kwargs: workspace_meta.append(
+            kwargs["meta_text"]
+        ),
+        status_text=_FakeVar(),
+    )
+
+    result = MainWindow._generate_into_workspace(window, heading, "", 1200, 0)
+
+    assert result == "stopped"
+    assert saves == []
+    assert workspace_meta == ["本章节已终止，未保存"]
 
 
 def test_refresh_workspace_updates_single_selection_while_generating():

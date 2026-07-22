@@ -2033,7 +2033,7 @@ class MainWindow(tk.Tk):
         self.btn_generate = ttk.Button(
             self.action_frame,
             text="生成所选 0",
-            command=self.batch_generate,
+            command=self.handle_generate_button,
             padding=(16, 8),
             default=tk.ACTIVE,
             **_bootstyle_kwargs("primary")
@@ -2610,17 +2610,6 @@ class MainWindow(tk.Tk):
         self.batch_progress_text = tk.StringVar(value="0 / 0")
         ttk.Label(progress_bar_row, textvariable=self.batch_progress_text).pack(side=tk.RIGHT)
 
-        self.btn_stop_generation = ttk.Button(
-            progress_bar_row,
-            text="停止本轮",
-            command=self.request_stop_generation,
-            padding=(10, 6),
-            **_bootstyle_kwargs("danger")
-        )
-        configure_icon_button(self.btn_stop_generation, self, "stop")
-        self.btn_stop_generation.pack(side=tk.RIGHT, padx=(10, 0))
-        self.btn_stop_generation.config(state=tk.DISABLED)
-
         self.progress_bar = ttk.Progressbar(
             progress_bar_row,
             mode='determinate',
@@ -3180,9 +3169,19 @@ class MainWindow(tk.Tk):
             else tk.NORMAL
         )
         self.selection_text.set(str(selected_count))
+        generation_button_state = (
+            tk.NORMAL
+            if self.is_generating
+            else (tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL)
+        )
         self.btn_generate.config(
-            text=f"生成所选 {selected_count}",
-            state=(tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL)
+            text=("终止生成" if self.is_generating else f"生成所选 {selected_count}"),
+            state=generation_button_state,
+        )
+        configure_icon_button(
+            self.btn_generate,
+            self,
+            "stop" if self.is_generating else "generate",
         )
         self.btn_merge.config(
             state=(tk.DISABLED if actions_locked or self.generated_leaf_count == 0 else tk.NORMAL)
@@ -3248,10 +3247,6 @@ class MainWindow(tk.Tk):
 
         self.search_entry.config(state=(tk.DISABLED if actions_locked else tk.NORMAL))
         self.status_filter_combo.config(state=("disabled" if actions_locked else "readonly"))
-
-        self.btn_stop_generation.config(
-            state=(tk.NORMAL if self.is_generating else tk.DISABLED)
-        )
         self.schedule_responsive_layout()
 
     def _set_modal_workflow_active(self, active: bool, status_text: str | None = None) -> None:
@@ -3514,6 +3509,13 @@ class MainWindow(tk.Tk):
             force_reload=(apply_resolved == current_resolved),
         )
 
+    def handle_generate_button(self):
+        """处理顶部生成按钮：空闲时开始，生成时请求终止。"""
+        if self.is_generating:
+            self.request_stop_generation()
+            return
+        self.batch_generate()
+
     def batch_generate(self):
         """批量生成选中的标题"""
         selected_headings = self._get_selected_leaf_headings()
@@ -3578,6 +3580,10 @@ class MainWindow(tk.Tk):
         self.batch_progress_text.set(f"0 / {total}")
         self.task_text.set("当前任务: 准备开始")
         self.update_action_states()
+        self.update_idletasks()
+        update_window = getattr(self, "update", None)
+        if callable(update_window):
+            update_window()
 
         try:
             for i, heading in enumerate(headings, 1):
@@ -3608,23 +3614,27 @@ class MainWindow(tk.Tk):
                     self._current_generation_heading_path = None
                     MainWindow._refresh_heading_tree_row(self, heading)
 
-                completed_count = i
-                self.progress_bar.configure(value=i)
-                self.batch_progress_text.set(f"{i} / {total}")
-
                 if result == "success":
                     success_count += 1
+                    completed_count = i
+                elif result == "stopped":
+                    stopped_early = True
+                    break
                 else:
                     fail_count += 1
                     failed_titles.append(heading.title)
+                    completed_count = i
+
+                self.progress_bar.configure(value=completed_count)
+                self.batch_progress_text.set(f"{completed_count} / {total}")
 
                 self._preserve_workspace_on_sync = True
                 try:
                     self.refresh_status()
                 finally:
                     self._preserve_workspace_on_sync = False
-                self.progress_bar.configure(value=i)
-                self.batch_progress_text.set(f"{i} / {total}")
+                self.progress_bar.configure(value=completed_count)
+                self.batch_progress_text.set(f"{completed_count} / {total}")
                 if result == "success":
                     self.status_text.set(f"[{i}/{total}] 已完成: {heading.title}")
                 else:
@@ -4197,13 +4207,13 @@ class MainWindow(tk.Tk):
         return result["value"]
 
     def request_stop_generation(self):
-        """请求在当前标题完成后停止批量生成"""
+        """请求在当前章节结束后停止批量生成，当前章节不保存。"""
         if not self.is_generating:
             return
 
         self.stop_requested = True
-        self.task_text.set("当前任务: 将在本标题完成后停止")
-        self.status_text.set("已请求停止，等待当前标题生成完成")
+        self.task_text.set("当前任务: 当前章节完成后停止（当前章节不保存）")
+        self.status_text.set("已请求终止，等待当前章节结束（当前章节不保存）")
 
     def expand_to_level_1(self):
         """展开至一级节点"""
@@ -4796,7 +4806,7 @@ class MainWindow(tk.Tk):
         生成内容并在主窗口右侧工作区展示，完成后自动保存。
 
         Returns:
-            "success" / "failed"
+            "success" / "failed" / "stopped"
         """
         try:
             selected_fact_cards = self.bid_writer.resolve_generation_fact_cards(
@@ -4856,6 +4866,15 @@ class MainWindow(tk.Tk):
             raw_chars=len(raw_content),
         )
         gen_window.close()
+
+        if self.stop_requested:
+            self._show_generated_content_in_workspace(
+                heading,
+                raw_content,
+                meta_text="本章节已终止，未保存",
+            )
+            self.status_text.set(f"已终止本章节生成: {heading.title}")
+            return "stopped"
 
         self.status_text.set(f"正在整理输出: {heading.title}")
         finalize_result = self.bid_writer.ai_writer.finalize_generation(
@@ -4942,7 +4961,7 @@ class MainWindow(tk.Tk):
 
 1. 在大纲树中选择四级标题，可使用 Ctrl+点击 多选
 2. 可通过顶部搜索框和状态筛选快速定位未生成章节
-3. 点击“生成所选”开始批量生成，生成过程中可请求停止下一项
+3. 点击“生成所选”开始批量生成；生成过程中同一按钮会变为“终止生成”，当前章节结束后停止后续生成
 4. 单选章节时，右侧正文工作区会直接显示已生成内容；生成过程中也会实时刷新当前章节正文
 5. 点击“整合标书”可按大纲顺序合并所有已生成章节正文，并自定义输出文件名
 6. “扫描输出状态”会重新读取输出目录并刷新完成情况
