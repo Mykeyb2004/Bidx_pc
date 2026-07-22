@@ -15,7 +15,7 @@ from .chapter_fact_extractor import ChapterFactExtractor, ChapterFactResult
 from .chapter_fact_store import ChapterFactStore
 from .config import Config
 from .fact_card_extractor import FactCardExtractionResult, FactCardExtractor
-from .fact_card_store import FactCardStore
+from .fact_card_store import BatchFactCardSummary, ChapterFactCardDefaultState, FactCardStore
 from .fact_cards import FactCard, FactCardDraft, FactCardSelection, FactCardSource
 from .file_saver import FileSaver
 from .h2_project_background import H2ProjectBackgroundPrecomputeReport
@@ -147,6 +147,29 @@ class BidWriter:
     ):
         """读取章节事实卡片引用状态与默认选择。"""
         return self.fact_card_store.get_chapter_default_state(self._resolve_heading_path(heading))
+
+    def summarize_chapter_default_fact_cards(
+        self,
+        headings: Iterable[HeadingNode | str],
+    ) -> BatchFactCardSummary:
+        """汇总多个章节当前有效的事实卡片引用状态。"""
+        return self.fact_card_store.summarize_chapter_defaults(
+            self._resolve_heading_path(heading) for heading in headings
+        )
+
+    def apply_batch_chapter_default_fact_cards(
+        self,
+        headings: Iterable[HeadingNode | str],
+        *,
+        should_reference_fact_cards: bool | None = None,
+        card_references: dict[str, bool] | None = None,
+    ) -> dict[str, ChapterFactCardDefaultState]:
+        """将显式事实卡片补丁原子应用到多个章节。"""
+        return self.fact_card_store.apply_batch_chapter_defaults(
+            (self._resolve_heading_path(heading) for heading in headings),
+            should_reference_fact_cards=should_reference_fact_cards,
+            card_references=card_references,
+        )
 
     def save_manual_fact_cards(
         self,
