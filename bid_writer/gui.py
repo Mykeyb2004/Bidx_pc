@@ -27,6 +27,7 @@ from openai import (
 )
 
 from .main import BidWriter
+from .ai_writer import GenerationCancelledError
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
 from .outline_prepare import set_outline_locked
@@ -1797,6 +1798,7 @@ class MainWindow(tk.Tk):
         self._suppress_tree_view_events = False
         self.is_generating = False
         self.stop_requested = False
+        self._active_generation_session = None
         self.visible_leaf_count = 0
         self.generated_leaf_count = 0
         self._responsive_layout_pending = False
@@ -2526,11 +2528,21 @@ class MainWindow(tk.Tk):
 
     def _get_action_layout_mode(self) -> str:
         """计算工具按钮区域应使用的布局模式"""
-        return "single"
+        available_width = self.action_bar.winfo_width()
+        if available_width <= 1:
+            available_width = max(self.winfo_width() - 32, 1)
+
+        required_width = (
+            self.top_outline_controls.winfo_reqwidth()
+            + self.action_frame.winfo_reqwidth()
+            + 24
+        )
+        if hasattr(self, "brand_frame"):
+            required_width += self.brand_frame.winfo_reqwidth() + 18
+        return "single" if required_width <= available_width else "stacked"
 
     def _layout_action_bar(self, layout_mode: str):
         """工具按钮区域宽度不足时拆分为两行"""
-        del layout_mode
         self.top_outline_controls.grid_forget()
         self.action_frame.grid_forget()
         if hasattr(self, "brand_frame"):
@@ -2539,10 +2551,27 @@ class MainWindow(tk.Tk):
         self.action_bar.grid_columnconfigure(1, weight=0)
         self.action_bar.grid_columnconfigure(2, weight=0)
         self.action_bar.grid_columnconfigure(1, weight=1)
+
+        if layout_mode == "single":
+            if hasattr(self, "brand_frame"):
+                self.brand_frame.grid(row=0, column=0, sticky="w", padx=(0, 18))
+                self.top_outline_controls.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+                self.action_frame.grid(row=0, column=2, sticky="se")
+                return
+
+            self.action_bar.grid_columnconfigure(0, weight=1)
+            self.top_outline_controls.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+            self.action_frame.grid(row=0, column=1, sticky="se")
+            return
+
         if hasattr(self, "brand_frame"):
             self.brand_frame.grid(row=0, column=0, sticky="w", padx=(0, 18))
-        self.top_outline_controls.grid(row=0, column=1, sticky="ew", padx=(0, 12))
-        self.action_frame.grid(row=0, column=2, sticky="se")
+            self.top_outline_controls.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+            self.action_frame.grid(row=1, column=1, sticky="w", pady=(8, 0))
+            return
+
+        self.top_outline_controls.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        self.action_frame.grid(row=1, column=0, sticky="w", pady=(8, 0))
 
     def _get_control_layout_mode(self) -> str:
         """计算筛选控制区域应使用的布局模式"""
@@ -3169,13 +3198,22 @@ class MainWindow(tk.Tk):
             else tk.NORMAL
         )
         self.selection_text.set(str(selected_count))
+        stop_requested = bool(getattr(self, "stop_requested", False))
         generation_button_state = (
-            tk.NORMAL
-            if self.is_generating
-            else (tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL)
+            tk.DISABLED
+            if self.is_generating and stop_requested
+            else (
+                tk.NORMAL
+                if self.is_generating
+                else (tk.DISABLED if actions_locked or selected_count == 0 else tk.NORMAL)
+            )
         )
         self.btn_generate.config(
-            text=("终止生成" if self.is_generating else f"生成所选 {selected_count}"),
+            text=(
+                "正在终止"
+                if self.is_generating and stop_requested
+                else ("终止生成" if self.is_generating else f"生成所选 {selected_count}")
+            ),
             state=generation_button_state,
         )
         configure_icon_button(
@@ -4207,13 +4245,27 @@ class MainWindow(tk.Tk):
         return result["value"]
 
     def request_stop_generation(self):
-        """请求在当前章节结束后停止批量生成，当前章节不保存。"""
+        """立即终止当前章节并停止批量生成，当前章节不保存。"""
         if not self.is_generating:
+            return
+        if not messagebox.askyesno(
+            "确认终止生成",
+            (
+                "确定要终止当前生成吗？\n\n"
+                "当前正在生成的章节不会保存；批量生成中此前已完成的章节会保留，"
+                "后续章节不再生成。"
+            ),
+            parent=self,
+        ):
             return
 
         self.stop_requested = True
-        self.task_text.set("当前任务: 当前章节完成后停止（当前章节不保存）")
-        self.status_text.set("已请求终止，等待当前章节结束（当前章节不保存）")
+        active_session = getattr(self, "_active_generation_session", None)
+        if active_session is not None:
+            active_session.cancel()
+        self.task_text.set("当前任务: 正在终止（当前章节不保存）")
+        self.status_text.set("正在终止当前章节（当前章节不保存）")
+        self.update_action_states()
 
     def expand_to_level_1(self):
         """展开至一级节点"""
@@ -4592,6 +4644,7 @@ class MainWindow(tk.Tk):
             self.is_generating = False
             self.error: Optional[GenerationErrorFeedback] = None
             self.result_data = None
+            self.cancel_event = threading.Event()
             self._queue_poll_id = None
             if not hasattr(self.parent, "_workspace_generation_buffers"):
                 self.parent._workspace_generation_buffers = {}
@@ -4617,6 +4670,15 @@ class MainWindow(tk.Tk):
 
         def _check_queue(self):
             """定时检查队列并更新UI（主线程）"""
+            if self.cancel_event.is_set():
+                while True:
+                    try:
+                        self.text_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                self._cancel_queue_poll()
+                return
+
             try:
                 while True:
                     msg_type, data = self.text_queue.get_nowait()
@@ -4695,11 +4757,13 @@ class MainWindow(tk.Tk):
                 """后台线程执行生成"""
                 current_stage = "准备扩写请求"
                 content_parts: list[str] = []
+                prepared = None
 
                 def _publish_status(stage_label: str, message: str) -> None:
                     nonlocal current_stage
                     current_stage = stage_label
-                    self.text_queue.put(("status", message))
+                    if not self.cancel_event.is_set():
+                        self.text_queue.put(("status", message))
 
                 try:
                     _publish_status("准备扩写请求", "正在准备扩写请求...")
@@ -4707,22 +4771,26 @@ class MainWindow(tk.Tk):
                         heading,
                         requirements,
                         target_words,
-                        stream=ai_writer.config.generation_stream,
+                        stream=True,
                         max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section,
                         status_callback=_publish_status,
                         fact_card_mode=fact_card_mode,
                         selected_fact_cards=selected_fact_cards,
                     )
-                    if prepared.stream:
+                    stream_workspace_updates = bool(ai_writer.config.generation_stream)
+                    if stream_workspace_updates:
                         _publish_status("等待模型首批输出", "正在请求大模型并等待首批内容...")
                     else:
                         _publish_status("请求大模型", "正在请求大模型并等待完整返回...")
-                    result = ai_writer.expand_raw(prepared)
+                    if self.cancel_event.is_set():
+                        raise GenerationCancelledError("用户已终止当前章节生成")
+                    result = ai_writer.expand_raw(prepared, cancel_event=self.cancel_event)
 
                     if isinstance(result, str):
                         _publish_status("接收模型输出", "已收到模型完整输出，正在写入工作区...")
                         content_parts.append(result)
-                        self.text_queue.put(("text", result))
+                        if not self.cancel_event.is_set():
+                            self.text_queue.put(("text", result))
                     else:
                         received_first_chunk = False
                         for chunk in result:
@@ -4730,9 +4798,15 @@ class MainWindow(tk.Tk):
                                 _publish_status("接收模型输出", "正在接收模型输出...")
                                 received_first_chunk = True
                             content_parts.append(chunk)
-                            self.text_queue.put(("text", chunk))
+                            if stream_workspace_updates and not self.cancel_event.is_set():
+                                self.text_queue.put(("text", chunk))
+
+                    if self.cancel_event.is_set():
+                        raise GenerationCancelledError("用户已终止当前章节生成")
 
                     content = "".join(content_parts)
+                    if not stream_workspace_updates:
+                        self.text_queue.put(("text", content))
                     word_count = ai_writer.count_chinese_words(content)
 
                     self.text_queue.put(("status", f"生成完成 - {word_count} 字"))
@@ -4746,7 +4820,25 @@ class MainWindow(tk.Tk):
                     )
                     self.text_queue.put(("done", (content, word_count, prepared.trace_session)))
 
+                except GenerationCancelledError:
+                    trace_session = getattr(prepared, "trace_session", None)
+                    if trace_session is not None and not trace_session.finished:
+                        trace_session.finalize(
+                            "".join(content_parts),
+                            status="cancelled",
+                            error="用户已终止当前章节生成",
+                        )
+                    return
                 except Exception as e:
+                    if self.cancel_event.is_set():
+                        trace_session = getattr(prepared, "trace_session", None)
+                        if trace_session is not None and not trace_session.finished:
+                            trace_session.finalize(
+                                "".join(content_parts),
+                                status="cancelled",
+                                error="用户已终止当前章节生成",
+                            )
+                        return
                     write_timing_log(
                         "generation_background_error",
                         heading_title=heading.title,
@@ -4776,16 +4868,31 @@ class MainWindow(tk.Tk):
 
         def wait_completion(self):
             """等待生成完成并返回结果"""
+            if self.cancel_event.is_set():
+                raise GenerationCancelledError("用户已终止当前章节生成")
             while self.is_generating:
                 if not self._widget_exists(self.parent):
                     raise RuntimeError("主窗口已关闭，无法继续等待生成结果")
                 self.parent.update()
                 self.parent.after(100)
 
+            if self.cancel_event.is_set():
+                raise GenerationCancelledError("用户已终止当前章节生成")
             if self.error:
                 raise GenerationFailedError(self.error)
 
             return self.result_data  # (content, word_count)
+
+        def cancel(self):
+            """立即取消会话，并丢弃后台线程后续到达的消息。"""
+            if self.result_data is not None or self.error is not None:
+                return False
+            self.cancel_event.set()
+            self.is_generating = False
+            self.result_data = None
+            self.error = None
+            self._cancel_queue_poll()
+            return True
 
         def close(self):
             """结束当前生成会话轮询。"""
@@ -4821,21 +4928,38 @@ class MainWindow(tk.Tk):
             return "failed"
 
         gen_window = self.GenerationSession(self, heading)
-
-        gen_window.start_generation(
-            heading,
-            self.bid_writer.ai_writer,
-            additional_requirements,
-            target_words,
-            max_mermaid_flowcharts_per_section,
-            fact_card_mode=fact_card_mode,
-            selected_fact_cards=selected_fact_cards,
-        )
+        self._active_generation_session = gen_window
+        generation_completed_before_stop = False
 
         try:
+            gen_window.start_generation(
+                heading,
+                self.bid_writer.ai_writer,
+                additional_requirements,
+                target_words,
+                max_mermaid_flowcharts_per_section,
+                fact_card_mode=fact_card_mode,
+                selected_fact_cards=selected_fact_cards,
+            )
             raw_content, _word_count, trace_session = gen_window.wait_completion()
+            cancel_event = getattr(gen_window, "cancel_event", None)
+            generation_completed_before_stop = bool(
+                getattr(gen_window, "result_data", None) is not None
+                and (cancel_event is None or not cancel_event.is_set())
+            )
+        except GenerationCancelledError:
+            current_content = getattr(self, "_workspace_generation_buffers", {}).get(
+                heading.full_path,
+                "",
+            )
+            self._show_generated_content_in_workspace(
+                heading,
+                current_content,
+                meta_text="本章节已终止，未保存",
+            )
+            self.status_text.set(f"已终止本章节生成: {heading.title}")
+            return "stopped"
         except GenerationFailedError as e:
-            gen_window.close()
             self._report_generation_failure(
                 heading,
                 e.feedback,
@@ -4843,7 +4967,6 @@ class MainWindow(tk.Tk):
             )
             return "failed"
         except Exception as e:
-            gen_window.close()
             feedback = _build_generation_error_feedback(
                 heading_title=heading.title,
                 heading_full_path=heading.full_path,
@@ -4857,6 +4980,10 @@ class MainWindow(tk.Tk):
                 show_dialog=show_error_dialog,
             )
             return "failed"
+        finally:
+            gen_window.close()
+            if getattr(self, "_active_generation_session", None) is gen_window:
+                self._active_generation_session = None
 
         write_timing_log(
             "workspace_generation_completed",
@@ -4865,9 +4992,7 @@ class MainWindow(tk.Tk):
             trace_id=trace_session.trace_id if trace_session is not None else "",
             raw_chars=len(raw_content),
         )
-        gen_window.close()
-
-        if self.stop_requested:
+        if self.stop_requested and not generation_completed_before_stop:
             self._show_generated_content_in_workspace(
                 heading,
                 raw_content,

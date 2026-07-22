@@ -66,6 +66,26 @@ class _FakeMainWindowForActionLayout:
         self.action_bar = _FakeGridContainer()
 
 
+class _FakeMainWindowForNarrowActionLayout:
+    def __init__(self):
+        self._action_layout_mode = ""
+        self.action_bar = _FakeLayoutWidget(width=640)
+        self.brand_frame = _FakeLayoutWidget(reqwidth=160)
+        self.top_outline_controls = _FakeLayoutWidget(reqwidth=440)
+        self.action_frame = _FakeLayoutWidget(reqwidth=260)
+
+    def winfo_width(self):
+        return 640
+
+
+class _FakeMainWindowForBrandedStackedActionLayout:
+    def __init__(self):
+        self.brand_frame = _FakeLayoutWidget()
+        self.top_outline_controls = _FakeLayoutWidget()
+        self.action_frame = _FakeLayoutWidget()
+        self.action_bar = _FakeGridContainer()
+
+
 class _FakeActivationWindow:
     def __init__(self):
         self.calls: list[object] = []
@@ -229,6 +249,53 @@ def test_top_control_layout_accounts_for_action_buttons_before_window_is_realize
     layout_mode = MainWindow._get_control_layout_mode(fake_window)
 
     assert layout_mode == "stacked"
+
+
+def test_action_layout_stacks_controls_when_generation_button_would_be_clipped():
+    fake_window = _FakeMainWindowForNarrowActionLayout()
+
+    layout_mode = MainWindow._get_action_layout_mode(fake_window)
+
+    assert layout_mode == "stacked"
+
+
+def test_stacked_action_layout_places_generation_button_on_second_row():
+    fake_window = _FakeMainWindowForActionLayout()
+
+    MainWindow._layout_action_bar(fake_window, "stacked")
+
+    assert fake_window.top_outline_controls.grid_kwargs == {
+        "row": 0,
+        "column": 0,
+        "sticky": "ew",
+        "padx": (0, 12),
+    }
+    assert fake_window.action_frame.grid_kwargs == {
+        "row": 1,
+        "column": 0,
+        "sticky": "w",
+        "pady": (8, 0),
+    }
+
+
+def test_branded_stacked_action_layout_keeps_controls_aligned_with_brand_column():
+    fake_window = _FakeMainWindowForBrandedStackedActionLayout()
+
+    MainWindow._layout_action_bar(fake_window, "stacked")
+
+    assert fake_window.brand_frame.grid_kwargs == {
+        "row": 0,
+        "column": 0,
+        "sticky": "w",
+        "padx": (0, 18),
+    }
+    assert fake_window.top_outline_controls.grid_kwargs["column"] == 1
+    assert fake_window.action_frame.grid_kwargs == {
+        "row": 1,
+        "column": 1,
+        "sticky": "w",
+        "pady": (8, 0),
+    }
 
 
 def test_action_buttons_align_to_bottom_of_top_controls():

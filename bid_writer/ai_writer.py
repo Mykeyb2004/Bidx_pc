@@ -6,6 +6,7 @@ AI扩写引擎
 import queue
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Generator, Optional
@@ -59,6 +60,10 @@ class PreparedGeneration:
     trace_id: str = ""
     trace_session: Optional[GenerationTraceSession] = None
     stream: bool = True
+
+
+class GenerationCancelledError(RuntimeError):
+    """用户主动终止当前模型生成。"""
 
 
 class AIWriter:
@@ -1112,7 +1117,11 @@ class AIWriter:
             stream=stream,
         )
 
-    def expand_raw(self, prepared: PreparedGeneration) -> Generator[str, None, None] | str:
+    def expand_raw(
+        self,
+        prepared: PreparedGeneration,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> Generator[str, None, None] | str:
         """只执行模型生成，不做正文后处理。"""
         if prepared.stream:
             return self._stream_expand_raw(
@@ -1121,8 +1130,13 @@ class AIWriter:
                 heading_title=prepared.heading_title,
                 heading_full_path=prepared.heading_full_path,
                 trace_id=prepared.trace_id,
+                cancel_event=cancel_event,
             )
-        return self._sync_expand_raw(prepared.request_options, prepared.trace_session)
+        return self._sync_expand_raw(
+            prepared.request_options,
+            prepared.trace_session,
+            cancel_event=cancel_event,
+        )
 
     def finalize_generation(
         self,
@@ -1165,6 +1179,7 @@ class AIWriter:
         heading_title: str = "",
         heading_full_path: str = "",
         trace_id: str = "",
+        cancel_event: Optional[threading.Event] = None,
     ) -> Generator[str, None, None]:
         """流式扩写：逐 token 立即 yield，仅返回原始正文。"""
         chunks: list[str] = []
@@ -1174,6 +1189,9 @@ class AIWriter:
         idle_timeout_seconds = max(3, self.config.generation_stream_idle_timeout_seconds)
         close_requested = threading.Event()
         event_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+        def _is_cancelled() -> bool:
+            return cancel_event is not None and cancel_event.is_set()
 
         def _close_response() -> None:
             close = getattr(response, "close", None)
@@ -1187,7 +1205,7 @@ class AIWriter:
             try:
                 assert response is not None
                 for chunk in response:
-                    if close_requested.is_set():
+                    if close_requested.is_set() or _is_cancelled():
                         return
                     if not chunk.choices:
                         continue
@@ -1209,15 +1227,37 @@ class AIWriter:
                     event_queue.put(("error", exc))
 
         try:
+            if _is_cancelled():
+                raise GenerationCancelledError("用户已终止当前章节生成")
             response = self.client.chat.completions.create(**request_options)
             reader = threading.Thread(target=_reader, name="llm-stream-reader", daemon=True)
             reader.start()
 
             while True:
-                wait_timeout = idle_timeout_seconds if chunks else max(idle_timeout_seconds, self.config.api_timeout_seconds)
-                try:
-                    event_type, payload = event_queue.get(timeout=wait_timeout)
-                except queue.Empty:
+                wait_timeout = (
+                    idle_timeout_seconds
+                    if chunks
+                    else max(idle_timeout_seconds, self.config.api_timeout_seconds)
+                )
+                wait_deadline = time.monotonic() + wait_timeout
+                while True:
+                    if _is_cancelled():
+                        finish_reason = "cancelled_by_user"
+                        close_requested.set()
+                        _close_response()
+                        raise GenerationCancelledError("用户已终止当前章节生成")
+                    remaining = wait_deadline - time.monotonic()
+                    if remaining <= 0:
+                        event_type = "timeout"
+                        payload = None
+                        break
+                    try:
+                        event_type, payload = event_queue.get(timeout=min(0.1, remaining))
+                        break
+                    except queue.Empty:
+                        continue
+
+                if event_type == "timeout":
                     if chunks:
                         finish_reason = f"idle_timeout_after_last_token_{idle_timeout_seconds}s"
                         write_timing_log(
@@ -1236,6 +1276,12 @@ class AIWriter:
                         f"流式输出在 {wait_timeout} 秒内未收到任何内容，已中止本次生成。"
                     )
 
+                if _is_cancelled():
+                    finish_reason = "cancelled_by_user"
+                    close_requested.set()
+                    _close_response()
+                    raise GenerationCancelledError("用户已终止当前章节生成")
+
                 if event_type == "token":
                     token = str(payload)
                     chunks.append(token)
@@ -1253,7 +1299,29 @@ class AIWriter:
 
                 if event_type == "error":
                     raise payload
+        except GenerationCancelledError as exc:
+            write_timing_log(
+                "stream_generation_cancelled",
+                heading_title=heading_title,
+                heading_full_path=heading_full_path,
+                trace_id=trace_id or (trace_session.trace_id if trace_session is not None else ""),
+                output_chars=len("".join(chunks)),
+                last_token_at=last_token_at,
+                finish_reason=finish_reason or "cancelled_by_user",
+            )
+            if trace_session is not None:
+                trace_session.finalize("".join(chunks), status="cancelled", error=str(exc))
+            raise
         except Exception as exc:
+            if _is_cancelled():
+                cancelled = GenerationCancelledError("用户已终止当前章节生成")
+                if trace_session is not None:
+                    trace_session.finalize(
+                        "".join(chunks),
+                        status="cancelled",
+                        error=str(cancelled),
+                    )
+                raise cancelled from exc
             write_timing_log(
                 "stream_generation_error",
                 heading_title=heading_title,
@@ -1284,11 +1352,20 @@ class AIWriter:
         self,
         request_options: dict,
         trace_session: Optional[GenerationTraceSession] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> str:
         """同步扩写，仅返回原始正文。"""
         try:
+            if cancel_event is not None and cancel_event.is_set():
+                raise GenerationCancelledError("用户已终止当前章节生成")
             response = self.client.chat.completions.create(**request_options)
+            if cancel_event is not None and cancel_event.is_set():
+                raise GenerationCancelledError("用户已终止当前章节生成")
             content = response.choices[0].message.content or ""
+        except GenerationCancelledError as exc:
+            if trace_session is not None:
+                trace_session.finalize("", status="cancelled", error=str(exc))
+            raise
         except Exception as exc:
             if trace_session is not None:
                 trace_session.finalize("", status="failed", error=str(exc))

@@ -1193,3 +1193,222 @@ fact_cards:
             {"card_id": "local-a"},
         ],
     }
+
+
+def test_batch_chapter_fact_card_summary_counts_effective_references(tmp_path: Path):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-personnel
+      name: 人员配置
+      content: 项目配置十九名派驻服务人员。
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-schedule
+      name: 服务周期
+      content: 服务期为十二个月。
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+    - id: inactive-card
+      name: 已停用
+      content: 不应进入汇总。
+      scope: global
+      enforcement: reference
+      active: false
+      source:
+        type: manual
+  chapter_defaults:
+    章节A:
+      should_reference: false
+      selections: []
+    章节B:
+      should_reference: true
+      selections:
+        - card_id: local-schedule
+    章节C:
+      should_reference: true
+      selections:
+        - card_id: global-personnel
+          selected: false
+        - card_id: local-schedule
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    summary = store.summarize_chapter_defaults(["章节A", "章节B", "章节C", "章节D"])
+
+    assert summary.total_chapters == 4
+    assert summary.reference_enabled_chapters == 3
+    assert [item.card.id for item in summary.cards] == [
+        "global-personnel",
+        "local-schedule",
+    ]
+    assert [item.referenced_chapters for item in summary.cards] == [2, 2]
+
+
+def test_apply_batch_chapter_defaults_preserves_untouched_state_and_saves_once(
+    tmp_path: Path,
+    monkeypatch,
+):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+    - id: local-keep
+      name: 保留事项
+      content: 保留原章节差异。
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+    - id: local-b
+      name: 统一事项
+      content: 统一应用到所选章节。
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+    - id: inactive-card
+      name: 已停用
+      content: 不应写入。
+      scope: local
+      enforcement: reference
+      active: false
+      source:
+        type: manual
+  chapter_defaults:
+    章节A:
+      should_reference: false
+      selections:
+        - card_id: global-a
+          selected: false
+        - card_id: local-a
+        - card_id: local-keep
+    章节B:
+      should_reference: true
+      selections: []
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+    original_save = store._save_config_payload
+    save_calls = []
+
+    def save_once(payload):
+        save_calls.append(payload)
+        original_save(payload)
+
+    monkeypatch.setattr(store, "_save_config_payload", save_once)
+
+    states = store.apply_batch_chapter_defaults(
+        ["章节A", "章节B", "章节A"],
+        should_reference_fact_cards=True,
+        card_references={
+            "global-a": True,
+            "local-a": False,
+            "local-b": True,
+            "inactive-card": True,
+            "missing-card": False,
+        },
+    )
+
+    assert len(save_calls) == 1
+    assert states["章节A"].should_reference_fact_cards is True
+    assert states["章节A"].selections == [
+        FactCardSelection(card_id="local-keep"),
+        FactCardSelection(card_id="local-b"),
+    ]
+    assert states["章节B"].should_reference_fact_cards is True
+    assert states["章节B"].selections == [FactCardSelection(card_id="local-b")]
+
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert payload["fact_cards"]["chapter_defaults"] == {
+        "章节A": {
+            "should_reference": True,
+            "selections": [
+                {"card_id": "local-keep"},
+                {"card_id": "local-b"},
+            ],
+        },
+        "章节B": {
+            "should_reference": True,
+            "selections": [{"card_id": "local-b"}],
+        },
+    }
+
+
+def test_apply_batch_chapter_defaults_can_disable_mode_and_store_explicit_card_states(
+    tmp_path: Path,
+):
+    config_path = _build_config(
+        tmp_path,
+        """
+fact_cards:
+  enabled: true
+  cards:
+    - id: global-a
+      name: 企业资质
+      content: 一级资质
+      scope: global
+      enforcement: strong
+      active: true
+      source:
+        type: manual
+    - id: local-a
+      name: 服务承诺
+      content: 7×24小时响应
+      scope: local
+      enforcement: reference
+      active: true
+      source:
+        type: manual
+  chapter_defaults: {}
+""",
+    )
+    store = FactCardStore(Config(str(config_path)))
+
+    states = store.apply_batch_chapter_defaults(
+        ["章节A", "章节B"],
+        should_reference_fact_cards=False,
+        card_references={"global-a": False, "local-a": True},
+    )
+
+    expected_selections = [
+        FactCardSelection(card_id="global-a", selected=False),
+        FactCardSelection(card_id="local-a"),
+    ]
+    assert states == {
+        "章节A": states["章节A"],
+        "章节B": states["章节B"],
+    }
+    assert all(state.should_reference_fact_cards is False for state in states.values())
+    assert all(state.selections == expected_selections for state in states.values())
+    assert store.summarize_chapter_defaults(["章节A", "章节B"]).reference_enabled_chapters == 0

@@ -27,6 +27,27 @@ class ChapterFactCardDefaultState:
     selections: list[FactCardSelection]
 
 
+@dataclass(frozen=True)
+class FactCardBatchReferenceSummary:
+    """单张事实卡片在批量章节中的有效引用统计。"""
+
+    card: FactCard
+    referenced_chapters: int
+
+
+@dataclass(frozen=True)
+class BatchFactCardSummary:
+    """批量章节事实卡片的有效引用汇总。"""
+
+    chapter_paths: list[str]
+    reference_enabled_chapters: int
+    cards: list[FactCardBatchReferenceSummary]
+
+    @property
+    def total_chapters(self) -> int:
+        return len(self.chapter_paths)
+
+
 class FactCardStore:
     """基于配置文件顶层 fact_cards 块的事实卡片存储。"""
 
@@ -140,6 +161,126 @@ class FactCardStore:
         payload["fact_cards"] = block
         self._save_config_payload(payload)
         return cleaned
+
+    def summarize_chapter_defaults(
+        self,
+        chapter_paths: Iterable[str],
+    ) -> BatchFactCardSummary:
+        paths = self._normalize_chapter_paths(chapter_paths)
+        payload = self._load_config_payload()
+        block = self._normalize_fact_cards_block(payload)
+        cards = self._cards_from_block(block)
+        active_cards = [card for card in cards if card.active]
+        chapter_defaults = block.setdefault("chapter_defaults", {})
+        counts = {card.id: 0 for card in active_cards}
+        reference_enabled_chapters = 0
+
+        for chapter_path in paths:
+            state = self._coerce_chapter_default_state(chapter_defaults.get(chapter_path))
+            selections = self._filter_existing_selections(state.selections, cards)
+            if state.should_reference_fact_cards is False:
+                continue
+            reference_enabled_chapters += 1
+            excluded_global_ids = {
+                selection.card_id
+                for selection in selections
+                if not selection.selected
+            }
+            selected_local_ids = {
+                selection.card_id
+                for selection in selections
+                if selection.selected
+            }
+            for card in active_cards:
+                if (
+                    card.scope == "global" and card.id not in excluded_global_ids
+                ) or (
+                    card.scope == "local" and card.id in selected_local_ids
+                ):
+                    counts[card.id] += 1
+
+        return BatchFactCardSummary(
+            chapter_paths=paths,
+            reference_enabled_chapters=reference_enabled_chapters,
+            cards=[
+                FactCardBatchReferenceSummary(card=card, referenced_chapters=counts[card.id])
+                for card in active_cards
+            ],
+        )
+
+    def apply_batch_chapter_defaults(
+        self,
+        chapter_paths: Iterable[str],
+        *,
+        should_reference_fact_cards: bool | None = None,
+        card_references: dict[str, bool] | None = None,
+    ) -> dict[str, ChapterFactCardDefaultState]:
+        if should_reference_fact_cards is not None and not isinstance(
+            should_reference_fact_cards,
+            bool,
+        ):
+            raise ValueError("should_reference_fact_cards must be bool or None")
+
+        paths = self._normalize_chapter_paths(chapter_paths)
+        payload = self._load_config_payload()
+        block = self._normalize_fact_cards_block(payload)
+        cards = self._cards_from_block(block)
+        cards_by_id = {card.id: card for card in cards if card.active}
+        requested_references = {
+            card_id: include
+            for card_id, include in (card_references or {}).items()
+            if card_id in cards_by_id and isinstance(include, bool)
+        }
+        chapter_defaults = block.setdefault("chapter_defaults", {})
+        updated_states: dict[str, ChapterFactCardDefaultState] = {}
+        changed = False
+
+        for chapter_path in paths:
+            raw_state = self._coerce_chapter_default_state(chapter_defaults.get(chapter_path))
+            existing_selections = self._filter_existing_selections(raw_state.selections, cards)
+            selections_by_id = {selection.card_id: selection for selection in existing_selections}
+            state_should_reference = raw_state.should_reference_fact_cards
+            if (
+                should_reference_fact_cards is not None
+                and state_should_reference != should_reference_fact_cards
+            ):
+                state_should_reference = should_reference_fact_cards
+                changed = True
+
+            for card_id, include in requested_references.items():
+                card = cards_by_id[card_id]
+                previous = selections_by_id.get(card_id)
+                if card.scope == "global":
+                    if include:
+                        selections_by_id.pop(card_id, None)
+                    else:
+                        selections_by_id[card_id] = FactCardSelection(
+                            card_id=card_id,
+                            selected=False,
+                        )
+                elif include:
+                    selections_by_id[card_id] = FactCardSelection(card_id=card_id)
+                else:
+                    selections_by_id.pop(card_id, None)
+                if selections_by_id.get(card_id) != previous:
+                    changed = True
+                elif previous is not None and card.scope == "global" and include:
+                    changed = True
+
+            updated_state = ChapterFactCardDefaultState(
+                should_reference_fact_cards=state_should_reference,
+                selections=list(selections_by_id.values()),
+            )
+            if existing_selections != updated_state.selections:
+                changed = True
+            updated_states[chapter_path] = updated_state
+
+        if changed:
+            for chapter_path, state in updated_states.items():
+                self._set_chapter_default_state(chapter_defaults, chapter_path, state)
+            payload["fact_cards"] = block
+            self._save_config_payload(payload)
+        return updated_states
 
     def save_manual_cards(
         self,
@@ -490,6 +631,18 @@ class FactCardStore:
             if selection is not None:
                 normalized.append(selection)
         return normalized
+
+    @staticmethod
+    def _normalize_chapter_paths(chapter_paths: Iterable[str]) -> list[str]:
+        paths: list[str] = []
+        seen: set[str] = set()
+        for chapter_path in chapter_paths:
+            normalized_path = str(chapter_path).strip()
+            if not normalized_path or normalized_path in seen:
+                continue
+            seen.add(normalized_path)
+            paths.append(normalized_path)
+        return paths
 
     @classmethod
     def _coerce_selection_list(cls, payload: Any) -> list[FactCardSelection]:

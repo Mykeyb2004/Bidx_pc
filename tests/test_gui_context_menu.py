@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 import bid_writer.gui as gui
 from bid_writer.gui import MainWindow
 
@@ -211,6 +213,83 @@ def test_generate_button_requests_stop_when_batch_generation_is_active():
     assert actions == ["stop"]
 
 
+def test_request_stop_generation_cancels_active_session_immediately(monkeypatch):
+    actions: list[str] = []
+    session = SimpleNamespace(cancel=lambda: actions.append("cancel"))
+    window = SimpleNamespace(
+        is_generating=True,
+        stop_requested=False,
+        _active_generation_session=session,
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=lambda: actions.append("refresh"),
+    )
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    MainWindow.request_stop_generation(window)
+
+    assert window.stop_requested is True
+    assert actions == ["cancel", "refresh"]
+    assert window.status_text.values[-1] == "正在终止当前章节（当前章节不保存）"
+
+
+def test_request_stop_generation_keeps_active_session_when_confirmation_declined(monkeypatch):
+    actions: list[str] = []
+    session = SimpleNamespace(cancel=lambda: actions.append("cancel"))
+    window = SimpleNamespace(
+        is_generating=True,
+        stop_requested=False,
+        _active_generation_session=session,
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=lambda: actions.append("refresh"),
+    )
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *_args, **_kwargs: False)
+
+    MainWindow.request_stop_generation(window)
+
+    assert window.stop_requested is False
+    assert actions == []
+    assert window.task_text.values == []
+    assert window.status_text.values == []
+
+
+def test_generation_session_cancel_aborts_wait_completion():
+    heading = _heading("服务保障")
+    parent = SimpleNamespace(
+        _workspace_generation_buffers={},
+        _show_generation_start_in_workspace=lambda _heading: None,
+        winfo_exists=lambda: True,
+    )
+    session = MainWindow.GenerationSession(parent, heading)
+    session.is_generating = True
+
+    session.cancel()
+
+    with pytest.raises(gui.GenerationCancelledError):
+        session.wait_completion()
+
+
+def test_cancelled_generation_session_discards_late_completion_message():
+    heading = _heading("服务保障")
+    parent = SimpleNamespace(
+        _workspace_generation_buffers={},
+        _show_generation_start_in_workspace=lambda _heading: None,
+        winfo_exists=lambda: True,
+    )
+    session = MainWindow.GenerationSession(parent, heading)
+    session.is_generating = True
+
+    session.cancel()
+    session.text_queue.put(("done", ("迟到正文", 4, None)))
+    session._check_queue()
+
+    assert session.result_data is None
+    assert parent._workspace_generation_buffers[heading.full_path] == ""
+    with pytest.raises(gui.GenerationCancelledError):
+        session.wait_completion()
+
+
 def test_do_batch_generate_refreshes_completed_status_before_next_heading():
     first = _heading("质量控制")
     second = _heading("服务保障")
@@ -345,6 +424,49 @@ def test_stopped_current_generation_is_not_saved():
     assert result == "stopped"
     assert saves == []
     assert workspace_meta == ["本章节已终止，未保存"]
+
+
+def test_completed_generation_is_saved_when_stop_arrives_after_completion():
+    heading = _heading("服务保障")
+    saves: list[str] = []
+
+    class _FakeGenerationSession:
+        def __init__(self, _parent, _heading):
+            self.result_data = None
+            self.cancel_event = SimpleNamespace(is_set=lambda: False)
+
+        def start_generation(self, *_args, **_kwargs):
+            pass
+
+        def wait_completion(self):
+            self.result_data = ("已完成正文", 5, None)
+            return self.result_data
+
+        def close(self):
+            pass
+
+    ai_writer = SimpleNamespace(
+        finalize_generation=lambda *_args, **_kwargs: SimpleNamespace(content="已完成正文"),
+        count_chinese_words=lambda _content: 5,
+    )
+    window = SimpleNamespace(
+        stop_requested=True,
+        GenerationSession=_FakeGenerationSession,
+        bid_writer=SimpleNamespace(
+            resolve_generation_fact_cards=lambda *_args, **_kwargs: [],
+            ai_writer=ai_writer,
+            file_saver=SimpleNamespace(
+                save=lambda *_args: saves.append("save") or SimpleNamespace(name="服务保障.md")
+            ),
+        ),
+        _show_generated_content_in_workspace=lambda *_args, **_kwargs: None,
+        status_text=_FakeVar(),
+    )
+
+    result = MainWindow._generate_into_workspace(window, heading, "", 1200, 0)
+
+    assert result == "success"
+    assert saves == ["save"]
 
 
 def test_refresh_workspace_updates_single_selection_while_generating():
