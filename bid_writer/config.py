@@ -519,9 +519,8 @@ class Config:
 
     @property
     def outline_reasoning_effort(self) -> Optional[str]:
-        """大纲生成推理强度，未配置或无效时回退正文扩写设置。"""
-        value = self._get_env_reasoning_effort('BID_WRITER_OUTLINE_REASONING_EFFORT')
-        return value if value is not None else self.reasoning_effort
+        """大纲生成推理强度，未配置时不向 API 发送该参数。"""
+        return self._get_env_reasoning_effort('BID_WRITER_OUTLINE_REASONING_EFFORT')
 
     @property
     def api_base_url(self) -> str:

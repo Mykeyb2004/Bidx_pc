@@ -836,7 +836,7 @@ def test_reasoning_effort_settings_prefer_outline_and_fallback_to_generation(mon
     assert config.outline_reasoning_effort == "low"
 
 
-def test_outline_reasoning_effort_falls_back_to_generation_setting(monkeypatch, tmp_path: Path):
+def test_outline_reasoning_effort_stays_unset_when_only_generation_is_configured(monkeypatch, tmp_path: Path):
     for key in (
         "BID_WRITER_REASONING_EFFORT",
         "BID_WRITER_OUTLINE_REASONING_EFFORT",
@@ -853,7 +853,7 @@ def test_outline_reasoning_effort_falls_back_to_generation_setting(monkeypatch, 
     config = Config(str(config_path))
 
     assert config.reasoning_effort == "medium"
-    assert config.outline_reasoning_effort == "medium"
+    assert config.outline_reasoning_effort is None
 
 
 def test_invalid_reasoning_effort_is_treated_as_unset(monkeypatch, tmp_path: Path):

@@ -4,7 +4,7 @@
 
 **Goal:** Add optional reasoning-effort controls for chapter and outline generation through environment variables while preserving compatibility when unset.
 
-**Architecture:** `Config` reads validated optional reasoning levels from `BID_WRITER_REASONING_EFFORT` and the outline-specific variable, with outline fallback to the chapter setting. The two primary Chat Completions request builders add `reasoning_effort` only when configured; generation traces record the same non-sensitive value.
+**Architecture:** `Config` reads independently validated optional reasoning levels from `BID_WRITER_REASONING_EFFORT` and the outline-specific variable. The two primary Chat Completions request builders add `reasoning_effort` only when their respective setting is configured; generation traces record the same non-sensitive value.
 
 **Tech Stack:** Python, `openai` Chat Completions API, pytest, uv.
 
