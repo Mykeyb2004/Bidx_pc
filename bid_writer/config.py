@@ -12,6 +12,7 @@ from typing import Any, Callable, Optional
 import yaml
 
 _EXTERNAL_ENV_KEYS = set(os.environ)
+_REASONING_EFFORT_VALUES = frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
 
 
 @dataclass(frozen=True)
@@ -215,6 +216,14 @@ class Config:
         if lowered in {"0", "false", "no", "off"}:
             return False
         return None
+
+    def _get_env_reasoning_effort(self, key: str) -> Optional[str]:
+        """读取 OpenAI 推理强度，非法值按未设置处理。"""
+        value = self._get_env_str(key)
+        if value is None:
+            return None
+        normalized = value.lower()
+        return normalized if normalized in _REASONING_EFFORT_VALUES else None
 
     def _execution_file_dir(self) -> Path:
         """返回当前执行入口所在目录，用于放置跨项目运行缓存。"""
@@ -509,6 +518,12 @@ class Config:
         return value if value is not None else self.api_seed
 
     @property
+    def outline_reasoning_effort(self) -> Optional[str]:
+        """大纲生成推理强度，未配置或无效时回退正文扩写设置。"""
+        value = self._get_env_reasoning_effort('BID_WRITER_OUTLINE_REASONING_EFFORT')
+        return value if value is not None else self.reasoning_effort
+
+    @property
     def api_base_url(self) -> str:
         """API基础URL。"""
         return self._get_env_str('BID_WRITER_API_BASE_URL') or 'https://api.openai.com/v1'
@@ -556,6 +571,11 @@ class Config:
     def api_seed(self) -> Optional[int]:
         """随机种子，可选。"""
         return self._get_env_int('BID_WRITER_SEED')
+
+    @property
+    def reasoning_effort(self) -> Optional[str]:
+        """正文生成推理强度，未配置时不向 API 发送该参数。"""
+        return self._get_env_reasoning_effort('BID_WRITER_REASONING_EFFORT')
 
     @property
     def role(self) -> str:

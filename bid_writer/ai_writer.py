@@ -326,6 +326,8 @@ class AIWriter:
             options["top_p"] = self.config.api_top_p
         if self.config.api_seed is not None:
             options["seed"] = self.config.api_seed
+        if self.config.reasoning_effort is not None:
+            options["reasoning_effort"] = self.config.reasoning_effort
         return options
 
     @classmethod

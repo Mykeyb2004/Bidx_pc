@@ -21,6 +21,8 @@ MAIN_MODEL_ENV_TEXT = "\n".join(
         "BID_WRITER_API_BASE_URL=https://api.openai.com/v1",
         "BID_WRITER_API_KEY=你的 API Key",
         "BID_WRITER_MODEL=gpt-5.4",
+        "# 可选：none / minimal / low / medium / high / xhigh",
+        "# BID_WRITER_REASONING_EFFORT=medium",
     ]
 )
 
@@ -30,6 +32,7 @@ OUTLINE_MODEL_ENV_TEXT = "\n".join(
         "# BID_WRITER_OUTLINE_API_BASE_URL=https://api.openai.com/v1",
         "# BID_WRITER_OUTLINE_API_KEY=你的 API Key",
         "# BID_WRITER_OUTLINE_MODEL=gpt-5.4",
+        "# BID_WRITER_OUTLINE_REASONING_EFFORT=medium",
     ]
 )
 

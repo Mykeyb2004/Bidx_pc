@@ -201,6 +201,8 @@ class OutlineGenerator:
             options["top_p"] = self.config.outline_top_p
         if self.config.outline_seed is not None:
             options["seed"] = self.config.outline_seed
+        if self.config.outline_reasoning_effort is not None:
+            options["reasoning_effort"] = self.config.outline_reasoning_effort
 
         self._emit_status(status_callback, "请求模型", "正在发起大纲生成请求...")
         try:

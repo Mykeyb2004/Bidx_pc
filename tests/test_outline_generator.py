@@ -167,6 +167,38 @@ def test_generate_uses_fake_client_and_returns_clean_outline(tmp_path: Path):
     assert call["stream"] is False
 
 
+def test_generate_passes_configured_outline_reasoning_effort(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    (tmp_path / ".env.local").write_text(
+        "BID_WRITER_OUTLINE_REASONING_EFFORT=high\n",
+        encoding="utf-8",
+    )
+    config = Config(str(config_path))
+
+    class FakeMessage:
+        content = "# 项目\n## 项目理解\n### 需求分析\n#### 采购需求响应\n"
+
+    class FakeResponse:
+        choices = [type("Choice", (), {"message": FakeMessage()})()]
+
+    class FakeCompletions:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = type("Chat", (), {"completions": FakeCompletions()})()
+
+    fake_client = FakeClient()
+    OutlineGenerator(config, client_factory=lambda **_kwargs: fake_client).generate(stream=False)
+
+    assert fake_client.chat.completions.calls[0]["reasoning_effort"] == "high"
+
+
 def test_generate_streams_tokens_and_reports_stages(tmp_path: Path):
     config = Config(str(_write_config(tmp_path)))
 
