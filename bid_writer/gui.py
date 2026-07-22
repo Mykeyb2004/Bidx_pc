@@ -4365,6 +4365,7 @@ class MainWindow(tk.Tk):
         is_single_heading = len(headings) == 1
         fact_card_panel = None
         fact_card_mode_var = tk.BooleanVar(value=False)
+        ignore_all_fact_cards_var = tk.BooleanVar(value=False)
 
         # 附加要求
         ttk.Label(dialog, text="附加扩写要求：", style="SectionTitle.TLabel").pack(
@@ -4441,7 +4442,11 @@ class MainWindow(tk.Tk):
         if self.bid_writer.config.fact_cards_enabled:
             fact_card_frame = ttk.Frame(dialog)
             fact_card_frame.pack(pady=(0, 12), padx=20, fill=tk.BOTH, expand=True)
-            from .fact_card_dialogs import FactCardSelectionPanel
+            from .fact_card_dialogs import (
+                BatchFactCardConfigDialog,
+                FactCardSelectionPanel,
+                format_batch_fact_card_summary,
+            )
 
             if is_single_heading:
                 heading = headings[0]
@@ -4476,34 +4481,63 @@ class MainWindow(tk.Tk):
                 fact_card_panel.pack(fill=tk.BOTH, expand=True)
 
             else:
-                all_active_cards = self.bid_writer.fact_card_store.list_cards(active_only=True)
-                fact_card_dialog_state = self._build_generation_fact_card_dialog_state(
-                    all_active_cards,
-                    initial_selections=[],
-                    should_reference_fact_cards=True,
+                batch_summary = self.bid_writer.summarize_chapter_default_fact_cards(headings)
+                batch_summary_var = tk.StringVar(
+                    value=format_batch_fact_card_summary(batch_summary)
                 )
-                fact_card_mode_var.set(True)
-                ttk.Checkbutton(
-                    fact_card_frame,
-                    text="批量生成启用事实卡片模式",
-                    variable=fact_card_mode_var,
-                ).pack(anchor=tk.W, pady=(0, 8))
                 ttk.Label(
                     fact_card_frame,
                     text=(
-                        f"点击“保存事实卡片引用关系”会用当前选择覆盖所选 {len(headings)} 个章节的已保存关系；"
-                        "批量生成仍会按章节读取已保存引用关系。"
+                        f"所选 {len(headings)} 个章节将分别读取各自已保存的事实卡片配置；"
+                        "直接开始扩写不会修改这些配置。"
                     ),
                     justify=tk.LEFT,
                     wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
                 ).pack(anchor=tk.W, pady=(0, 8))
-
-                fact_card_panel = FactCardSelectionPanel(
+                ttk.Checkbutton(
                     fact_card_frame,
-                    cards=fact_card_dialog_state.available_cards,
-                    initial_selections=fact_card_dialog_state.initial_selections,
-                )
-                fact_card_panel.pack(fill=tk.BOTH, expand=True)
+                    text="本次批量忽略全部事实卡片",
+                    variable=ignore_all_fact_cards_var,
+                ).pack(anchor=tk.W, pady=(0, 8))
+                ttk.Label(
+                    fact_card_frame,
+                    textvariable=batch_summary_var,
+                    justify=tk.LEFT,
+                    wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
+                ).pack(anchor=tk.W, pady=(0, 8))
+
+                def apply_batch_fact_card_defaults(
+                    should_reference_fact_cards,
+                    card_references,
+                ):
+                    return self.bid_writer.apply_batch_chapter_default_fact_cards(
+                        headings,
+                        should_reference_fact_cards=should_reference_fact_cards,
+                        card_references=card_references,
+                    )
+
+                def open_batch_fact_card_config():
+                    nonlocal batch_summary
+                    applied_result = BatchFactCardConfigDialog.show(
+                        dialog,
+                        summary=batch_summary,
+                        apply_callback=apply_batch_fact_card_defaults,
+                    )
+                    if applied_result is None:
+                        return
+                    batch_summary = self.bid_writer.summarize_chapter_default_fact_cards(headings)
+                    batch_summary_var.set(format_batch_fact_card_summary(batch_summary))
+                    self.status_text.set(
+                        f"已统一应用 {len(headings)} 个章节的事实卡片配置"
+                    )
+
+                ttk.Button(
+                    fact_card_frame,
+                    text="统一应用到所选章节…",
+                    command=open_batch_fact_card_config,
+                    width=24,
+                    **_bootstyle_kwargs("secondary"),
+                ).pack(anchor=tk.W)
 
         # 按钮
         button_frame = ttk.Frame(dialog)
@@ -4559,8 +4593,17 @@ class MainWindow(tk.Tk):
                 if max_mermaid_flowcharts_per_section < 0:
                     messagebox.showwarning("警告", "Mermaid图示上限不能小于 0", parent=dialog)
                     return
-                fact_card_mode = bool(fact_card_mode_var.get()) if self.bid_writer.config.fact_cards_enabled else False
-                manual_fact_card_selections = collect_fact_card_selections()
+                if self.bid_writer.config.fact_cards_enabled:
+                    fact_card_mode = (
+                        bool(fact_card_mode_var.get())
+                        if is_single_heading
+                        else not bool(ignore_all_fact_cards_var.get())
+                    )
+                else:
+                    fact_card_mode = False
+                manual_fact_card_selections = (
+                    collect_fact_card_selections() if is_single_heading else None
+                )
                 should_save_fact_card_references = bool(is_single_heading and fact_card_panel is not None)
                 if should_save_fact_card_references:
                     save_fact_card_references(show_message=False)
@@ -4585,16 +4628,17 @@ class MainWindow(tk.Tk):
         def on_cancel():
             dialog.destroy()
 
-        save_defaults_button = ttk.Button(
-            button_frame,
-            text="保存事实卡片引用关系",
-            command=on_save_fact_card_references,
-            width=22,
-            **_bootstyle_kwargs("secondary")
-        )
-        save_defaults_button.pack(side=tk.LEFT, padx=5)
-        if fact_card_panel is None:
-            save_defaults_button.configure(state="disabled")
+        if is_single_heading:
+            save_defaults_button = ttk.Button(
+                button_frame,
+                text="保存事实卡片引用关系",
+                command=on_save_fact_card_references,
+                width=22,
+                **_bootstyle_kwargs("secondary")
+            )
+            save_defaults_button.pack(side=tk.LEFT, padx=5)
+            if fact_card_panel is None:
+                save_defaults_button.configure(state="disabled")
         ttk.Button(
             button_frame,
             text="开始扩写",

@@ -22,6 +22,7 @@ class _FakeVar:
 class _FakeWidget:
     def __init__(self, *_args, **_kwargs):
         self.configure_calls = []
+        self.kwargs = _kwargs
 
     def pack(self, *_args, **_kwargs):
         return None
@@ -73,8 +74,11 @@ class _FakeDialog(_FakeWidget):
 
 
 class _FakeFactCardSelectionPanel(_FakeWidget):
+    instances = []
+
     def __init__(self, *_args, **_kwargs):
         super().__init__()
+        self.instances.append(self)
 
     def get_selections(self):
         return ["card-a"]
@@ -83,6 +87,12 @@ class _FakeFactCardSelectionPanel(_FakeWidget):
 def _install_generation_dialog_fakes(monkeypatch):
     buttons = {}
     dialogs = []
+    widgets = []
+
+    class _TrackedWidget(_FakeWidget):
+        def __init__(self, *_args, **_kwargs):
+            super().__init__(*_args, **_kwargs)
+            widgets.append(self)
 
     class _FakeButton(_FakeWidget):
         def __init__(self, *_args, text="", command=None, **_kwargs):
@@ -101,11 +111,12 @@ def _install_generation_dialog_fakes(monkeypatch):
     monkeypatch.setattr(gui.tk, "IntVar", _FakeVar)
     monkeypatch.setattr(gui.tk, "BooleanVar", _FakeVar)
     monkeypatch.setattr(gui.tk, "StringVar", _FakeVar)
-    monkeypatch.setattr(gui.ttk, "Frame", _FakeWidget)
-    monkeypatch.setattr(gui.ttk, "Label", _FakeWidget)
-    monkeypatch.setattr(gui.ttk, "Checkbutton", _FakeWidget)
-    monkeypatch.setattr(gui.ttk, "Spinbox", _FakeWidget)
+    monkeypatch.setattr(gui.ttk, "Frame", _TrackedWidget)
+    monkeypatch.setattr(gui.ttk, "Label", _TrackedWidget)
+    monkeypatch.setattr(gui.ttk, "Checkbutton", _TrackedWidget)
+    monkeypatch.setattr(gui.ttk, "Spinbox", _TrackedWidget)
     monkeypatch.setattr(gui.ttk, "Button", _FakeButton)
+    _FakeFactCardSelectionPanel.instances = []
     monkeypatch.setattr(fact_card_dialogs, "FactCardSelectionPanel", _FakeFactCardSelectionPanel)
     monkeypatch.setattr(gui, "apply_window_surface", lambda _widget: None)
     monkeypatch.setattr(gui, "style_text_widget", lambda _widget: None)
@@ -121,10 +132,20 @@ def _install_generation_dialog_fakes(monkeypatch):
     monkeypatch.setattr(gui, "remember_generation_dialog_settings", lambda *_args: None)
     monkeypatch.setattr(gui.messagebox, "showinfo", lambda *_args, **_kwargs: None)
 
-    return buttons, dialogs
+    return buttons, dialogs, widgets
 
 
 def _fake_generation_window(wait_window, save_callback=None):
+    summary = SimpleNamespace(
+        total_chapters=2,
+        reference_enabled_chapters=1,
+        cards=[
+            SimpleNamespace(
+                card=SimpleNamespace(id="personnel", name="人员配置"),
+                referenced_chapters=1,
+            )
+        ],
+    )
     return SimpleNamespace(
         bid_writer=SimpleNamespace(
             config=SimpleNamespace(
@@ -142,6 +163,8 @@ def _fake_generation_window(wait_window, save_callback=None):
                 selections=[],
             ),
             save_chapter_default_fact_cards=save_callback or (lambda *_args, **_kwargs: None),
+            summarize_chapter_default_fact_cards=lambda _headings: summary,
+            apply_batch_chapter_default_fact_cards=lambda *_args, **_kwargs: None,
         ),
         status_text=SimpleNamespace(set=lambda _value: None),
         wait_window=wait_window,
@@ -150,7 +173,7 @@ def _fake_generation_window(wait_window, save_callback=None):
 
 
 def test_generation_params_start_button_saves_fact_card_references(monkeypatch):
-    buttons, _dialogs = _install_generation_dialog_fakes(monkeypatch)
+    buttons, _dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
     saved_calls = []
     heading = SimpleNamespace(title="质量控制", full_path="项目 > 质量控制")
 
@@ -175,7 +198,7 @@ def test_generation_params_start_button_saves_fact_card_references(monkeypatch):
 
 
 def test_save_fact_card_references_keeps_generation_params_dialog_open(monkeypatch):
-    buttons, dialogs = _install_generation_dialog_fakes(monkeypatch)
+    buttons, dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
     saved_calls = []
     heading = SimpleNamespace(title="质量控制", full_path="项目 > 质量控制")
 
@@ -196,8 +219,8 @@ def test_save_fact_card_references_keeps_generation_params_dialog_open(monkeypat
     ]
 
 
-def test_save_fact_card_references_applies_to_multiple_headings(monkeypatch):
-    buttons, dialogs = _install_generation_dialog_fakes(monkeypatch)
+def test_batch_generation_uses_readonly_summary_without_saving_defaults(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
     saved_calls = []
     headings = [
         SimpleNamespace(title="质量控制", full_path="项目 > 质量控制"),
@@ -205,8 +228,7 @@ def test_save_fact_card_references_applies_to_multiple_headings(monkeypatch):
     ]
 
     def wait_window(_dialog):
-        buttons["保存事实卡片引用关系"].command()
-        assert dialogs[0].destroy_calls == 0
+        buttons["开始扩写"].command()
 
     window = _fake_generation_window(wait_window)
     window.bid_writer.save_chapter_default_fact_cards = (
@@ -215,8 +237,95 @@ def test_save_fact_card_references_applies_to_multiple_headings(monkeypatch):
 
     result = MainWindow._get_generation_params(window, headings)
 
-    assert result is None
-    assert saved_calls == [
-        ("项目 > 质量控制", ["card-a"], {"should_reference_fact_cards": True}),
-        ("项目 > 进度保障", ["card-a"], {"should_reference_fact_cards": True}),
+    assert result == ("", 1200, 0, True, None)
+    assert saved_calls == []
+    assert _FakeFactCardSelectionPanel.instances == []
+    assert "统一应用到所选章节…" in buttons
+    assert "保存事实卡片引用关系" not in buttons
+    assert all(
+        widget.kwargs.get("text") != "批量生成启用事实卡片模式"
+        for widget in widgets
+    )
+    ignore_widget = next(
+        widget
+        for widget in widgets
+        if widget.kwargs.get("text") == "本次批量忽略全部事实卡片"
+    )
+    assert ignore_widget.kwargs["variable"].get() is False
+    summary_vars = [widget.kwargs.get("textvariable") for widget in widgets]
+    assert any(
+        value is not None
+        and "人员配置：1/2 个章节引用（混合状态）" in str(value.get())
+        for value in summary_vars
+    )
+
+
+def test_batch_generation_can_ignore_fact_cards_for_this_run_without_saving(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
+    applied = []
+    headings = [
+        SimpleNamespace(title="质量控制", full_path="项目 > 质量控制"),
+        SimpleNamespace(title="进度保障", full_path="项目 > 进度保障"),
     ]
+
+    def wait_window(_dialog):
+        ignore_widget = next(
+            widget
+            for widget in widgets
+            if widget.kwargs.get("text") == "本次批量忽略全部事实卡片"
+        )
+        ignore_widget.kwargs["variable"].set(True)
+        buttons["开始扩写"].command()
+
+    window = _fake_generation_window(wait_window)
+    window.bid_writer.apply_batch_chapter_default_fact_cards = (
+        lambda *_args, **_kwargs: applied.append(True)
+    )
+
+    result = MainWindow._get_generation_params(window, headings)
+
+    assert result == ("", 1200, 0, False, None)
+    assert applied == []
+
+
+def test_batch_generation_explicit_uniform_apply_refreshes_summary(monkeypatch):
+    buttons, _dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
+    headings = [
+        SimpleNamespace(title="质量控制", full_path="项目 > 质量控制"),
+        SimpleNamespace(title="进度保障", full_path="项目 > 进度保障"),
+    ]
+    applied = []
+    summarized = []
+
+    def show_dialog(_master, *, summary, apply_callback):
+        assert summary.reference_enabled_chapters == 1
+        apply_callback(True, {"personnel": False})
+        return fact_card_dialogs.BatchFactCardDialogResult(True, {"personnel": False})
+
+    monkeypatch.setattr(fact_card_dialogs.BatchFactCardConfigDialog, "show", show_dialog)
+
+    def wait_window(_dialog):
+        buttons["统一应用到所选章节…"].command()
+
+    window = _fake_generation_window(wait_window)
+    original_summary = window.bid_writer.summarize_chapter_default_fact_cards
+    window.bid_writer.summarize_chapter_default_fact_cards = lambda headings_arg: (
+        summarized.append(list(headings_arg)) or original_summary(headings_arg)
+    )
+    window.bid_writer.apply_batch_chapter_default_fact_cards = (
+        lambda headings_arg, **kwargs: applied.append((list(headings_arg), kwargs))
+    )
+
+    result = MainWindow._get_generation_params(window, headings)
+
+    assert result is None
+    assert applied == [
+        (
+            headings,
+            {
+                "should_reference_fact_cards": True,
+                "card_references": {"personnel": False},
+            },
+        )
+    ]
+    assert summarized == [headings, headings]

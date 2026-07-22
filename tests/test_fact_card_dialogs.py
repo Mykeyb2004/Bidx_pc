@@ -34,6 +34,183 @@ class _FakeContainer(_FakeWidget):
         self.destroyed = True
 
 
+def _batch_summary(*, enabled: int = 16, total: int = 46):
+    return SimpleNamespace(
+        total_chapters=total,
+        reference_enabled_chapters=enabled,
+        cards=[
+            SimpleNamespace(
+                card=FactCard(
+                    id="personnel",
+                    name="人员配置",
+                    content="项目人员配置事实",
+                    scope="global",
+                    enforcement="strong",
+                    source=FactCardSource(type="manual"),
+                ),
+                referenced_chapters=enabled,
+            ),
+            SimpleNamespace(
+                card=FactCard(
+                    id="schedule",
+                    name="进度计划",
+                    content="项目进度计划事实",
+                    scope="local",
+                    enforcement="reference",
+                    source=FactCardSource(type="manual"),
+                ),
+                referenced_chapters=total,
+            ),
+        ],
+    )
+
+
+def test_batch_fact_card_summary_formats_mixed_effective_references():
+    text = fact_card_dialogs.format_batch_fact_card_summary(_batch_summary())
+
+    assert "事实卡片模式：16/46 个章节启用（混合状态）" in text
+    assert "人员配置：16/46 个章节引用（混合状态）" in text
+    assert "进度计划：46/46 个章节引用（全部引用）" in text
+
+
+def test_batch_fact_card_summary_formats_all_disabled_and_empty_cards():
+    disabled = fact_card_dialogs.format_batch_fact_card_summary(
+        SimpleNamespace(total_chapters=3, reference_enabled_chapters=0, cards=[])
+    )
+
+    assert disabled == "事实卡片模式：0/3 个章节启用（全部关闭）\n当前没有可用事实卡片。"
+
+
+def test_build_batch_fact_card_patch_keeps_default_controls_untouched():
+    result = fact_card_dialogs.build_batch_fact_card_patch(
+        fact_card_dialogs.BATCH_FACT_CARD_KEEP,
+        {"personnel": fact_card_dialogs.BATCH_FACT_CARD_KEEP},
+    )
+
+    assert result == fact_card_dialogs.BatchFactCardDialogResult(
+        should_reference_fact_cards=None,
+        card_references={},
+    )
+
+
+def test_build_batch_fact_card_patch_converts_explicit_choices():
+    result = fact_card_dialogs.build_batch_fact_card_patch(
+        fact_card_dialogs.BATCH_FACT_CARD_DISABLE,
+        {
+            "personnel": fact_card_dialogs.BATCH_FACT_CARD_EXCLUDE,
+            "schedule": fact_card_dialogs.BATCH_FACT_CARD_INCLUDE,
+        },
+    )
+
+    assert result == fact_card_dialogs.BatchFactCardDialogResult(
+        should_reference_fact_cards=False,
+        card_references={"personnel": False, "schedule": True},
+    )
+
+
+def _new_batch_config_dialog_for_test(mode_value, card_values, apply_callback):
+    dialog = fact_card_dialogs.BatchFactCardConfigDialog.__new__(
+        fact_card_dialogs.BatchFactCardConfigDialog
+    )
+    dialog._mode_var = SimpleNamespace(get=lambda: mode_value)
+    dialog._card_vars = {
+        card_id: SimpleNamespace(get=lambda value=value: value)
+        for card_id, value in card_values.items()
+    }
+    dialog._apply_callback = apply_callback
+    dialog.summary = _batch_summary()
+    dialog.result = None
+    dialog.destroyed = False
+    dialog.destroy = lambda: setattr(dialog, "destroyed", True)
+    return dialog
+
+
+def test_batch_fact_card_config_dialog_default_keep_does_not_apply(monkeypatch):
+    applied = []
+    messages = []
+    dialog = _new_batch_config_dialog_for_test(
+        fact_card_dialogs.BATCH_FACT_CARD_KEEP,
+        {"personnel": fact_card_dialogs.BATCH_FACT_CARD_KEEP},
+        lambda *_args: applied.append(True),
+    )
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "showinfo",
+        lambda *args, **kwargs: messages.append((args, kwargs)),
+    )
+
+    dialog._on_confirm()
+
+    assert applied == []
+    assert dialog.result is None
+    assert dialog.destroyed is False
+    assert messages[0][0][0] == "无需应用"
+
+
+def test_batch_fact_card_config_dialog_confirmation_cancel_does_not_apply(monkeypatch):
+    applied = []
+    confirmations = []
+    dialog = _new_batch_config_dialog_for_test(
+        fact_card_dialogs.BATCH_FACT_CARD_ENABLE,
+        {"personnel": fact_card_dialogs.BATCH_FACT_CARD_EXCLUDE},
+        lambda *_args: applied.append(True),
+    )
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "askyesno",
+        lambda *args, **kwargs: confirmations.append((args, kwargs)) or False,
+    )
+
+    dialog._on_confirm()
+
+    assert applied == []
+    assert dialog.result is None
+    assert dialog.destroyed is False
+    assert "所选 46 个章节" in confirmations[0][0][1]
+    assert "全部启用事实卡片模式" in confirmations[0][0][1]
+    assert "人员配置全部排除" in confirmations[0][0][1]
+
+
+def test_batch_fact_card_config_dialog_apply_failure_keeps_window_open(monkeypatch):
+    errors = []
+    dialog = _new_batch_config_dialog_for_test(
+        fact_card_dialogs.BATCH_FACT_CARD_ENABLE,
+        {},
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("保存失败")),
+    )
+    monkeypatch.setattr(fact_card_dialogs.messagebox, "askyesno", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        fact_card_dialogs.messagebox,
+        "showerror",
+        lambda *args, **kwargs: errors.append((args, kwargs)),
+    )
+
+    dialog._on_confirm()
+
+    assert dialog.result is None
+    assert dialog.destroyed is False
+    assert "保存失败" in errors[0][0][1]
+
+
+def test_batch_fact_card_config_dialog_apply_success_returns_result(monkeypatch):
+    applied = []
+    dialog = _new_batch_config_dialog_for_test(
+        fact_card_dialogs.BATCH_FACT_CARD_ENABLE,
+        {"personnel": fact_card_dialogs.BATCH_FACT_CARD_EXCLUDE},
+        lambda mode, references: applied.append((mode, references)),
+    )
+    monkeypatch.setattr(fact_card_dialogs.messagebox, "askyesno", lambda *args, **kwargs: True)
+
+    dialog._on_confirm()
+
+    assert applied == [(True, {"personnel": False})]
+    assert dialog.result == fact_card_dialogs.BatchFactCardDialogResult(
+        should_reference_fact_cards=True,
+        card_references={"personnel": False},
+    )
+    assert dialog.destroyed is True
+
+
 def test_fact_card_extraction_workspace_dialog_save_returns_instruction_and_drafts():
     dialog = fact_card_dialogs.FactCardExtractionWorkspaceDialog.__new__(
         fact_card_dialogs.FactCardExtractionWorkspaceDialog

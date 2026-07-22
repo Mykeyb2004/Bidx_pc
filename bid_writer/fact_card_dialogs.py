@@ -42,6 +42,17 @@ FACT_CARD_STATUS_WRAP_MIN_WIDTH = 260
 FACT_CARD_STATUS_WRAP_RESERVED_WIDTH = 18
 FACT_CARD_DRAFT_DELETE_BUTTON_PADX = (16, 12)
 
+BATCH_FACT_CARD_KEEP = "keep"
+BATCH_FACT_CARD_ENABLE = "enable"
+BATCH_FACT_CARD_DISABLE = "disable"
+BATCH_FACT_CARD_INCLUDE = "include"
+BATCH_FACT_CARD_EXCLUDE = "exclude"
+BATCH_FACT_CARD_KEEP_LABEL = "保持各章节"
+BATCH_FACT_CARD_ENABLE_LABEL = "全部启用"
+BATCH_FACT_CARD_DISABLE_LABEL = "全部关闭"
+BATCH_FACT_CARD_INCLUDE_LABEL = "全部引用"
+BATCH_FACT_CARD_EXCLUDE_LABEL = "全部排除"
+
 
 @dataclass(frozen=True)
 class FactCardExtractionDialogResult:
@@ -63,6 +74,310 @@ class FactCardLibraryActionButtonSpec:
     bootstyle: str
     pack_side: str = tk.LEFT
     pack_padx: tuple[int, int] = (0, 6)
+
+
+@dataclass(frozen=True)
+class BatchFactCardDialogResult:
+    should_reference_fact_cards: bool | None
+    card_references: dict[str, bool]
+
+
+def _batch_fact_card_status_label(
+    count: int,
+    total: int,
+    *,
+    empty_label: str,
+    full_label: str,
+    mixed_label: str = "混合状态",
+) -> str:
+    if count <= 0:
+        return empty_label
+    if total > 0 and count >= total:
+        return full_label
+    return mixed_label
+
+
+def format_batch_fact_card_summary(summary: Any) -> str:
+    """将批量章节的有效事实卡片状态格式化为只读摘要。"""
+    total = int(getattr(summary, "total_chapters", 0) or 0)
+    enabled = int(getattr(summary, "reference_enabled_chapters", 0) or 0)
+    mode_status = _batch_fact_card_status_label(
+        enabled,
+        total,
+        empty_label="全部关闭",
+        full_label="全部启用",
+    )
+    lines = [f"事实卡片模式：{enabled}/{total} 个章节启用（{mode_status}）"]
+    cards = list(getattr(summary, "cards", []) or [])
+    if not cards:
+        lines.append("当前没有可用事实卡片。")
+        return "\n".join(lines)
+
+    for item in cards:
+        card = item.card
+        referenced = int(getattr(item, "referenced_chapters", 0) or 0)
+        status = _batch_fact_card_status_label(
+            referenced,
+            total,
+            empty_label="全部排除",
+            full_label="全部引用",
+        )
+        lines.append(f"{card.name}：{referenced}/{total} 个章节引用（{status}）")
+    return "\n".join(lines)
+
+
+def build_batch_fact_card_patch(
+    mode_choice: str,
+    card_choices: dict[str, str] | None = None,
+) -> BatchFactCardDialogResult:
+    """将批量配置窗口的三态选择转换为存储层补丁。"""
+    mode_values = {
+        BATCH_FACT_CARD_KEEP: None,
+        BATCH_FACT_CARD_ENABLE: True,
+        BATCH_FACT_CARD_DISABLE: False,
+    }
+    if mode_choice not in mode_values:
+        raise ValueError(f"未知事实卡片模式选项：{mode_choice}")
+
+    reference_values = {
+        BATCH_FACT_CARD_INCLUDE: True,
+        BATCH_FACT_CARD_EXCLUDE: False,
+    }
+    references: dict[str, bool] = {}
+    for card_id, choice in (card_choices or {}).items():
+        if choice == BATCH_FACT_CARD_KEEP:
+            continue
+        if choice not in reference_values:
+            raise ValueError(f"未知事实卡片引用选项：{choice}")
+        references[card_id] = reference_values[choice]
+    return BatchFactCardDialogResult(
+        should_reference_fact_cards=mode_values[mode_choice],
+        card_references=references,
+    )
+
+
+class BatchFactCardConfigDialog(tk.Toplevel):
+    """批量章节事实卡片默认配置窗口。"""
+
+    def __init__(
+        self,
+        master,
+        *,
+        summary: Any,
+        apply_callback: Callable[[bool | None, dict[str, bool]], Any],
+    ):
+        super().__init__(master)
+        self.summary = summary
+        self._apply_callback = apply_callback
+        self.result: BatchFactCardDialogResult | None = None
+        self._mode_var = tk.StringVar(value=BATCH_FACT_CARD_KEEP)
+        self._card_vars: dict[str, tk.StringVar] = {}
+        self._preview_var = tk.StringVar()
+
+        self.title("统一应用事实卡片配置")
+        setup_gui_theme(self)
+        apply_window_surface(self)
+        self.transient(master)
+        self.resizable(False, False)
+        self.grab_set()
+
+        ttk.Label(
+            self,
+            text=(
+                "默认保持各章节现有差异；只有选择“全部启用/关闭”或“全部引用/排除”\n"
+                "并确认后，才会写回所选章节配置。"
+            ),
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, padx=20, pady=(18, 12))
+
+        mode_frame = ttk.Frame(self)
+        mode_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        ttk.Label(mode_frame, text="事实卡片模式：").pack(side=tk.LEFT)
+        mode_box = ttk.Combobox(
+            mode_frame,
+            textvariable=self._mode_var,
+            values=(
+                BATCH_FACT_CARD_KEEP_LABEL,
+                BATCH_FACT_CARD_ENABLE_LABEL,
+                BATCH_FACT_CARD_DISABLE_LABEL,
+            ),
+            state="readonly",
+            width=14,
+        )
+        mode_box.current(0)
+        mode_box.pack(side=tk.LEFT, padx=(10, 0))
+
+        cards_frame = ttk.LabelFrame(self, text="事实卡片引用")
+        cards_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
+        for item in list(getattr(summary, "cards", []) or []):
+            card = item.card
+            row = ttk.Frame(cards_frame)
+            row.pack(fill=tk.X, padx=10, pady=4)
+            ttk.Label(row, text=f"{card.name}：").pack(side=tk.LEFT)
+            choice_var = tk.StringVar(value=BATCH_FACT_CARD_KEEP)
+            self._card_vars[card.id] = choice_var
+            choice_box = ttk.Combobox(
+                row,
+                textvariable=choice_var,
+                values=(
+                    BATCH_FACT_CARD_KEEP_LABEL,
+                    BATCH_FACT_CARD_INCLUDE_LABEL,
+                    BATCH_FACT_CARD_EXCLUDE_LABEL,
+                ),
+                state="readonly",
+                width=14,
+            )
+            choice_box.current(0)
+            choice_box.pack(side=tk.LEFT, padx=(10, 0))
+
+        ttk.Label(
+            self,
+            textvariable=self._preview_var,
+            justify=tk.LEFT,
+            wraplength=760,
+        ).pack(fill=tk.X, padx=20, pady=(0, 12))
+        self._mode_var.trace_add("write", self._update_preview)
+        for choice_var in self._card_vars.values():
+            choice_var.trace_add("write", self._update_preview)
+        self._update_preview()
+
+        button_frame = ttk.Frame(self)
+        button_frame.pack(pady=(0, 18))
+        ttk.Button(
+            button_frame,
+            text="确认应用",
+            command=self._on_confirm,
+            width=14,
+            **_bootstyle_kwargs("primary"),
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            button_frame,
+            text="取消",
+            command=self.destroy,
+            width=10,
+            **_bootstyle_kwargs("secondary"),
+        ).pack(side=tk.LEFT, padx=5)
+
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        window_size = _compute_screen_limited_dialog_size(
+            desired_width=max(self.winfo_reqwidth(), 680),
+            desired_height=max(self.winfo_reqheight(), 360),
+            min_width=680,
+            min_height=360,
+            screen_width=self.winfo_screenwidth(),
+            screen_height=self.winfo_screenheight(),
+        )
+        _set_centered_window_geometry(self, window_size.width, window_size.height)
+        self.minsize(window_size.min_width, window_size.min_height)
+
+    @classmethod
+    def show(
+        cls,
+        master,
+        *,
+        summary: Any,
+        apply_callback: Callable[[bool | None, dict[str, bool]], Any],
+    ) -> BatchFactCardDialogResult | None:
+        dialog = cls(master, summary=summary, apply_callback=apply_callback)
+        master.wait_window(dialog)
+        return dialog.result
+
+    def _current_choices(self) -> tuple[str, dict[str, str]]:
+        mode_choice = self._mode_var.get()
+        mode_by_label = {
+            BATCH_FACT_CARD_KEEP_LABEL: BATCH_FACT_CARD_KEEP,
+            BATCH_FACT_CARD_ENABLE_LABEL: BATCH_FACT_CARD_ENABLE,
+            BATCH_FACT_CARD_DISABLE_LABEL: BATCH_FACT_CARD_DISABLE,
+        }
+        card_by_label = {
+            BATCH_FACT_CARD_KEEP_LABEL: BATCH_FACT_CARD_KEEP,
+            BATCH_FACT_CARD_INCLUDE_LABEL: BATCH_FACT_CARD_INCLUDE,
+            BATCH_FACT_CARD_EXCLUDE_LABEL: BATCH_FACT_CARD_EXCLUDE,
+        }
+        return (
+            mode_by_label.get(mode_choice, mode_choice),
+            {
+                card_id: card_by_label.get(choice_var.get(), choice_var.get())
+                for card_id, choice_var in self._card_vars.items()
+            },
+        )
+
+    def _build_result(self) -> BatchFactCardDialogResult:
+        mode_choice, card_choices = self._current_choices()
+        return build_batch_fact_card_patch(mode_choice, card_choices)
+
+    def _card_display_name(self, card_id: str) -> str:
+        for item in list(getattr(self.summary, "cards", []) or []):
+            if item.card.id == card_id:
+                return item.card.name
+        return card_id
+
+    def _update_preview(self, *_args) -> None:
+        try:
+            patch = self._build_result()
+        except ValueError as exc:
+            self._preview_var.set(str(exc))
+            return
+        changes: list[str] = []
+        if patch.should_reference_fact_cards is True:
+            changes.append("模式全部启用")
+        elif patch.should_reference_fact_cards is False:
+            changes.append("模式全部关闭")
+        for card_id, include in patch.card_references.items():
+            card_name = self._card_display_name(card_id)
+            changes.append(f"卡片 {card_name} 全部引用" if include else f"卡片 {card_name} 全部排除")
+        if not changes:
+            self._preview_var.set("当前选择：保持各章节差异，不会写入配置。")
+            return
+        self._preview_var.set(
+            f"将统一修改所选 {self.summary.total_chapters} 个章节：" + "；".join(changes)
+        )
+
+    def _on_confirm(self) -> None:
+        try:
+            result = self._build_result()
+        except ValueError as exc:
+            messagebox.showerror("配置无效", str(exc), parent=self)
+            return
+        if result.should_reference_fact_cards is None and not result.card_references:
+            messagebox.showinfo(
+                "无需应用",
+                "当前没有明确的统一修改，不会写入章节配置。",
+                parent=self,
+            )
+            return
+        changes: list[str] = []
+        if result.should_reference_fact_cards is True:
+            changes.append("全部启用事实卡片模式")
+        elif result.should_reference_fact_cards is False:
+            changes.append("全部关闭事实卡片模式")
+        changes.extend(
+            f"{self._card_display_name(card_id)}全部引用"
+            if include
+            else f"{self._card_display_name(card_id)}全部排除"
+            for card_id, include in result.card_references.items()
+        )
+        if not messagebox.askyesno(
+            "确认统一应用",
+            f"将修改所选 {self.summary.total_chapters} 个章节：\n" + "\n".join(changes),
+            parent=self,
+        ):
+            return
+        try:
+            self._apply_callback(
+                result.should_reference_fact_cards,
+                result.card_references,
+            )
+        except Exception as exc:
+            messagebox.showerror(
+                "应用失败",
+                f"统一应用事实卡片配置失败：{exc}",
+                parent=self,
+            )
+            return
+        self.result = result
+        self.destroy()
 
 
 class ScrollableBody(ttk.Frame):
