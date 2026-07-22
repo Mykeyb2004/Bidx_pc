@@ -61,6 +61,18 @@ class _FakeProgressBar:
         self.config_calls.append(kwargs)
 
 
+class _FakeAdapter:
+    def __init__(self, status="未开始", progress=(0, 0)):
+        self.status = status
+        self.progress = progress
+
+    def get_status_text(self, _heading):
+        return self.status
+
+    def get_progress(self, _heading):
+        return self.progress
+
+
 def _heading(title: str, *, children=None):
     return SimpleNamespace(title=title, full_path=f"根 > {title}", children=children or [])
 
@@ -217,4 +229,122 @@ def test_do_batch_generate_refreshes_completed_status_before_next_heading():
         ("generate", "质量控制"),
         ("refresh", ("质量控制",)),
         ("generate", "服务保障"),
+    ]
+
+
+def test_refresh_workspace_updates_single_selection_while_generating():
+    heading = _heading("服务保障")
+    previews: list[str] = []
+    summaries: list[int] = []
+    idle_calls: list[bool] = []
+    window = SimpleNamespace(
+        is_generating=True,
+        _get_selected_leaf_headings=lambda: [heading],
+        _show_heading_preview_in_workspace=lambda selected: previews.append(selected.full_path),
+        _show_workspace_selection_summary=lambda count: summaries.append(count),
+        _show_workspace_idle=lambda: idle_calls.append(True),
+    )
+
+    MainWindow._refresh_workspace_from_selection(window)
+
+    assert previews == [heading.full_path]
+    assert summaries == []
+    assert idle_calls == []
+    assert window._workspace_view_heading_path == heading.full_path
+
+
+def test_generation_queue_does_not_overwrite_workspace_when_viewing_other_heading():
+    heading = _heading("质量控制")
+    workspace_updates: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    start_calls: list[str] = []
+    parent = SimpleNamespace(
+        _show_generation_start_in_workspace=lambda selected: start_calls.append(selected.full_path),
+        _should_show_generation_updates=lambda selected: False,
+        _set_workspace_text=lambda *args, **kwargs: workspace_updates.append((args, kwargs)),
+        _workspace_generation_buffers={},
+        workspace_meta_var=_FakeVar(),
+        status_text=_FakeVar(),
+    )
+
+    session = MainWindow.GenerationSession(parent, heading)
+    session.is_generating = True
+    session.text_queue.put(("text", "流式正文"))
+    session.text_queue.put(("replace", "修复后正文"))
+    session.text_queue.put(("status", "正在接收模型输出..."))
+    session.text_queue.put(("done", ("修复后正文", 6, None)))
+
+    session._check_queue()
+
+    assert start_calls == [heading.full_path]
+    assert workspace_updates == []
+    assert parent._workspace_generation_buffers == {heading.full_path: "修复后正文"}
+    assert parent.workspace_meta_var.values == []
+    assert parent.status_text.values == [f"{heading.title}：正在接收模型输出..."]
+
+
+def test_generation_start_does_not_overwrite_workspace_when_viewing_other_heading():
+    generating_heading = _heading("质量控制")
+    viewed_heading = _heading("服务保障")
+    messages: list[tuple[str, str, str]] = []
+    window = SimpleNamespace(
+        _workspace_view_heading_path=viewed_heading.full_path,
+        _show_workspace_message=lambda heading_text, meta_text, body_text, **_kwargs: messages.append(
+            (heading_text, meta_text, body_text)
+        ),
+    )
+
+    MainWindow._show_generation_start_in_workspace(window, generating_heading)
+
+    assert messages == []
+
+
+def test_heading_tree_status_marks_current_generating_leaf():
+    heading = _heading("质量控制")
+    window = SimpleNamespace(
+        adapter=_FakeAdapter(status="未开始"),
+        _current_generation_heading_path=heading.full_path,
+        _status_to_row_tag=MainWindow._status_to_row_tag,
+    )
+
+    status, progress_info, row_tag = MainWindow._get_heading_tree_row_values(window, heading)
+
+    assert status == "正在生成"
+    assert progress_info == "-"
+    assert row_tag == "generating"
+
+
+def test_status_filter_uses_current_generating_status_override():
+    heading = _heading("质量控制")
+    window = SimpleNamespace(
+        adapter=_FakeAdapter(status="未开始"),
+        _current_generation_heading_path=heading.full_path,
+    )
+
+    assert MainWindow._heading_matches_status_filter(window, heading, "正在生成")
+    assert not MainWindow._heading_matches_status_filter(window, heading, "未开始")
+
+
+def test_heading_preview_uses_live_buffer_for_current_generating_heading():
+    heading = _heading("质量控制")
+    messages: list[tuple[str, str, str, dict[str, object]]] = []
+    window = SimpleNamespace(
+        _current_generation_heading_path=heading.full_path,
+        _workspace_generation_buffers={heading.full_path: "已收到的正文片段"},
+        bid_writer=SimpleNamespace(
+            file_saver=SimpleNamespace(find_existing_filepath=lambda _heading: None)
+        ),
+        _show_workspace_message=lambda heading_text, meta_text, body_text, **kwargs: messages.append(
+            (heading_text, meta_text, body_text, kwargs)
+        ),
+    )
+
+    MainWindow._show_heading_preview_in_workspace(window, heading)
+
+    assert messages == [
+        (
+            f"当前章节：{heading.full_path}",
+            "正在生成正文",
+            "已收到的正文片段",
+            {"generated_char_count": gui._count_text_characters("已收到的正文片段")},
+        )
     ]

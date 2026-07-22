@@ -1804,6 +1804,9 @@ class MainWindow(tk.Tk):
         self._action_layout_mode = ""
         self._control_layout_mode = ""
         self._preserve_workspace_on_sync = False
+        self._workspace_view_heading_path: Optional[str] = None
+        self._current_generation_heading_path: Optional[str] = None
+        self._workspace_generation_buffers: dict[str, str] = {}
         self.is_modal_workflow_active = False
         self._outline_tree_tooltips: dict[str, str] = {}
         self._env_local_prompted_dirs: set[Path] = set()
@@ -2334,6 +2337,10 @@ class MainWindow(tk.Tk):
         self.workspace_meta_var.set(meta_text)
         self._set_workspace_text(body_text, generated_char_count=generated_char_count)
 
+    def _should_show_generation_updates(self, heading: HeadingNode) -> bool:
+        view_heading_path = getattr(self, "_workspace_view_heading_path", None)
+        return view_heading_path is None or view_heading_path == heading.full_path
+
     def _show_workspace_idle(self) -> None:
         """正文工作区空状态。"""
         self._show_workspace_message(
@@ -2354,6 +2361,16 @@ class MainWindow(tk.Tk):
 
     def _show_heading_preview_in_workspace(self, heading: HeadingNode) -> None:
         """在主窗口右侧显示指定章节的已生成正文。"""
+        if getattr(self, "_current_generation_heading_path", None) == heading.full_path:
+            content = getattr(self, "_workspace_generation_buffers", {}).get(heading.full_path, "")
+            self._show_workspace_message(
+                f"当前章节：{heading.full_path}",
+                "正在生成正文",
+                content,
+                generated_char_count=_count_text_characters(content),
+            )
+            return
+
         filepath = self.bid_writer.file_saver.find_existing_filepath(heading)
         if filepath and filepath.exists():
             content = filepath.read_text(encoding="utf-8")
@@ -2374,19 +2391,22 @@ class MainWindow(tk.Tk):
 
     def _refresh_workspace_from_selection(self) -> None:
         """按当前选择刷新右侧工作区内容。"""
-        if self.is_generating:
-            return
-
         selected_headings = self._get_selected_leaf_headings()
         if len(selected_headings) == 1:
-            self._show_heading_preview_in_workspace(selected_headings[0])
+            heading = selected_headings[0]
+            self._workspace_view_heading_path = heading.full_path
+            self._show_heading_preview_in_workspace(heading)
         elif len(selected_headings) > 1:
+            self._workspace_view_heading_path = None
             self._show_workspace_selection_summary(len(selected_headings))
         else:
+            self._workspace_view_heading_path = None
             self._show_workspace_idle()
 
     def _show_generation_start_in_workspace(self, heading: HeadingNode) -> None:
         """在右侧工作区初始化当前章节的流式生成视图。"""
+        if not MainWindow._should_show_generation_updates(self, heading):
+            return
         self._show_workspace_message(
             f"当前章节：{heading.full_path}",
             "正在准备扩写请求...",
@@ -2402,6 +2422,8 @@ class MainWindow(tk.Tk):
         meta_text: str,
     ) -> None:
         """在右侧工作区显示当前章节正文。"""
+        if not MainWindow._should_show_generation_updates(self, heading):
+            return
         self._show_workspace_message(
             f"当前章节：{heading.full_path}",
             meta_text,
@@ -2415,6 +2437,8 @@ class MainWindow(tk.Tk):
         feedback: GenerationErrorFeedback,
     ) -> None:
         """将扩写失败信息直接写到右侧工作区。"""
+        if not MainWindow._should_show_generation_updates(self, heading):
+            return
         heading_text = f"当前章节：{heading.full_path}"
         if feedback.append_to_workspace:
             self.workspace_heading_var.set(heading_text)
@@ -2799,7 +2823,12 @@ class MainWindow(tk.Tk):
         if status_filter == "全部":
             return True
 
-        status = self.adapter.get_status_text(heading)
+        current_generation_path = getattr(self, "_current_generation_heading_path", None)
+        status = (
+            "正在生成"
+            if current_generation_path == heading.full_path
+            else self.adapter.get_status_text(heading)
+        )
         if status_filter == "已生成":
             return status in {"已完成", "部分完成"}
         return status == status_filter
@@ -2965,6 +2994,8 @@ class MainWindow(tk.Tk):
 
     @staticmethod
     def _status_to_row_tag(status: str) -> str:
+        if status == "正在生成":
+            return "generating"
         if status == "已完成":
             return "completed"
         if status == "部分完成":
@@ -2973,12 +3004,28 @@ class MainWindow(tk.Tk):
 
     def _get_heading_tree_row_values(self, heading: HeadingNode) -> tuple[str, str, str]:
         """返回树节点展示所需的状态、进度和颜色标签。"""
-        status = self.adapter.get_status_text(heading)
+        current_generation_path = getattr(self, "_current_generation_heading_path", None)
+        status = (
+            "正在生成"
+            if current_generation_path == heading.full_path
+            else self.adapter.get_status_text(heading)
+        )
         progress_info = "-"
         if heading.children:
             generated, total = self.adapter.get_progress(heading)
             progress_info = f"{generated}/{total}" if total > 0 else "-"
         return status, progress_info, self._status_to_row_tag(status)
+
+    def _refresh_heading_tree_row(self, heading: HeadingNode) -> None:
+        """刷新单个大纲树节点的状态列。"""
+        if not hasattr(self, "outline_tree") or not hasattr(self, "tree_node_map"):
+            return
+        for item_id, node in self.tree_node_map.items():
+            if node.full_path != heading.full_path:
+                continue
+            status, progress_info, row_tag = self._get_heading_tree_row_values(node)
+            self.outline_tree.item(item_id, values=(status, progress_info), tags=(row_tag,))
+            return
 
     def _resize_outline_tree_columns(self, total_width: int) -> None:
         """按当前目录栏宽度重算大纲树三列。"""
@@ -2996,6 +3043,7 @@ class MainWindow(tk.Tk):
         tree.tag_configure("completed", foreground="#1f7a4d")
         tree.tag_configure("partial", foreground="#8a5a00")
         tree.tag_configure("pending", foreground="#666666")
+        tree.tag_configure("generating", foreground="#0f5ea8")
         tree.tag_configure(
             "current_focus",
             background=palette.surface_background,
@@ -3524,6 +3572,8 @@ class MainWindow(tk.Tk):
 
         self.is_generating = True
         self.stop_requested = False
+        if total > 1:
+            self._workspace_view_heading_path = None
         self.progress_bar.configure(maximum=max(total, 1), value=0)
         self.batch_progress_text.set(f"0 / {total}")
         self.task_text.set("当前任务: 准备开始")
@@ -3541,16 +3591,22 @@ class MainWindow(tk.Tk):
                 self.status_text.set(f"[{i}/{total}] 正在生成: {heading.title}")
                 self.update_idletasks()
 
-                result = self._generate_into_workspace(
-                    heading,
-                    additional_requirements,
-                    target_words,
-                    max_mermaid_flowcharts_per_section,
-                    fact_card_mode=fact_card_mode,
-                    manual_fact_card_selections=manual_fact_card_selections if total == 1 else None,
-                    auto_extract_facts=auto_extract_facts,
-                    show_error_dialog=(total == 1),
-                )
+                self._current_generation_heading_path = heading.full_path
+                MainWindow._refresh_heading_tree_row(self, heading)
+                try:
+                    result = self._generate_into_workspace(
+                        heading,
+                        additional_requirements,
+                        target_words,
+                        max_mermaid_flowcharts_per_section,
+                        fact_card_mode=fact_card_mode,
+                        manual_fact_card_selections=manual_fact_card_selections if total == 1 else None,
+                        auto_extract_facts=auto_extract_facts,
+                        show_error_dialog=(total == 1),
+                    )
+                finally:
+                    self._current_generation_heading_path = None
+                    MainWindow._refresh_heading_tree_row(self, heading)
 
                 completed_count = i
                 self.progress_bar.configure(value=i)
@@ -3581,6 +3637,7 @@ class MainWindow(tk.Tk):
         finally:
             self.is_generating = False
             self.stop_requested = False
+            self._current_generation_heading_path = None
             self.update_action_states()
 
         self.progress_bar.configure(value=(completed_count if stopped_early else total))
@@ -4501,6 +4558,9 @@ class MainWindow(tk.Tk):
             self.error: Optional[GenerationErrorFeedback] = None
             self.result_data = None
             self._queue_poll_id = None
+            if not hasattr(self.parent, "_workspace_generation_buffers"):
+                self.parent._workspace_generation_buffers = {}
+            self.parent._workspace_generation_buffers[heading.full_path] = ""
             self.parent._show_generation_start_in_workspace(heading)
 
         @staticmethod
@@ -4525,33 +4585,45 @@ class MainWindow(tk.Tk):
             try:
                 while True:
                     msg_type, data = self.text_queue.get_nowait()
+                    show_workspace_updates = self.parent._should_show_generation_updates(self.heading)
+                    generation_buffers = getattr(self.parent, "_workspace_generation_buffers", None)
 
                     if msg_type == "text":
-                        # 追加文本
-                        self.parent._set_workspace_text(
-                            data,
-                            append=True,
-                            scroll_to_end=True,
-                        )
+                        if isinstance(generation_buffers, dict):
+                            generation_buffers[self.heading.full_path] = (
+                                generation_buffers.get(self.heading.full_path, "") + data
+                            )
+                        if show_workspace_updates:
+                            # 追加文本
+                            self.parent._set_workspace_text(
+                                data,
+                                append=True,
+                                scroll_to_end=True,
+                            )
 
                     elif msg_type == "replace":
-                        # 后处理修复了格式，替换整个显示内容
-                        self.parent._set_workspace_text(
-                            data,
-                            generated_char_count=_count_text_characters(data),
-                        )
-                        if hasattr(self.parent, "workspace_meta_var"):
-                            self.parent.workspace_meta_var.set("格式已自动修复")
+                        if isinstance(generation_buffers, dict):
+                            generation_buffers[self.heading.full_path] = data
+                        if show_workspace_updates:
+                            # 后处理修复了格式，替换整个显示内容
+                            self.parent._set_workspace_text(
+                                data,
+                                generated_char_count=_count_text_characters(data),
+                            )
+                            if hasattr(self.parent, "workspace_meta_var"):
+                                self.parent.workspace_meta_var.set("格式已自动修复")
 
                     elif msg_type == "status":
                         # 更新状态
-                        if hasattr(self.parent, "workspace_meta_var"):
+                        if show_workspace_updates and hasattr(self.parent, "workspace_meta_var"):
                             self.parent.workspace_meta_var.set(data)
                         if hasattr(self.parent, "status_text"):
                             self.parent.status_text.set(f"{self.heading.title}：{data}")
 
                     elif msg_type == "done":
                         # 生成完成
+                        if isinstance(generation_buffers, dict):
+                            generation_buffers[self.heading.full_path] = data[0]
                         self.is_generating = False
                         self.result_data = data
                         self._cancel_queue_poll()
