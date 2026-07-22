@@ -56,11 +56,11 @@ def test_generation_trace_records_reasoning_effort(tmp_path: Path):
     assert session._sanitize_request_options()["reasoning_effort"] == "xhigh"
 
 
-def test_invalid_outline_reasoning_effort_falls_back_to_primary_setting(tmp_path: Path):
+def test_invalid_outline_reasoning_effort_is_treated_as_unset(tmp_path: Path):
     config = _config(
         tmp_path,
         "BID_WRITER_REASONING_EFFORT=high\n"
         "BID_WRITER_OUTLINE_REASONING_EFFORT=unsupported\n",
     )
 
-    assert config.outline_reasoning_effort == "high"
+    assert config.outline_reasoning_effort is None
