@@ -148,6 +148,7 @@ def test_model_settings_are_loaded_from_env_local_and_not_yaml(monkeypatch, tmp_
         "BID_WRITER_MAX_RETRIES",
         "BID_WRITER_TOP_P",
         "BID_WRITER_SEED",
+        "BID_WRITER_REASONING_EFFORT",
         "BID_WRITER_PRUNING_API_BASE_URL",
         "BID_WRITER_PRUNING_API_KEY",
         "BID_WRITER_PRUNING_MODEL",
@@ -775,6 +776,7 @@ def test_outline_model_settings_prefer_outline_env_and_fallback_to_generation(mo
         "BID_WRITER_OUTLINE_MAX_RETRIES",
         "BID_WRITER_OUTLINE_TOP_P",
         "BID_WRITER_OUTLINE_SEED",
+        "BID_WRITER_OUTLINE_REASONING_EFFORT",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -811,3 +813,56 @@ def test_outline_model_settings_prefer_outline_env_and_fallback_to_generation(mo
     assert config.outline_max_retries == 3
     assert config.outline_top_p == 0.9
     assert config.outline_seed == 100
+
+
+def test_reasoning_effort_settings_prefer_outline_and_fallback_to_generation(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_REASONING_EFFORT",
+        "BID_WRITER_OUTLINE_REASONING_EFFORT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("project: {}\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text(
+        "BID_WRITER_REASONING_EFFORT=high\n"
+        "BID_WRITER_OUTLINE_REASONING_EFFORT=low\n",
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.reasoning_effort == "high"
+    assert config.outline_reasoning_effort == "low"
+
+
+def test_outline_reasoning_effort_falls_back_to_generation_setting(monkeypatch, tmp_path: Path):
+    for key in (
+        "BID_WRITER_REASONING_EFFORT",
+        "BID_WRITER_OUTLINE_REASONING_EFFORT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("project: {}\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text(
+        "BID_WRITER_REASONING_EFFORT=medium\n",
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.reasoning_effort == "medium"
+    assert config.outline_reasoning_effort == "medium"
+
+
+def test_invalid_reasoning_effort_is_treated_as_unset(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("BID_WRITER_REASONING_EFFORT", "unsupported")
+    monkeypatch.delenv("BID_WRITER_OUTLINE_REASONING_EFFORT", raising=False)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("project: {}\n", encoding="utf-8")
+
+    config = Config(str(config_path))
+
+    assert config.reasoning_effort is None
+    assert config.outline_reasoning_effort is None

@@ -133,6 +133,8 @@ class GenerationTraceSession:
             payload["top_p"] = self.request_options.get("top_p")
         if "seed" in self.request_options:
             payload["seed"] = self.request_options.get("seed")
+        if "reasoning_effort" in self.request_options:
+            payload["reasoning_effort"] = self.request_options.get("reasoning_effort")
 
         if not self.config.generation_trace_redact_sensitive:
             payload["api_base_url"] = self.config.api_base_url

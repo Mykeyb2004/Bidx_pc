@@ -274,6 +274,8 @@ BID_WRITER_TEMPERATURE=0.7
 BID_WRITER_MAX_TOKENS=10000
 BID_WRITER_TIMEOUT_SECONDS=120
 BID_WRITER_MAX_RETRIES=3
+# 可选：none / minimal / low / medium / high / xhigh；未设置时使用模型默认值
+BID_WRITER_REASONING_EFFORT=medium
 
 BID_WRITER_OUTLINE_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_OUTLINE_API_KEY=your-api-key
@@ -284,6 +286,8 @@ BID_WRITER_OUTLINE_TIMEOUT_SECONDS=120
 BID_WRITER_OUTLINE_MAX_RETRIES=3
 BID_WRITER_OUTLINE_TOP_P=0.95
 BID_WRITER_OUTLINE_SEED=42
+# 可选；未设置时回退 BID_WRITER_REASONING_EFFORT
+BID_WRITER_OUTLINE_REASONING_EFFORT=medium
 
 BID_WRITER_PRUNING_API_BASE_URL=https://api.openai.com/v1
 BID_WRITER_PRUNING_API_KEY=your-api-key
@@ -305,6 +309,9 @@ BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 - `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
 - 外部 shell 中已设置的环境变量优先级最高，其次是配置文件同目录下的 `.env.local`，再其次是 `.env`
 - 大纲生成参数读取优先级为 `BID_WRITER_OUTLINE_*`、对应的 `BID_WRITER_*`、代码默认值。
+- `BID_WRITER_REASONING_EFFORT` 控制正文章节生成的推理强度，支持 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`；未设置或填写无效值时不发送 `reasoning_effort`，由模型/代理使用自身默认值。
+- `BID_WRITER_OUTLINE_REASONING_EFFORT` 独立控制大纲生成；未设置或填写无效值时回退 `BID_WRITER_REASONING_EFFORT`，仍未设置则不发送该字段。
+- 该参数只作用于正文扩写和大纲生成的主模型请求；章节裁剪、项目背景摘要、章节写作计划等辅助模型调用保持原有配置。
 - `embedding_cache` 默认创建在执行入口文件同级目录，不再通过 YAML 配置
 
 ### 3.6 `runtime`
