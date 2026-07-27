@@ -31,6 +31,11 @@ from .ai_writer import GenerationCancelledError
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
 from .outline_prepare import set_outline_locked
+from .writing_plan_store import (
+    WritingPlanSnapshot,
+    WritingPlanStoreError,
+    extract_node_number,
+)
 from .gui_state import (
     get_default_base_dir,
     get_startup_config_candidates,
@@ -4341,6 +4346,7 @@ class MainWindow(tk.Tk):
         headings: list[HeadingNode],
         *,
         initial_requirements: str = "",
+        writing_plan_snapshot: WritingPlanSnapshot | None = None,
     ):
         """
         获取生成参数对话框
@@ -4367,15 +4373,172 @@ class MainWindow(tk.Tk):
         fact_card_mode_var = tk.BooleanVar(value=False)
         ignore_all_fact_cards_var = tk.BooleanVar(value=False)
 
-        # 附加要求
-        ttk.Label(dialog, text="附加扩写要求：", style="SectionTitle.TLabel").pack(
+        writing_plan_enabled = bool(
+            is_single_heading and self.bid_writer.writing_plan_store is not None
+        )
+        writing_plan_node = (
+            extract_node_number(headings[0].title) if writing_plan_enabled else None
+        )
+        current_writing_plan_snapshot = writing_plan_snapshot
+        writing_plan_load_error: WritingPlanStoreError | None = None
+        if writing_plan_enabled and current_writing_plan_snapshot is None:
+            try:
+                current_writing_plan_snapshot = self.bid_writer.load_writing_plan_snapshot()
+            except WritingPlanStoreError as exc:
+                writing_plan_load_error = exc
+                messagebox.showerror(
+                    "撰写计划加载失败",
+                    str(exc),
+                    parent=dialog,
+                )
+
+        requirement_label = (
+            "节点撰写计划（附加扩写要求）："
+            if writing_plan_enabled
+            else "附加扩写要求："
+        )
+        ttk.Label(dialog, text=requirement_label, style="SectionTitle.TLabel").pack(
             pady=(20, 5), padx=20, anchor=tk.W
         )
 
         req_text = tk.Text(dialog, height=5, width=60)
         style_text_widget(req_text)
         req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
-        req_text.insert('1.0', initial_requirements)
+        if (
+            writing_plan_enabled
+            and current_writing_plan_snapshot is not None
+            and writing_plan_node is not None
+        ):
+            initial_plan_text = current_writing_plan_snapshot.get(writing_plan_node) or ""
+        else:
+            initial_plan_text = initial_requirements
+        req_text.insert('1.0', initial_plan_text)
+
+        writing_plan_dirty = False
+        writing_plan_status_var = None
+        save_writing_plan_button = None
+        reload_writing_plan_button = None
+        start_button = None
+
+        def writing_plan_status_text() -> str:
+            if writing_plan_node is None:
+                return "当前节点无可用编号；此处内容仅用于本次生成"
+            if writing_plan_load_error is not None:
+                return f"节点编号：{writing_plan_node}；撰写计划加载失败"
+            state = "未保存" if writing_plan_dirty else "已保存"
+            return f"节点编号：{writing_plan_node}；{state}"
+
+        def refresh_writing_plan_status() -> None:
+            if writing_plan_status_var is not None:
+                writing_plan_status_var.set(writing_plan_status_text())
+
+        def replace_writing_plan_text(text: str) -> None:
+            req_text.delete("1.0", tk.END)
+            req_text.insert("1.0", text)
+            if hasattr(req_text, "edit_modified"):
+                req_text.edit_modified(False)
+
+        def on_writing_plan_modified(_event=None) -> None:
+            nonlocal writing_plan_dirty
+            if hasattr(req_text, "edit_modified") and not req_text.edit_modified():
+                return
+            writing_plan_dirty = True
+            refresh_writing_plan_status()
+            if hasattr(req_text, "edit_modified"):
+                req_text.edit_modified(False)
+
+        def save_current_writing_plan(show_message: bool) -> bool:
+            nonlocal current_writing_plan_snapshot, writing_plan_dirty
+            if not writing_plan_enabled or writing_plan_node is None:
+                return True
+            if current_writing_plan_snapshot is None:
+                return False
+            raw_text = req_text.get("1.0", "end-1c")
+            try:
+                current_writing_plan_snapshot = self.bid_writer.save_writing_plan(
+                    writing_plan_node,
+                    raw_text,
+                    current_writing_plan_snapshot,
+                )
+            except WritingPlanStoreError as exc:
+                messagebox.showerror(
+                    "撰写计划保存失败",
+                    str(exc),
+                    parent=dialog,
+                )
+                return False
+            writing_plan_dirty = False
+            refresh_writing_plan_status()
+            if show_message:
+                messagebox.showinfo(
+                    "已保存",
+                    f"已保存节点 {writing_plan_node} 的撰写计划。",
+                    parent=dialog,
+                )
+            return True
+
+        def reload_current_writing_plan() -> None:
+            nonlocal current_writing_plan_snapshot, writing_plan_dirty
+            nonlocal writing_plan_load_error
+            if not writing_plan_enabled or writing_plan_node is None:
+                return
+            if writing_plan_dirty and not messagebox.askyesno(
+                "重新加载撰写计划",
+                "当前撰写计划尚未保存，是否放弃本地修改并重新加载？",
+                parent=dialog,
+            ):
+                return
+            try:
+                refreshed_snapshot = self.bid_writer.load_writing_plan_snapshot()
+            except WritingPlanStoreError as exc:
+                messagebox.showerror(
+                    "撰写计划加载失败",
+                    str(exc),
+                    parent=dialog,
+                )
+                return
+            current_writing_plan_snapshot = refreshed_snapshot
+            writing_plan_load_error = None
+            replace_writing_plan_text(refreshed_snapshot.get(writing_plan_node) or "")
+            writing_plan_dirty = False
+            refresh_writing_plan_status()
+            if save_writing_plan_button is not None:
+                save_writing_plan_button.configure(state="normal")
+            if start_button is not None:
+                start_button.configure(state="normal")
+
+        if writing_plan_enabled:
+            writing_plan_status_var = tk.StringVar(value=writing_plan_status_text())
+            ttk.Label(
+                dialog,
+                textvariable=writing_plan_status_var,
+                style="SummaryLabel.TLabel",
+            ).pack(padx=20, anchor=tk.W)
+            writing_plan_action_frame = ttk.Frame(dialog)
+            writing_plan_action_frame.pack(pady=(5, 0), padx=20, fill=tk.X)
+            save_writing_plan_button = ttk.Button(
+                writing_plan_action_frame,
+                text="保存撰写计划",
+                command=lambda: save_current_writing_plan(show_message=True),
+                width=16,
+                **_bootstyle_kwargs("secondary"),
+            )
+            save_writing_plan_button.pack(side=tk.LEFT, padx=(0, 5))
+            reload_writing_plan_button = ttk.Button(
+                writing_plan_action_frame,
+                text="重新加载撰写计划",
+                command=reload_current_writing_plan,
+                width=20,
+                **_bootstyle_kwargs("secondary"),
+            )
+            reload_writing_plan_button.pack(side=tk.LEFT)
+            if writing_plan_node is None or writing_plan_load_error is not None:
+                save_writing_plan_button.configure(state="disabled")
+            if writing_plan_node is None:
+                reload_writing_plan_button.configure(state="disabled")
+            req_text.bind("<<Modified>>", on_writing_plan_modified)
+            if hasattr(req_text, "edit_modified"):
+                req_text.edit_modified(False)
 
         # 目标篇幅基准值
         words_frame = ttk.Frame(dialog)
@@ -4578,6 +4741,8 @@ class MainWindow(tk.Tk):
             save_fact_card_references(show_message=True)
 
         def on_start_generation():
+            if writing_plan_enabled and not save_current_writing_plan(show_message=False):
+                return
             try:
                 target_words = words_var.get()
                 if target_words < target_words_min or target_words > target_words_max:
@@ -4588,7 +4753,12 @@ class MainWindow(tk.Tk):
                     )
                     return
 
-                additional_req = req_text.get('1.0', tk.END).strip()
+                additional_req = req_text.get(
+                    "1.0",
+                    "end-1c" if writing_plan_enabled else tk.END,
+                )
+                if not writing_plan_enabled:
+                    additional_req = additional_req.strip()
                 max_mermaid_flowcharts_per_section = mermaid_var.get()
                 if max_mermaid_flowcharts_per_section < 0:
                     messagebox.showwarning("警告", "Mermaid图示上限不能小于 0", parent=dialog)
@@ -4625,7 +4795,17 @@ class MainWindow(tk.Tk):
                     parent=dialog,
                 )
 
-        def on_cancel():
+        def on_close():
+            if writing_plan_enabled and writing_plan_node is not None and writing_plan_dirty:
+                decision = messagebox.askyesnocancel(
+                    "关闭生成参数",
+                    "当前节点撰写计划尚未保存。是否保存后关闭？",
+                    parent=dialog,
+                )
+                if decision is None:
+                    return
+                if decision and not save_current_writing_plan(show_message=False):
+                    return
             dialog.destroy()
 
         if is_single_heading:
@@ -4639,20 +4819,24 @@ class MainWindow(tk.Tk):
             save_defaults_button.pack(side=tk.LEFT, padx=5)
             if fact_card_panel is None:
                 save_defaults_button.configure(state="disabled")
-        ttk.Button(
+        start_button = ttk.Button(
             button_frame,
             text="开始扩写",
             command=on_start_generation,
             width=12,
             **_bootstyle_kwargs("primary")
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        start_button.pack(side=tk.LEFT, padx=5)
+        if writing_plan_load_error is not None:
+            start_button.configure(state="disabled")
         ttk.Button(
             button_frame,
             text="关闭",
-            command=on_cancel,
+            command=on_close,
             width=10,
             **_bootstyle_kwargs("secondary")
         ).pack(side=tk.LEFT, padx=5)
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
 
         dialog.update_idletasks()
         dialog_width, dialog_height = _compute_dialog_target_size(

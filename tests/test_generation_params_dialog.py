@@ -1,8 +1,17 @@
 from types import SimpleNamespace
 
+import pytest
+
 import bid_writer.gui as gui
 from bid_writer import fact_card_dialogs
 from bid_writer.gui import MainWindow
+from bid_writer.writing_plan_store import (
+    WritingPlanExternalModificationError,
+    WritingPlanItem,
+    WritingPlanSnapshot,
+    WritingPlanStoreError,
+    WritingPlanValidationError,
+)
 
 
 class _FakeVar:
@@ -29,12 +38,18 @@ class _FakeWidget:
 
     def configure(self, **kwargs):
         self.configure_calls.append(kwargs)
+        self.kwargs.update(kwargs)
 
 
 class _FakeText(_FakeWidget):
+    instances = []
+
     def __init__(self, *_args, **_kwargs):
         super().__init__()
         self.content = ""
+        self.bindings = {}
+        self.modified = False
+        self.instances.append(self)
 
     def insert(self, _index, value):
         self.content += value
@@ -42,11 +57,30 @@ class _FakeText(_FakeWidget):
     def get(self, *_args):
         return self.content
 
+    def delete(self, *_args):
+        self.content = ""
+
+    def bind(self, event_name, callback):
+        self.bindings[event_name] = callback
+
+    def edit_modified(self, value=None):
+        if value is None:
+            return self.modified
+        self.modified = bool(value)
+
+    def simulate_user_edit(self, value):
+        self.content = value
+        self.modified = True
+        callback = self.bindings.get("<<Modified>>")
+        if callback is not None:
+            callback(SimpleNamespace(widget=self))
+
 
 class _FakeDialog(_FakeWidget):
     def __init__(self, *_args, **_kwargs):
         super().__init__()
         self.destroy_calls = 0
+        self.protocols = {}
 
     def title(self, _value):
         return None
@@ -71,6 +105,9 @@ class _FakeDialog(_FakeWidget):
 
     def destroy(self):
         self.destroy_calls += 1
+
+    def protocol(self, name, callback):
+        self.protocols[name] = callback
 
 
 class _FakeFactCardSelectionPanel(_FakeWidget):
@@ -100,6 +137,11 @@ def _install_generation_dialog_fakes(monkeypatch):
             self.text = text
             self.command = command
             buttons[text] = self
+
+        def invoke(self):
+            if self.kwargs.get("state") != "disabled" and self.command is not None:
+                return self.command()
+            return None
 
     def _new_dialog(*args, **kwargs):
         dialog = _FakeDialog(*args, **kwargs)
@@ -131,11 +173,23 @@ def _install_generation_dialog_fakes(monkeypatch):
     )
     monkeypatch.setattr(gui, "remember_generation_dialog_settings", lambda *_args: None)
     monkeypatch.setattr(gui.messagebox, "showinfo", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "showwarning", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(gui.messagebox, "askyesnocancel", lambda *_args, **_kwargs: False)
+    _FakeText.instances = []
 
     return buttons, dialogs, widgets
 
 
-def _fake_generation_window(wait_window, save_callback=None):
+def _fake_generation_window(
+    wait_window,
+    save_callback=None,
+    *,
+    writing_plan_store=None,
+    load_writing_plan_snapshot=None,
+    save_writing_plan=None,
+):
     summary = SimpleNamespace(
         total_chapters=2,
         reference_enabled_chapters=1,
@@ -165,11 +219,27 @@ def _fake_generation_window(wait_window, save_callback=None):
             save_chapter_default_fact_cards=save_callback or (lambda *_args, **_kwargs: None),
             summarize_chapter_default_fact_cards=lambda _headings: summary,
             apply_batch_chapter_default_fact_cards=lambda *_args, **_kwargs: None,
+            writing_plan_store=writing_plan_store,
+            load_writing_plan_snapshot=(
+                load_writing_plan_snapshot
+                or (lambda: WritingPlanSnapshot((), None))
+            ),
+            save_writing_plan=(
+                save_writing_plan
+                or (lambda _node, _text, snapshot: snapshot)
+            ),
         ),
         status_text=SimpleNamespace(set=lambda _value: None),
         wait_window=wait_window,
         _build_generation_fact_card_dialog_state=MainWindow._build_generation_fact_card_dialog_state,
     )
+
+
+def _writing_plan_snapshot(node=None, text=None, *, fingerprint="snapshot"):
+    items = ()
+    if node is not None and text is not None:
+        items = (WritingPlanItem(node=node, writing_plan=text),)
+    return WritingPlanSnapshot(items, fingerprint)
 
 
 def test_generation_params_start_button_saves_fact_card_references(monkeypatch):
@@ -329,3 +399,286 @@ def test_batch_generation_explicit_uniform_apply_refreshes_summary(monkeypatch):
         )
     ]
     assert summarized == [headings, headings]
+
+
+def test_writing_plan_single_prefills_saved_text_and_shows_node_number(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    snapshot = _writing_plan_snapshot("1.4.2", "第一行\n第二行")
+
+    def wait_window(_dialog):
+        buttons["关闭"].invoke()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: snapshot,
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert _FakeText.instances[0].content == "第一行\n第二行"
+    assert "保存撰写计划" in buttons
+    assert "重新加载撰写计划" in buttons
+    displayed_values = [
+        widget.kwargs["textvariable"].get()
+        for widget in widgets
+        if widget.kwargs.get("textvariable") is not None
+    ]
+    assert any("节点编号：1.4.2" in str(value) for value in displayed_values)
+
+
+def test_writing_plan_single_edit_marks_dirty_and_explicit_save_keeps_new_snapshot(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    original = _writing_plan_snapshot("1.4.2", "旧计划", fingerprint="old")
+    saved = _writing_plan_snapshot("1.4.2", "第一行\n第二行", fingerprint="new")
+    save_calls = []
+
+    def save_plan(node, text, snapshot):
+        save_calls.append((node, text, snapshot))
+        return saved
+
+    def wait_window(_dialog):
+        _FakeText.instances[0].simulate_user_edit("第一行\n第二行")
+        displayed_values = [
+            widget.kwargs["textvariable"].get()
+            for widget in widgets
+            if widget.kwargs.get("textvariable") is not None
+        ]
+        assert any("未保存" in str(value) for value in displayed_values)
+        buttons["保存撰写计划"].invoke()
+        assert any(
+            "已保存" in str(widget.kwargs["textvariable"].get())
+            for widget in widgets
+            if widget.kwargs.get("textvariable") is not None
+        )
+        buttons["关闭"].invoke()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: original,
+            save_writing_plan=save_plan,
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert save_calls == [("1.4.2", "第一行\n第二行", original)]
+
+
+def test_writing_plan_single_start_save_error_keeps_dialog_open(monkeypatch):
+    buttons, dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    errors = []
+    save_calls = []
+    monkeypatch.setattr(
+        gui.messagebox,
+        "showerror",
+        lambda title, message, **kwargs: errors.append((title, message, kwargs)),
+    )
+
+    def save_plan(node, text, snapshot):
+        save_calls.append((node, text, snapshot))
+        raise WritingPlanStoreError("保存失败")
+
+    def wait_window(_dialog):
+        _FakeText.instances[0].simulate_user_edit("保留这段输入")
+        buttons["开始扩写"].invoke()
+        assert dialogs[0].destroy_calls == 0
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: _writing_plan_snapshot(),
+            save_writing_plan=save_plan,
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert save_calls and save_calls[0][:2] == ("1.4.2", "保留这段输入")
+    assert errors and "保存失败" in errors[0][1]
+    assert _FakeText.instances[0].content == "保留这段输入"
+
+
+def test_writing_plan_single_whitespace_save_deletes_node_with_raw_text(monkeypatch):
+    buttons, _dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    original = _writing_plan_snapshot("1.4.2", "旧计划")
+    save_calls = []
+
+    def wait_window(_dialog):
+        _FakeText.instances[0].simulate_user_edit("  \n ")
+        buttons["保存撰写计划"].invoke()
+        buttons["关闭"].invoke()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: original,
+            save_writing_plan=lambda node, text, snapshot: (
+                save_calls.append((node, text, snapshot))
+                or _writing_plan_snapshot(fingerprint="deleted")
+            ),
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert save_calls == [("1.4.2", "  \n ", original)]
+
+
+def test_writing_plan_single_unnumbered_title_is_transient_only(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="进场核验", full_path="项目 > 进场核验")
+    save_calls = []
+
+    def wait_window(_dialog):
+        _FakeText.instances[0].simulate_user_edit("仅本次生成")
+        assert buttons["保存撰写计划"].kwargs.get("state") == "disabled"
+        buttons["开始扩写"].invoke()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: _writing_plan_snapshot(),
+            save_writing_plan=lambda *args: save_calls.append(args),
+        ),
+        [heading],
+    )
+
+    assert result == ("仅本次生成", 1200, 0, False, ["card-a"])
+    assert save_calls == []
+    displayed_values = [
+        widget.kwargs["textvariable"].get()
+        for widget in widgets
+        if widget.kwargs.get("textvariable") is not None
+    ]
+    assert any("当前节点无可用编号" in str(value) for value in displayed_values)
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected_destroy_calls", "expected_save_calls"),
+    [(True, 1, 1), (False, 1, 0), (None, 0, 0)],
+)
+def test_writing_plan_single_dirty_close_supports_save_discard_cancel(
+    monkeypatch, answer, expected_destroy_calls, expected_save_calls
+):
+    _buttons, dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    save_calls = []
+    monkeypatch.setattr(gui.messagebox, "askyesnocancel", lambda *_args, **_kwargs: answer)
+
+    def wait_window(dialog):
+        _FakeText.instances[0].simulate_user_edit("未保存计划")
+        dialog.protocols["WM_DELETE_WINDOW"]()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: _writing_plan_snapshot(),
+            save_writing_plan=lambda node, text, snapshot: (
+                save_calls.append((node, text, snapshot))
+                or _writing_plan_snapshot(node, text, fingerprint="saved")
+            ),
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert dialogs[0].destroy_calls == expected_destroy_calls
+    assert len(save_calls) == expected_save_calls
+
+
+def test_writing_plan_single_malformed_library_blocks_persistence_and_start(monkeypatch):
+    buttons, dialogs, _widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    save_calls = []
+    errors = []
+    monkeypatch.setattr(
+        gui.messagebox,
+        "showerror",
+        lambda title, message, **kwargs: errors.append((title, message, kwargs)),
+    )
+
+    def load_broken():
+        raise WritingPlanValidationError("撰写计划文件格式错误")
+
+    def wait_window(_dialog):
+        assert buttons["保存撰写计划"].kwargs.get("state") == "disabled"
+        assert buttons["开始扩写"].kwargs.get("state") == "disabled"
+        buttons["开始扩写"].invoke()
+        assert dialogs[0].destroy_calls == 0
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=load_broken,
+            save_writing_plan=lambda *args: save_calls.append(args),
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert save_calls == []
+    assert errors and "格式错误" in errors[0][1]
+
+
+def test_writing_plan_single_conflict_preserves_text_then_reload_replaces_it(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
+    heading = SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验")
+    original = _writing_plan_snapshot("1.4.2", "原计划", fingerprint="old")
+    external = _writing_plan_snapshot("1.4.2", "外部新计划", fingerprint="external")
+    snapshots = iter((original, external))
+    load_calls = []
+    discard_prompts = []
+    monkeypatch.setattr(
+        gui.messagebox,
+        "askyesno",
+        lambda *args, **kwargs: discard_prompts.append((args, kwargs)) or True,
+    )
+
+    def load_snapshot():
+        load_calls.append(True)
+        return next(snapshots)
+
+    def save_conflict(_node, _text, _snapshot):
+        raise WritingPlanExternalModificationError("撰写计划文件已被外部修改")
+
+    def wait_window(_dialog):
+        text = _FakeText.instances[0]
+        text.simulate_user_edit("本地未保存计划")
+        buttons["保存撰写计划"].invoke()
+        assert text.content == "本地未保存计划"
+        assert any(
+            "未保存" in str(widget.kwargs["textvariable"].get())
+            for widget in widgets
+            if widget.kwargs.get("textvariable") is not None
+        )
+        buttons["重新加载撰写计划"].invoke()
+        assert text.content == "外部新计划"
+        buttons["关闭"].invoke()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=load_snapshot,
+            save_writing_plan=save_conflict,
+        ),
+        [heading],
+    )
+
+    assert result is None
+    assert len(load_calls) == 2
+    assert len(discard_prompts) == 1
