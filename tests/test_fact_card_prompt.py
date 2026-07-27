@@ -109,9 +109,15 @@ def test_full_context_fact_card_context_follows_task_and_scope(monkeypatch, tmp_
     )
 
     section_order = [section["name"] for section in result.prompt_sections]
-    assert section_order.index("bid_requirements") < section_order.index("task_card")
-    assert section_order.index("scoring_criteria") < section_order.index("task_card")
-    assert section_order.index("scope_reference") < section_order.index("fact_card_context")
+    assert section_order == [
+        "chapter_context",
+        "output_constraint_reminder",
+        "fact_card_context",
+        "task_card",
+    ]
+    assert result.prompt.index("## 当前章节边界及招标/评分要求") < result.prompt.index(
+        "## 事实卡片参考"
+    )
     assert section_order.index("fact_card_context") < section_order.index("task_card")
 
 
