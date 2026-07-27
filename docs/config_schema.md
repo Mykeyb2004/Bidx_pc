@@ -68,6 +68,7 @@ project:
     outline_file: "./投标大纲.md"
     bid_requirements_file: "./采购需求.md"
     scoring_criteria_file: "./评分标准.md"
+    writing_plan_file: "./撰写计划.json"
   output_dir: "./output"
 ```
 
@@ -76,6 +77,7 @@ project:
 - `project.root_dir` 用于声明项目资料根目录
 - `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
 - 新建配置默认使用 `./投标大纲.md` 作为大纲保存位置；如果已有大纲，也可以把 `project.inputs.outline_file` 指向现有 Markdown 文件
+- `project.inputs.writing_plan_file` 是可选的节点撰写计划库；示例 `./撰写计划.json` 会解析到 `project.root_dir/撰写计划.json`，不是配置文件所在目录
 - `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
 
 GUI 新建配置向导会根据招标文件位置生成这些路径。选择招标文件后，`project.root_dir` 默认设置为该招标文件所在目录，并尽量相对配置文件保存；`project.inputs.*` 和 `project.output_dir` 会尽量相对 `project.root_dir` 保存。
@@ -101,7 +103,39 @@ project:
 - 如果必须写 Windows 绝对路径，建议使用 `C:/Users/example/project`，或使用单引号包裹反斜杠路径：`'C:\Users\example\project'`
 - 配置编辑器选择项目内文件时，会优先保存为相对路径并使用 `/` 分隔符，便于跨系统迁移
 
-### 3.1.2 大纲准备与锁定
+### 3.1.2 节点撰写计划文件
+
+`project.inputs.writing_plan_file` 是可选字段，用于启用按大纲节点编号保存撰写计划的 JSON v1 文件。未配置时，系统保留旧的临时附加要求输入；配置后，单章弹窗会把该字段作为“节点撰写计划”读写，批量生成只读取冻结快照且不会写回。
+
+路径规则：
+
+- 相对路径一律相对 `project.root_dir` 解析。
+- 不建议在共享示例中写绝对路径；项目专用配置可按实际项目目录固定 `project.root_dir`。
+- 文件不存在时，首次保存非空计划会自动创建；保存空白文本用于删除对应节点，若文件原本不存在则不创建文件。
+
+JSON v1 格式：
+
+```json
+{
+  "version": 1,
+  "items": [
+    {
+      "node": "2.3.1",
+      "writing_plan": "先回应评分点，再按实施步骤、责任分工和成果佐证展开。"
+    }
+  ]
+}
+```
+
+数据规则：
+
+- `version` 必须是整数 `1`；`items` 必须是列表。
+- `node` 必须是点分数字编号，如 `2.3.1`；匹配使用精确编号，不做父级继承、标题包含、路径模糊或 `startswith` 回退。
+- `writing_plan` 必须是字符串，原样保留多行文本；解析时不裁剪用户正文。
+- 文件由程序保存时使用 UTF-8、两空格缩进、中文不转义，并以换行结尾。
+- 保存前会校验磁盘指纹；如果文件在弹窗加载后被外部修改，本次保存会被拒绝，避免覆盖他人编辑。
+
+### 3.1.3 大纲准备与锁定
 
 `project.outline_locked` 表示当前配置是否已经完成大纲确认：
 
@@ -114,7 +148,7 @@ project:
 
 `project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。GUI 新建配置时会隐藏 `outline_locked` 和 `outline_generation.role_file`，让用户先完成项目材料准备；编辑已有配置时仍可看到这些高级字段。
 
-### 3.1.3 新建配置导入招标文件
+### 3.1.4 新建配置导入招标文件
 
 新建配置窗口支持从单个招标文件导入采购需求和评分标准。该功能不会新增 YAML schema 字段，而是写入现有输入文件路径：
 

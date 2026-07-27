@@ -16,7 +16,7 @@
 
 1. `Config` 加载配置、环境变量和输入资源
 2. `OutlineParser` 解析 Markdown 大纲，构建 `HeadingNode` 树
-3. GUI 选择叶子章节，收集附加要求、目标篇幅基准值、Mermaid 图示上限，以及单章事实卡片选择或批量事实卡片状态汇总；本章事实只通过 `fact_card_context` 注入
+3. GUI 选择叶子章节，收集节点撰写计划、目标篇幅基准值、Mermaid 图示上限，以及单章事实卡片选择或批量事实卡片状态汇总；本章事实只通过 `fact_card_context` 注入
 4. `AIWriter.prepare_generation()` 装配 prompt、请求参数和 trace 会话
 5. `AIWriter.expand_raw()` 调用 OpenAI 兼容接口生成正文
 6. GUI 在生成结束后调用 `AIWriter.finalize_generation()` 做轻量后处理
@@ -71,12 +71,15 @@ GUI 中批量生成的主要逻辑位于：
 行为特点：
 
 - 先获取选中的叶子节点
-- 单章模式下，“附加扩写要求”只承载用户手工输入
+- 未配置 `project.inputs.writing_plan_file` 时，单章模式保留临时“附加扩写要求”输入；配置后，该输入统一为“节点撰写计划”，按当前标题前缀编号精确预填和保存
+- 单章配置模式下，“保存撰写计划”保留多行原文；空白保存会删除当前节点记录；开始扩写前会先保存，保存冲突或校验错误会阻止生成并保持弹窗打开
+- 无数字编号的单章标题不能持久化计划，但输入内容仍可作为本次生成的临时节点计划使用
 - 单章节模式下，可在生成参数弹窗中调整事实卡片引用关系；全局卡片排在最前且默认勾选，局部卡片按本章节已保存引用关系回填；强制/参考由卡片本体 `enforcement` 决定
 - 单章节生成参数弹窗中的“保存事实卡片引用关系”只保存当前选择并保持窗口打开；“开始扩写”会先保存当前引用关系，再直接进入扩写流程
 - 批量模式下不再把单章节选择面板复制成整批默认值，而是显示所选章节的真实汇总：事实卡片模式启用章节数，以及每张 active 卡片的有效引用章节数。直接开始扩写时按各章节已保存配置读取；“本次批量忽略全部事实卡片”只改变本次调用参数，不写回章节配置
 - 批量模式提供“统一应用到所选章节…”独立窗口。模式和每张卡片均使用“保持各章节 / 全部启用或关闭 / 全部引用或排除”三态选择，默认全部保持；只有用户确认明确变更后才调用批量存储接口，应用失败时窗口保持打开
-- 批量模式逐章执行
+- 批量模式配置撰写计划库时，会在参数弹窗前加载一次冻结快照；弹窗只显示覆盖摘要，不提供批量编辑入口，不调用 `save_writing_plan`
+- 批量生成逐章执行，每个 heading 从冻结快照按精确节点编号解析计划；未编号或未匹配的 heading 注入空计划，不回退到共享文本
 - 顶部“生成所选”按钮与“终止生成”共用同一个控件；生成开始后按钮立即切换为“终止生成”。点击后会先弹出确认窗口；确认后系统立即取消当前活动会话并关闭可取消的流式响应，当前章节不做后处理和保存，前面已经保存的章节保留，后续章节不再启动；取消确认则继续生成
 - 若模型完成结果已经被主线程确认，随后到达的终止点击不会丢弃该完成结果，章节仍会正常保存；取消后的迟到 token、完成消息和错误消息会被忽略
 - 即使配置关闭流式展示，GUI 章节会话内部也使用可关闭的流式请求并在完成后整段显示，以保证“终止生成”能够真正中断模型连接
@@ -156,7 +159,7 @@ GUI 中批量生成的主要逻辑位于：
 章节扩写使用两类 prompt：
 
 - `system prompt`: 全局角色和最高优先级强约束
-- `user prompt`: 当前章节任务、结构规则、上下文和人工附加要求
+- `user prompt`: 当前章节边界及招标/评分要求、输出硬约束提醒、事实卡片、节点撰写计划和最终任务卡
 
 system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
@@ -168,29 +171,15 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 
 ### 3.2 user prompt 装配顺序
 
-`AIWriter.build_prompt_result()` 是章节 prompt 的核心装配函数。pruned 分支的默认顺序为：
+`AIWriter.build_prompt_result()` 是章节 prompt 的核心装配函数。当前 user prompt 的业务顺序为：
 
-1. `project_background`，若存在
-2. `scoring_focus`，若命中评分项
-3. `scope_reference`
-4. 若存在可用事实卡片，则为 `fact_card_context`
-5. `structure_contract`
-6. `additional_requirements`
-7. `task_card`
+1. `chapter_context`
+2. `output_constraint_reminder`
+3. `fact_card_context`，若存在可用事实卡片
+4. `node_writing_plan`，若当前节点计划非空
+5. `task_card`
 
-在 `full_context` 分支中，会为了提高跨章节遍历时的 prompt cache 命中率，改成“稳定前缀在前、章节动态段落在后”：
-
-1. `structure_contract`
-2. `bid_requirements`
-3. `scoring_criteria`
-4. `scope_reference`
-5. 若存在可用事实卡片，则为 `fact_card_context`
-6. `additional_requirements`
-7. `task_card`
-
-`full_context` 已经把完整采购需求放入 prompt，并在 `processing.scoring.enabled=true` 时放入评分标准全文，因此不会再生成或注入 `project_background` 摘要。
-
-这里不会把 `scope_reference` 放进共享前缀，因为它包含当前标题、上级标题和同级标题，属于章节动态信息；若放在最前面，反而会降低跨 h3/h4 调用的前缀复用率。
+`auto`/pruned 与 `full_context` 的区别只体现在 `chapter_context` 的材料来源：前者使用 H2 项目背景和章节级评分关注，后者使用完整采购需求和评分标准。`task_card` 始终最后出现。
 
 这套差异化顺序也是 `docs/prompt_contract.md` 中维护的契约。
 
@@ -201,7 +190,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 - 写作场景
 - 当前章节路径
 - 本章重点
-- 可选的章节写作计划
+- 可选的节点撰写计划执行要求
 - 篇幅目标区间
 - 输出方式
 - 结构要求
@@ -212,8 +201,7 @@ system prompt 由 `AIWriter.build_system_prompt()` 构建，来源包括：
 其中：
 
 - “本章重点”并不是简单使用标题原文，而是优先来自裁剪后的焦点词
-- 当 `processing.path = full_context` 且开启 `processing.full_context.chapter_writing_plan.enabled` 时，会先调用章节写作计划生成器生成简短的“章节写作计划”，再把它插入任务卡
-- 该生成器会优先复用正文扩写所使用的 `system prompt` 与 full-context 稳定前缀；章节边界信息会作为后缀单独追加，以兼顾 cache 命中率和章节边界表达
+- 当 `project.inputs.writing_plan_file` 未配置，且 `processing.path = full_context` 并开启 `processing.full_context.chapter_writing_plan.enabled` 时，系统仍可使用旧的章节写作计划生成器；一旦配置 JSON 节点撰写计划库，旧生成器会关闭，避免同时出现两套计划
 - 当 `max_mermaid_flowcharts_per_section` 的配置值或运行时 override 值大于 `0` 时，任务卡会额外插入“流程图控制”一行；值为 `0` 时不会提及 Mermaid
 - 该提示不再把图类型固定为 `flowchart TD`，模型可以按内容需要选择合适的 Mermaid 图类型
 
@@ -505,17 +493,16 @@ GUI 的真实路径不是直接调用 `AIWriter.expand()`，而是：
 
 ### 9.2 Prompt Contract 摘要层
 
-当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含七个 block：
+当前 trace 里除了原始 `prompt_sections`，还增加了维护者摘要视图 `prompt_contract_blocks`，固定包含六个 block：
 
 1. `system_constraints`
-2. `chapter_task`
-3. `structure_rules`
-4. `chapter_scope`
-5. `project_background`
-6. `fact_card_context`
-7. `scoring_context`
+2. `chapter_context`
+3. `output_constraints`
+4. `fact_card_context`
+5. `node_writing_plan`
+6. `chapter_task`
 
-这层不是替代原始 prompt sections，而是为了让维护者更快看懂“一次章节扩写到底喂给了模型什么”。
+这层不是替代原始 prompt sections，而是为了让维护者更快看懂“一次章节扩写到底喂给了模型什么”；其顺序与 user prompt 的业务阅读顺序一致。
 
 ### 9.3 维护者排查顺序
 

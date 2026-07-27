@@ -3,11 +3,35 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 import bid_writer.main as main_module
 from bid_writer.config import Config
 from bid_writer.main import BidWriter
 from bid_writer.writing_plan_store import WritingPlanStore, WritingPlanStoreError
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_config_example_documents_relative_writing_plan_file():
+    example_path = REPO_ROOT / "config.example.yaml"
+
+    payload = yaml.safe_load(example_path.read_text(encoding="utf-8"))
+
+    writing_plan_file = payload["project"]["inputs"]["writing_plan_file"]
+    assert writing_plan_file == "./writing-plan.json"
+    assert not Path(writing_plan_file).is_absolute()
+
+
+def test_songzi_config_documents_project_relative_writing_plan_file():
+    config_path = REPO_ROOT / "config_松滋助联体.yaml"
+
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    writing_plan_file = payload["project"]["inputs"]["writing_plan_file"]
+    assert writing_plan_file == "./撰写计划.json"
+    assert not Path(writing_plan_file).is_absolute()
 
 
 def test_writing_plan_file_is_resolved_from_project_root(tmp_path: Path):
