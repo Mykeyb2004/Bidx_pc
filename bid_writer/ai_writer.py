@@ -792,7 +792,7 @@ class AIWriter:
         
         Args:
             heading: 要扩写的标题节点
-            additional_requirements: 用户的附加要求
+            additional_requirements: 当前节点的撰写计划
             target_words: 目标篇幅基准值
             
         Returns:
