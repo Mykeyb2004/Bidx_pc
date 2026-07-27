@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 
 import pytest
 
@@ -164,10 +165,10 @@ def test_save_missing_store_delete_is_noop(tmp_path) -> None:
     [
         (b"not-json", "JSON"),
         (b"\xff", "UTF-8"),
-        (b"[]", "object"),
-        (b'{"items": []}', "version"),
-        (b'{"version": true, "items": []}', "version"),
-        (b'{"version": 2, "items": []}', "version"),
+        (b"[]", "对象"),
+        (b'{"items": []}', "版本"),
+        (b'{"version": true, "items": []}', "版本"),
+        (b'{"version": 2, "items": []}', "版本"),
         (b'{"version": 1, "items": {}}', "items"),
         (b'{"version": 1, "items": [null]}', "item"),
         (
@@ -186,7 +187,7 @@ def test_save_missing_store_delete_is_noop(tmp_path) -> None:
             b'{"version": 1, "items": ['
             b'{"node": "1.1", "writing_plan": "x"}, '
             b'{"node": " 1.1 ", "writing_plan": "y"}]}',
-            "duplicate node",
+            "重复节点",
         ),
     ],
 )
@@ -208,6 +209,31 @@ def test_invalid_store_is_rejected_and_never_overwritten(
     with pytest.raises(WritingPlanValidationError):
         store.save("1.1", "不得覆盖", expected_snapshot=forged_snapshot)
     assert path.read_bytes() == raw
+
+
+def test_validation_errors_use_actionable_chinese_messages(tmp_path) -> None:
+    version_path = tmp_path / "version.json"
+    version_path.write_text('{"version": 2, "items": []}', encoding="utf-8")
+
+    with pytest.raises(
+        WritingPlanValidationError,
+        match=rf"撰写计划文件版本必须为 1：{re.escape(str(version_path))}",
+    ):
+        WritingPlanStore(version_path).load_snapshot()
+
+    duplicate_path = tmp_path / "duplicate.json"
+    duplicate_path.write_text(
+        '{"version": 1, "items": ['
+        '{"node": "2.3.1", "writing_plan": "甲"}, '
+        '{"node": " 2.3.1 ", "writing_plan": "乙"}]}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        WritingPlanValidationError,
+        match=rf"撰写计划文件存在重复节点“2\.3\.1”：{re.escape(str(duplicate_path))}",
+    ):
+        WritingPlanStore(duplicate_path).load_snapshot()
 
 
 def test_save_rejects_invalid_node_without_touching_file(tmp_path) -> None:
@@ -238,7 +264,9 @@ def test_external_modification_before_save_is_preserved(tmp_path) -> None:
     ).encode("utf-8")
     path.write_bytes(external_raw)
 
-    with pytest.raises(WritingPlanExternalModificationError) as caught:
+    with pytest.raises(
+        WritingPlanExternalModificationError, match="外部修改"
+    ) as caught:
         store.save("1.1", "本次修改", expected_snapshot=snapshot)
 
     assert str(path) in str(caught.value)

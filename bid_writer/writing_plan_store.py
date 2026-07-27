@@ -80,7 +80,7 @@ class WritingPlanStore:
         normalized_node = self._validate_node(node, context="node")
         if not isinstance(writing_plan, str):
             raise WritingPlanValidationError(
-                f"{self.path}: writing_plan must be a string"
+                f"撰写计划项 writing_plan 必须为字符串：{self.path}"
             )
 
         current_raw = self._read_bytes()
@@ -91,7 +91,7 @@ class WritingPlanStore:
         )
         if current_fingerprint != expected_snapshot.fingerprint:
             raise WritingPlanExternalModificationError(
-                f"{self.path}: file was externally modified"
+                f"撰写计划文件已被外部修改：{self.path}"
             )
 
         current_snapshot = (
@@ -145,7 +145,7 @@ class WritingPlanStore:
             return None
         except OSError as exc:
             raise WritingPlanStoreError(
-                f"{self.path}: unable to read writing plan store"
+                f"无法读取撰写计划文件：{self.path}"
             ) from exc
 
     def _snapshot_from_raw(self, raw: bytes) -> WritingPlanSnapshot:
@@ -153,29 +153,29 @@ class WritingPlanStore:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise WritingPlanValidationError(
-                f"{self.path}: content must be valid UTF-8"
+                f"撰写计划文件必须为有效 UTF-8：{self.path}"
             ) from exc
 
         try:
             payload = json.loads(text)
         except json.JSONDecodeError as exc:
             raise WritingPlanValidationError(
-                f"{self.path}: content must be valid JSON"
+                f"撰写计划文件必须为有效 JSON：{self.path}"
             ) from exc
 
         if not isinstance(payload, dict):
             raise WritingPlanValidationError(
-                f"{self.path}: JSON root must be an object"
+                f"撰写计划文件 JSON 根节点必须为对象：{self.path}"
             )
         version = payload.get("version")
         if type(version) is not int or version != 1:
             raise WritingPlanValidationError(
-                f"{self.path}: version must be the integer 1"
+                f"撰写计划文件版本必须为 1：{self.path}"
             )
         raw_items = payload.get("items")
         if not isinstance(raw_items, list):
             raise WritingPlanValidationError(
-                f"{self.path}: items must be a list"
+                f"撰写计划文件 items 必须为列表：{self.path}"
             )
 
         items: list[WritingPlanItem] = []
@@ -183,7 +183,7 @@ class WritingPlanStore:
         for index, raw_item in enumerate(raw_items):
             if not isinstance(raw_item, dict):
                 raise WritingPlanValidationError(
-                    f"{self.path}: item {index} must be an object"
+                    f"撰写计划文件第 {index} 个 item 必须为对象：{self.path}"
                 )
             node = self._validate_node(
                 raw_item.get("node"), context=f"item {index} node"
@@ -191,11 +191,12 @@ class WritingPlanStore:
             writing_plan = raw_item.get("writing_plan")
             if not isinstance(writing_plan, str):
                 raise WritingPlanValidationError(
-                    f"{self.path}: item {index} writing_plan must be a string"
+                    f"撰写计划文件第 {index} 个 item 的 writing_plan 必须为字符串："
+                    f"{self.path}"
                 )
             if node in seen_nodes:
                 raise WritingPlanValidationError(
-                    f"{self.path}: duplicate node {node}"
+                    f"撰写计划文件存在重复节点“{node}”：{self.path}"
                 )
             seen_nodes.add(node)
             items.append(WritingPlanItem(node=node, writing_plan=writing_plan))
@@ -208,12 +209,12 @@ class WritingPlanStore:
     def _validate_node(self, node: object, *, context: str) -> str:
         if not isinstance(node, str):
             raise WritingPlanValidationError(
-                f"{self.path}: {context} must be a string"
+                f"撰写计划文件 {context} 必须为字符串：{self.path}"
             )
         normalized = node.strip()
         if _NODE_PATTERN.fullmatch(normalized) is None:
             raise WritingPlanValidationError(
-                f"{self.path}: {context} must match the numeric node pattern"
+                f"撰写计划文件 {context} 必须为点分数字节点：{self.path}"
             )
         return normalized
 
@@ -241,7 +242,7 @@ class WritingPlanStore:
                 with suppress(OSError):
                     temporary_path.unlink()
             raise WritingPlanStoreError(
-                f"{self.path}: unable to save writing plan store"
+                f"无法保存撰写计划文件：{self.path}"
             ) from exc
 
     def _fsync_parent_directory(self) -> None:
