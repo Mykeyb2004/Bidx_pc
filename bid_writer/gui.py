@@ -3568,8 +3568,25 @@ class MainWindow(tk.Tk):
         if not self._ensure_chapter_generation_model_configured():
             return
 
+        writing_plan_snapshot = None
+        if (
+            len(selected_headings) > 1
+            and getattr(self.bid_writer, "writing_plan_store", None) is not None
+        ):
+            try:
+                writing_plan_snapshot = self.bid_writer.load_writing_plan_snapshot()
+            except WritingPlanStoreError as exc:
+                messagebox.showerror("撰写计划加载失败", str(exc), parent=self)
+                return
+
         # 获取生成参数
-        params = self._get_generation_params(selected_headings)
+        if writing_plan_snapshot is not None:
+            params = self._get_generation_params(
+                selected_headings,
+                writing_plan_snapshot=writing_plan_snapshot,
+            )
+        else:
+            params = self._get_generation_params(selected_headings)
         if params is None:
             return  # 用户取消了
 
@@ -3582,19 +3599,27 @@ class MainWindow(tk.Tk):
         ) = params
         is_single_heading = len(selected_headings) == 1
 
+        batch_generation_kwargs = {
+            "fact_card_mode": fact_card_mode,
+            "manual_fact_card_selections": (
+                manual_fact_card_selections if is_single_heading else None
+            ),
+            "auto_extract_facts": (
+                (not is_single_heading)
+                and self.bid_writer.config.chapter_facts_enabled
+                and self.bid_writer.config.chapter_facts_auto_extract_on_batch
+            ),
+        }
+        if writing_plan_snapshot is not None:
+            batch_generation_kwargs["writing_plan_snapshot"] = writing_plan_snapshot
+
         # 在主线程执行生成（避免线程安全问题）
         self._do_batch_generate(
             selected_headings,
             additional_requirements,
             target_words,
             max_mermaid_flowcharts_per_section,
-            fact_card_mode=fact_card_mode,
-            manual_fact_card_selections=(manual_fact_card_selections if is_single_heading else None),
-            auto_extract_facts=(
-                (not is_single_heading)
-                and self.bid_writer.config.chapter_facts_enabled
-                and self.bid_writer.config.chapter_facts_auto_extract_on_batch
-            ),
+            **batch_generation_kwargs,
         )
 
     def _do_batch_generate(
@@ -3603,6 +3628,8 @@ class MainWindow(tk.Tk):
         additional_requirements: str,
         target_words: int,
         max_mermaid_flowcharts_per_section: int,
+        *,
+        writing_plan_snapshot: WritingPlanSnapshot | None = None,
         fact_card_mode: bool = False,
         manual_fact_card_selections: Optional[list["FactCardSelection"]] = None,
         auto_extract_facts: bool = False,
@@ -3628,6 +3655,14 @@ class MainWindow(tk.Tk):
         if callable(update_window):
             update_window()
 
+        def resolve_additional_requirements(heading: HeadingNode) -> str:
+            if writing_plan_snapshot is None:
+                return additional_requirements
+            node = extract_node_number(heading.title)
+            if node is None:
+                return ""
+            return writing_plan_snapshot.get(node) or ""
+
         try:
             for i, heading in enumerate(headings, 1):
                 if self.stop_requested:
@@ -3645,7 +3680,7 @@ class MainWindow(tk.Tk):
                 try:
                     result = self._generate_into_workspace(
                         heading,
-                        additional_requirements,
+                        resolve_additional_requirements(heading),
                         target_words,
                         max_mermaid_flowcharts_per_section,
                         fact_card_mode=fact_card_mode,
@@ -4373,8 +4408,12 @@ class MainWindow(tk.Tk):
         fact_card_mode_var = tk.BooleanVar(value=False)
         ignore_all_fact_cards_var = tk.BooleanVar(value=False)
 
-        writing_plan_enabled = bool(
-            is_single_heading and self.bid_writer.writing_plan_store is not None
+        writing_plan_store = getattr(self.bid_writer, "writing_plan_store", None)
+        writing_plan_enabled = bool(is_single_heading and writing_plan_store is not None)
+        batch_writing_plan_enabled = bool(
+            (not is_single_heading)
+            and writing_plan_store is not None
+            and writing_plan_snapshot is not None
         )
         writing_plan_node = (
             extract_node_number(headings[0].title) if writing_plan_enabled else None
@@ -4392,27 +4431,47 @@ class MainWindow(tk.Tk):
                     parent=dialog,
                 )
 
-        requirement_label = (
-            "节点撰写计划（附加扩写要求）："
-            if writing_plan_enabled
-            else "附加扩写要求："
-        )
-        ttk.Label(dialog, text=requirement_label, style="SectionTitle.TLabel").pack(
-            pady=(20, 5), padx=20, anchor=tk.W
-        )
-
-        req_text = tk.Text(dialog, height=5, width=60)
-        style_text_widget(req_text)
-        req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
-        if (
-            writing_plan_enabled
-            and current_writing_plan_snapshot is not None
-            and writing_plan_node is not None
-        ):
-            initial_plan_text = current_writing_plan_snapshot.get(writing_plan_node) or ""
+        req_text = None
+        if batch_writing_plan_enabled:
+            coverage = self.bid_writer.summarize_writing_plans(
+                headings,
+                writing_plan_snapshot,
+            )
+            coverage_text = (
+                f"节点撰写计划：{coverage.planned_headings}/"
+                f"{coverage.total_headings} 个所选节点已配置"
+            )
+            if coverage.unnumbered_headings:
+                coverage_text += f"；其中 {coverage.unnumbered_headings} 个无可用编号"
+            ttk.Label(
+                dialog,
+                text=coverage_text,
+                style="SectionTitle.TLabel",
+                justify=tk.LEFT,
+                wraplength=GENERATION_DIALOG_MIN_WIDTH + GENERATION_DIALOG_EXTRA_WIDTH - 80,
+            ).pack(pady=(20, 5), padx=20, anchor=tk.W)
         else:
-            initial_plan_text = initial_requirements
-        req_text.insert('1.0', initial_plan_text)
+            requirement_label = (
+                "节点撰写计划（附加扩写要求）："
+                if writing_plan_enabled
+                else "附加扩写要求："
+            )
+            ttk.Label(dialog, text=requirement_label, style="SectionTitle.TLabel").pack(
+                pady=(20, 5), padx=20, anchor=tk.W
+            )
+
+            req_text = tk.Text(dialog, height=5, width=60)
+            style_text_widget(req_text)
+            req_text.pack(pady=5, padx=20, fill=tk.BOTH, expand=True)
+            if (
+                writing_plan_enabled
+                and current_writing_plan_snapshot is not None
+                and writing_plan_node is not None
+            ):
+                initial_plan_text = current_writing_plan_snapshot.get(writing_plan_node) or ""
+            else:
+                initial_plan_text = initial_requirements
+            req_text.insert('1.0', initial_plan_text)
 
         writing_plan_dirty = False
         writing_plan_status_var = None
@@ -4433,6 +4492,8 @@ class MainWindow(tk.Tk):
                 writing_plan_status_var.set(writing_plan_status_text())
 
         def replace_writing_plan_text(text: str) -> None:
+            if req_text is None:
+                return
             req_text.delete("1.0", tk.END)
             req_text.insert("1.0", text)
             if hasattr(req_text, "edit_modified"):
@@ -4452,6 +4513,8 @@ class MainWindow(tk.Tk):
             if not writing_plan_enabled or writing_plan_node is None:
                 return True
             if current_writing_plan_snapshot is None:
+                return False
+            if req_text is None:
                 return False
             raw_text = req_text.get("1.0", "end-1c")
             try:
@@ -4536,8 +4599,9 @@ class MainWindow(tk.Tk):
                 save_writing_plan_button.configure(state="disabled")
             if writing_plan_node is None:
                 reload_writing_plan_button.configure(state="disabled")
-            req_text.bind("<<Modified>>", on_writing_plan_modified)
-            if hasattr(req_text, "edit_modified"):
+            if req_text is not None:
+                req_text.bind("<<Modified>>", on_writing_plan_modified)
+            if req_text is not None and hasattr(req_text, "edit_modified"):
                 req_text.edit_modified(False)
 
         # 目标篇幅基准值
@@ -4753,12 +4817,15 @@ class MainWindow(tk.Tk):
                     )
                     return
 
-                additional_req = req_text.get(
-                    "1.0",
-                    "end-1c" if writing_plan_enabled else tk.END,
-                )
-                if not writing_plan_enabled:
-                    additional_req = additional_req.strip()
+                if req_text is None:
+                    additional_req = ""
+                else:
+                    additional_req = req_text.get(
+                        "1.0",
+                        "end-1c" if writing_plan_enabled else tk.END,
+                    )
+                    if not writing_plan_enabled:
+                        additional_req = additional_req.strip()
                 max_mermaid_flowcharts_per_section = mermaid_var.get()
                 if max_mermaid_flowcharts_per_section < 0:
                     messagebox.showwarning("警告", "Mermaid图示上限不能小于 0", parent=dialog)

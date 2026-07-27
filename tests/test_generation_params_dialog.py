@@ -6,6 +6,7 @@ import bid_writer.gui as gui
 from bid_writer import fact_card_dialogs
 from bid_writer.gui import MainWindow
 from bid_writer.writing_plan_store import (
+    WritingPlanCoverage,
     WritingPlanExternalModificationError,
     WritingPlanItem,
     WritingPlanSnapshot,
@@ -189,6 +190,7 @@ def _fake_generation_window(
     writing_plan_store=None,
     load_writing_plan_snapshot=None,
     save_writing_plan=None,
+    summarize_writing_plans=None,
 ):
     summary = SimpleNamespace(
         total_chapters=2,
@@ -227,6 +229,16 @@ def _fake_generation_window(
             save_writing_plan=(
                 save_writing_plan
                 or (lambda _node, _text, snapshot: snapshot)
+            ),
+            summarize_writing_plans=(
+                summarize_writing_plans
+                or (
+                    lambda headings, _snapshot: WritingPlanCoverage(
+                        total_headings=len(headings),
+                        numbered_headings=len(headings),
+                        planned_headings=0,
+                    )
+                )
             ),
         ),
         status_text=SimpleNamespace(set=lambda _value: None),
@@ -682,3 +694,50 @@ def test_writing_plan_single_conflict_preserves_text_then_reload_replaces_it(mon
     assert result is None
     assert len(load_calls) == 2
     assert len(discard_prompts) == 1
+
+
+def test_writing_plan_batch_shows_readonly_coverage_without_plan_editor(monkeypatch):
+    buttons, _dialogs, widgets = _install_generation_dialog_fakes(monkeypatch)
+    headings = [
+        SimpleNamespace(title="1.4.1 总体安排", full_path="项目 > 1.4.1 总体安排"),
+        SimpleNamespace(title="1.4.2 进场核验", full_path="项目 > 1.4.2 进场核验"),
+        SimpleNamespace(title="进场说明", full_path="项目 > 进场说明"),
+    ]
+    snapshot = _writing_plan_snapshot("1.4.2", "只写启动准备阶段")
+    save_calls = []
+
+    def wait_window(_dialog):
+        buttons["开始扩写"].invoke()
+
+    result = MainWindow._get_generation_params(
+        _fake_generation_window(
+            wait_window,
+            writing_plan_store=object(),
+            save_writing_plan=lambda *args: save_calls.append(args),
+            summarize_writing_plans=lambda headings_arg, snapshot_arg: (
+                assert_snapshot_and_return_coverage(headings_arg, snapshot_arg, headings, snapshot)
+            ),
+        ),
+        headings,
+        writing_plan_snapshot=snapshot,
+    )
+
+    assert result == ("", 1200, 0, True, None)
+    assert save_calls == []
+    assert _FakeText.instances == []
+    assert "保存撰写计划" not in buttons
+    assert "重新加载撰写计划" not in buttons
+    assert any(
+        widget.kwargs.get("text") == "节点撰写计划：1/3 个所选节点已配置；其中 1 个无可用编号"
+        for widget in widgets
+    )
+
+
+def assert_snapshot_and_return_coverage(headings_arg, snapshot_arg, expected_headings, expected_snapshot):
+    assert headings_arg == expected_headings
+    assert snapshot_arg is expected_snapshot
+    return WritingPlanCoverage(
+        total_headings=3,
+        numbered_headings=2,
+        planned_headings=1,
+    )

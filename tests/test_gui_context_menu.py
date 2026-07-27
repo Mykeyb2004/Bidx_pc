@@ -4,6 +4,11 @@ import pytest
 
 import bid_writer.gui as gui
 from bid_writer.gui import MainWindow
+from bid_writer.writing_plan_store import (
+    WritingPlanItem,
+    WritingPlanSnapshot,
+    WritingPlanStoreError,
+)
 
 
 class _FakeMenu:
@@ -77,6 +82,13 @@ class _FakeAdapter:
 
 def _heading(title: str, *, children=None):
     return SimpleNamespace(title=title, full_path=f"根 > {title}", children=children or [])
+
+
+def _writing_plan_snapshot(node=None, text=None, *, fingerprint="snapshot"):
+    items = ()
+    if node is not None and text is not None:
+        items = (WritingPlanItem(node=node, writing_plan=text),)
+    return WritingPlanSnapshot(items, fingerprint)
 
 
 def test_outline_context_menu_includes_generate_selected(monkeypatch):
@@ -177,6 +189,7 @@ def test_batch_generate_starts_without_secondary_confirmation(monkeypatch):
         _ensure_chapter_generation_model_configured=lambda: True,
         _get_generation_params=lambda _headings: ("补充资质", 1200, 0, True, ["card-a"]),
         bid_writer=SimpleNamespace(
+            writing_plan_store=None,
             config=SimpleNamespace(
                 chapter_facts_enabled=False,
                 chapter_facts_auto_extract_on_batch=False,
@@ -198,6 +211,84 @@ def test_batch_generate_starts_without_secondary_confirmation(monkeypatch):
             },
         )
     ]
+
+
+def test_writing_plan_batch_generate_loads_one_snapshot_before_dialog(monkeypatch):
+    headings = [_heading("1.4.1 总体安排"), _heading("1.4.2 进场核验")]
+    snapshot = _writing_plan_snapshot("1.4.2", "只写启动准备阶段")
+    load_calls = []
+    dialog_calls = []
+    generate_calls = []
+
+    window = SimpleNamespace(
+        _get_selected_leaf_headings=lambda: headings,
+        _ensure_chapter_generation_model_configured=lambda: True,
+        _get_generation_params=lambda headings_arg, **kwargs: (
+            dialog_calls.append((headings_arg, kwargs)) or ("", 1200, 0, True, None)
+        ),
+        bid_writer=SimpleNamespace(
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=lambda: load_calls.append(True) or snapshot,
+            config=SimpleNamespace(
+                chapter_facts_enabled=False,
+                chapter_facts_auto_extract_on_batch=False,
+            ),
+        ),
+        _do_batch_generate=lambda *args, **kwargs: generate_calls.append((args, kwargs)),
+    )
+
+    MainWindow.batch_generate(window)
+
+    assert load_calls == [True]
+    assert dialog_calls == [(headings, {"writing_plan_snapshot": snapshot})]
+    assert generate_calls == [
+        (
+            (headings, "", 1200, 0),
+            {
+                "writing_plan_snapshot": snapshot,
+                "fact_card_mode": True,
+                "manual_fact_card_selections": None,
+                "auto_extract_facts": False,
+            },
+        )
+    ]
+
+
+def test_writing_plan_batch_generate_load_error_blocks_dialog(monkeypatch):
+    headings = [_heading("1.4.1 总体安排"), _heading("1.4.2 进场核验")]
+    errors = []
+    dialog_calls = []
+    generate_calls = []
+    monkeypatch.setattr(
+        gui.messagebox,
+        "showerror",
+        lambda title, message, **kwargs: errors.append((title, message, kwargs)),
+    )
+
+    def load_broken():
+        raise WritingPlanStoreError("无法读取撰写计划文件：/tmp/writing-plan.json")
+
+    window = SimpleNamespace(
+        _get_selected_leaf_headings=lambda: headings,
+        _ensure_chapter_generation_model_configured=lambda: True,
+        _get_generation_params=lambda *args, **kwargs: dialog_calls.append((args, kwargs)),
+        bid_writer=SimpleNamespace(
+            writing_plan_store=object(),
+            load_writing_plan_snapshot=load_broken,
+            config=SimpleNamespace(
+                chapter_facts_enabled=False,
+                chapter_facts_auto_extract_on_batch=False,
+            ),
+        ),
+        _do_batch_generate=lambda *args, **kwargs: generate_calls.append((args, kwargs)),
+    )
+
+    MainWindow.batch_generate(window)
+
+    assert dialog_calls == []
+    assert generate_calls == []
+    assert errors and errors[0][0] == "撰写计划加载失败"
+    assert "/tmp/writing-plan.json" in errors[0][1]
 
 
 def test_generate_button_requests_stop_when_batch_generation_is_active():
@@ -321,6 +412,44 @@ def test_do_batch_generate_refreshes_completed_status_before_next_heading():
         ("generate", "质量控制"),
         ("refresh", ("质量控制",)),
         ("generate", "服务保障"),
+    ]
+
+
+def test_writing_plan_batch_do_generate_resolves_each_heading_from_snapshot():
+    first = _heading("1.4.1 总体安排")
+    second = _heading("1.4.2 进场核验")
+    third = _heading("进场说明")
+    snapshot = _writing_plan_snapshot("1.4.2", "只写启动准备阶段")
+    generated_requirements = []
+
+    def generate_into_workspace(heading, requirements, *_args, **_kwargs):
+        generated_requirements.append((heading.title, requirements))
+        return "success"
+
+    window = SimpleNamespace(
+        progress_bar=_FakeProgressBar(),
+        batch_progress_text=_FakeVar(),
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=lambda: None,
+        update_idletasks=lambda: None,
+        _generate_into_workspace=generate_into_workspace,
+        refresh_status=lambda: None,
+    )
+
+    MainWindow._do_batch_generate(
+        window,
+        [first, second, third],
+        "旧共享要求",
+        1200,
+        0,
+        writing_plan_snapshot=snapshot,
+    )
+
+    assert generated_requirements == [
+        ("1.4.1 总体安排", ""),
+        ("1.4.2 进场核验", "只写启动准备阶段"),
+        ("进场说明", ""),
     ]
 
 
