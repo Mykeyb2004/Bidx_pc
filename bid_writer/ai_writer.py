@@ -111,7 +111,7 @@ class AIWriter:
         )
         self.chapter_writing_plan_generator = (
             ChapterWritingPlanGenerator(config)
-            if config.chapter_writing_plan_enabled
+            if config.chapter_writing_plan_enabled and config.writing_plan_file is None
             else None
         )
 

@@ -62,6 +62,28 @@ def test_load_snapshot_returns_empty_snapshot_for_missing_file(tmp_path) -> None
     assert snapshot.fingerprint is None
 
 
+def test_summarize_writing_plan_coverage_counts_only_nonempty_exact_plans() -> None:
+    snapshot = WritingPlanSnapshot(
+        items=(
+            WritingPlanItem(node="1.4.1", writing_plan="计划甲"),
+            WritingPlanItem(node="1.4.2", writing_plan="  "),
+            WritingPlanItem(node="1.4.20", writing_plan="相邻编号计划"),
+        ),
+        fingerprint="fingerprint",
+    )
+
+    coverage = writing_plan_store.summarize_writing_plan_coverage(
+        ["1.4.1 总体安排", "1.4.2 进场核验", "1.4.3 服务周期", "无编号节点"],
+        snapshot,
+    )
+
+    assert coverage.total_headings == 4
+    assert coverage.numbered_headings == 3
+    assert coverage.planned_headings == 1
+    assert coverage.unplanned_headings == 3
+    assert coverage.unnumbered_headings == 1
+
+
 def test_save_first_nonempty_plan_creates_formatted_utf8_file(tmp_path) -> None:
     path = tmp_path / "nested" / "writing-plan.json"
     store = WritingPlanStore(path)

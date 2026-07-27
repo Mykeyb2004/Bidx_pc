@@ -21,6 +21,13 @@ from .file_saver import FileSaver
 from .h2_project_background import H2ProjectBackgroundPrecomputeReport
 from .macos_stderr_filter import suppress_native_macos_stderr_noise
 from .outline_parser import HeadingNode, parse_outline
+from .writing_plan_store import (
+    WritingPlanCoverage,
+    WritingPlanSnapshot,
+    WritingPlanStore,
+    WritingPlanStoreError,
+    summarize_writing_plan_coverage,
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +58,12 @@ class BidWriter:
     def _rebuild_services(self) -> None:
         """根据当前配置重建运行时服务"""
         self.ai_writer = AIWriter(self.config)
+        writing_plan_path = self.config.writing_plan_file
+        self.writing_plan_store = (
+            WritingPlanStore(writing_plan_path)
+            if writing_plan_path is not None
+            else None
+        )
         self.file_saver = FileSaver(
             self.config.output_directory,
             self.config.output_prefix,
@@ -88,6 +101,37 @@ class BidWriter:
         self.config.reload()
         self._rebuild_services()
         self.last_error_message = ""
+
+    def load_writing_plan_snapshot(self) -> WritingPlanSnapshot:
+        if self.writing_plan_store is None:
+            raise WritingPlanStoreError("当前项目未配置撰写计划文件")
+        return self.writing_plan_store.load_snapshot()
+
+    def save_writing_plan(
+        self,
+        node: str,
+        text: str,
+        snapshot: WritingPlanSnapshot,
+    ) -> WritingPlanSnapshot:
+        if self.writing_plan_store is None:
+            raise WritingPlanStoreError("当前项目未配置撰写计划文件")
+        return self.writing_plan_store.save(
+            node,
+            text,
+            expected_snapshot=snapshot,
+        )
+
+    def summarize_writing_plans(
+        self,
+        headings: Iterable[HeadingNode],
+        snapshot: WritingPlanSnapshot,
+    ) -> WritingPlanCoverage:
+        if self.writing_plan_store is None:
+            raise WritingPlanStoreError("当前项目未配置撰写计划文件")
+        return summarize_writing_plan_coverage(
+            (heading.title for heading in headings),
+            snapshot,
+        )
 
     def precompute_h2_project_backgrounds(self) -> H2ProjectBackgroundPrecomputeReport:
         """批量生成前预计算 auto 模式 H2 项目背景。"""

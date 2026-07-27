@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 import hashlib
@@ -46,6 +47,21 @@ class WritingPlanSnapshot:
         return None
 
 
+@dataclass(frozen=True)
+class WritingPlanCoverage:
+    total_headings: int
+    numbered_headings: int
+    planned_headings: int
+
+    @property
+    def unplanned_headings(self) -> int:
+        return self.total_headings - self.planned_headings
+
+    @property
+    def unnumbered_headings(self) -> int:
+        return self.total_headings - self.numbered_headings
+
+
 def extract_node_number(heading: str) -> str | None:
     match = _NODE_NUMBER_PATTERN.match(heading)
     if match is None:
@@ -57,6 +73,23 @@ def extract_node_number(heading: str) -> str | None:
     ):
         return None
     return match.group(1)
+
+
+def summarize_writing_plan_coverage(
+    titles: Iterable[str],
+    snapshot: WritingPlanSnapshot,
+) -> WritingPlanCoverage:
+    title_list = list(titles)
+    nodes = [extract_node_number(title) for title in title_list]
+    return WritingPlanCoverage(
+        total_headings=len(title_list),
+        numbered_headings=sum(node is not None for node in nodes),
+        planned_headings=sum(
+            bool(plan.strip())
+            for node in nodes
+            if node is not None and (plan := snapshot.get(node)) is not None
+        ),
+    )
 
 
 class WritingPlanStore:

@@ -106,6 +106,26 @@ processing:
     assert payload["processing"]["full_context"]["chapter_writing_plan"]["max_chars"] == 280
 
 
+def test_config_editor_preserves_unmanaged_writing_plan_file(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "writing-plan.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    writing_plan_file: "./plans/writing-plan.json"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert payload["project"]["inputs"]["writing_plan_file"] == "./plans/writing-plan.json"
+
+
 def test_config_editor_preserves_processing_scoring_switch(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "auto.yaml"

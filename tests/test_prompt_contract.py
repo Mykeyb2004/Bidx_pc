@@ -54,6 +54,21 @@ def _build_writer(monkeypatch, config: Config) -> AIWriter:
     return AIWriter(config)
 
 
+def test_configured_file_disables_legacy_generated_chapter_plan(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config["project"].setdefault("inputs", {})["writing_plan_file"] = (
+        "./writing-plan.json"
+    )
+    config._config["processing"]["path"] = "full_context"
+    config._config["processing"].setdefault("full_context", {}).setdefault(
+        "chapter_writing_plan", {}
+    )["enabled"] = True
+
+    writer = _build_writer(monkeypatch, config)
+
+    assert writer.chapter_writing_plan_generator is None
+
+
 def _select_leaf_heading(config: Config, title: str):
     parser = parse_outline(config.get_outline_content())
     heading = parser.find_heading_by_title(title)

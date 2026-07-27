@@ -1,9 +1,103 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import bid_writer.main as main_module
 from bid_writer.config import Config
+from bid_writer.main import BidWriter
+from bid_writer.writing_plan_store import WritingPlanStore, WritingPlanStoreError
+
+
+def test_writing_plan_file_is_resolved_from_project_root(tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "project:\n  root_dir: ./project\n  inputs:\n"
+        "    writing_plan_file: ./plans/writing-plan.json\n",
+        encoding="utf-8",
+    )
+
+    config = Config(str(config_path))
+
+    assert config.writing_plan_file == project_root / "plans" / "writing-plan.json"
+
+
+def test_writing_plan_file_defaults_to_none(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("project:\n  root_dir: .\n", encoding="utf-8")
+
+    assert Config(str(config_path)).writing_plan_file is None
+
+
+def test_reload_config_replaces_writing_plan_store(monkeypatch, tmp_path: Path):
+    class DummyService:
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+
+    for name in (
+        "AIWriter",
+        "FileSaver",
+        "ChapterFactStore",
+        "FactCardStore",
+        "FactCardExtractor",
+        "ChapterFactExtractor",
+    ):
+        monkeypatch.setattr(main_module, name, DummyService)
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "project:\n  root_dir: ./project\n  inputs:\n"
+        "    writing_plan_file: ./first.json\n",
+        encoding="utf-8",
+    )
+    writer = BidWriter(str(config_path))
+    first_store = writer.writing_plan_store
+
+    config_path.write_text(
+        "project:\n  root_dir: ./project\n  inputs:\n"
+        "    writing_plan_file: ./second.json\n",
+        encoding="utf-8",
+    )
+    writer.reload_config()
+
+    assert isinstance(first_store, WritingPlanStore)
+    assert first_store.path == project_root / "first.json"
+    assert isinstance(writer.writing_plan_store, WritingPlanStore)
+    assert writer.writing_plan_store is not first_store
+    assert writer.writing_plan_store.path == project_root / "second.json"
+
+
+def test_writing_plan_facade_rejects_calls_without_configured_store():
+    writer = BidWriter.__new__(BidWriter)
+    writer.writing_plan_store = None
+
+    with pytest.raises(WritingPlanStoreError, match="未配置"):
+        writer.load_writing_plan_snapshot()
+    with pytest.raises(WritingPlanStoreError, match="未配置"):
+        writer.save_writing_plan("1.1", "计划", object())
+    with pytest.raises(WritingPlanStoreError, match="未配置"):
+        writer.summarize_writing_plans([], object())
+
+
+def test_writing_plan_facade_delegates_load_save_and_coverage(tmp_path: Path):
+    writer = BidWriter.__new__(BidWriter)
+    writer.writing_plan_store = WritingPlanStore(tmp_path / "plans.json")
+
+    snapshot = writer.load_writing_plan_snapshot()
+    snapshot = writer.save_writing_plan("1.1", "计划甲", snapshot)
+    coverage = writer.summarize_writing_plans(
+        [SimpleNamespace(title="1.1 节点甲"), SimpleNamespace(title="无编号节点")],
+        snapshot,
+    )
+
+    assert snapshot.get("1.1") == "计划甲"
+    assert coverage.total_headings == 2
+    assert coverage.planned_headings == 1
 
 
 def test_new_schema_resolves_project_relative_paths(tmp_path: Path):

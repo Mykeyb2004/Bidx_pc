@@ -255,6 +255,17 @@ class Config:
         """将相对路径解析为相对于项目根目录的路径。"""
         return self._resolve_with_base(path_value, self.project_root_path)
 
+    @property
+    def writing_plan_file(self) -> Path | None:
+        """节点撰写计划文件；相对路径以项目根目录为基准。"""
+        value = self._get_first_defined(
+            ("project", "inputs", "writing_plan_file"),
+            default="",
+        )
+        if not isinstance(value, str) or not value.strip():
+            return None
+        return self._resolve_project_path(value.strip())
+
     def _read_text_file(
         self,
         path_value: str,
