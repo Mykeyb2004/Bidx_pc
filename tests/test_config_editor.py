@@ -106,7 +106,7 @@ processing:
     assert payload["processing"]["full_context"]["chapter_writing_plan"]["max_chars"] == 280
 
 
-def test_config_editor_preserves_unmanaged_writing_plan_file(tmp_path: Path):
+def test_config_editor_round_trips_writing_plan_file_as_managed_input(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "writing-plan.yaml"
     config_path.write_text(
@@ -121,9 +121,11 @@ project:
     )
 
     document = load_config_editor_document(config_path)
+    document.model["project"]["writing_plan_file"] = "./plans/updated-writing-plan.json"
     payload = yaml.safe_load(document.render_yaml())
 
-    assert payload["project"]["inputs"]["writing_plan_file"] == "./plans/writing-plan.json"
+    assert document.model["project"]["writing_plan_file"] == "./plans/updated-writing-plan.json"
+    assert payload["project"]["inputs"]["writing_plan_file"] == "./plans/updated-writing-plan.json"
 
 
 def test_config_editor_preserves_processing_scoring_switch(tmp_path: Path):

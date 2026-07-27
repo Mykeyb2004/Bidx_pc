@@ -202,6 +202,7 @@ class ConfigEditorDialog(tk.Toplevel):
         add_var("project.outline_locked", tk.BooleanVar())
         add_var("project.outline_generation.role_file", tk.StringVar())
         add_var("project.outline_file", tk.StringVar())
+        add_var("project.writing_plan_file", tk.StringVar())
         add_var("project.bid_requirements_mode", tk.StringVar())
         add_var("project.bid_requirements_file", tk.StringVar())
         add_var("project.scoring_criteria_mode", tk.StringVar())
@@ -429,13 +430,14 @@ class ConfigEditorDialog(tk.Toplevel):
             row_offset = 1
         outline_file_label = "大纲保存位置 / 已有大纲文件" if self.is_new_config else "大纲文件"
         self._add_path_row(inputs, 0 + row_offset, outline_file_label, "project.outline_file", browse_kind="file", relative_to="project")
+        self._add_path_row(inputs, 1 + row_offset, "节点撰写计划文件", "project.writing_plan_file", browse_kind="file", relative_to="project")
 
-        self._add_mode_selector(inputs, 1 + row_offset, "采购需求", "project.bid_requirements_mode")
+        self._add_mode_selector(inputs, 2 + row_offset, "采购需求", "project.bid_requirements_mode")
         self.project_bid_file_frame = ttk.Frame(inputs)
-        self.project_bid_file_frame.grid(row=2 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_bid_file_frame.grid(row=3 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_path_row(self.project_bid_file_frame, 0, "采购需求文件", "project.bid_requirements_file", browse_kind="file", relative_to="project")
         self.project_bid_text_frame = ttk.Frame(inputs)
-        self.project_bid_text_frame.grid(row=3 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_bid_text_frame.grid(row=4 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_text_block(
             self.project_bid_text_frame,
             "采购需求正文",
@@ -443,12 +445,12 @@ class ConfigEditorDialog(tk.Toplevel):
             help_text="兼容旧配置；推荐迁移为独立文件。",
         )
 
-        self._add_mode_selector(inputs, 4 + row_offset, "评分标准", "project.scoring_criteria_mode")
+        self._add_mode_selector(inputs, 5 + row_offset, "评分标准", "project.scoring_criteria_mode")
         self.project_score_file_frame = ttk.Frame(inputs)
-        self.project_score_file_frame.grid(row=5 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_score_file_frame.grid(row=6 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_path_row(self.project_score_file_frame, 0, "评分标准文件", "project.scoring_criteria_file", browse_kind="file", relative_to="project")
         self.project_score_text_frame = ttk.Frame(inputs)
-        self.project_score_text_frame.grid(row=6 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.project_score_text_frame.grid(row=7 + row_offset, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._add_text_block(
             self.project_score_text_frame,
             "评分标准正文",
@@ -921,6 +923,7 @@ class ConfigEditorDialog(tk.Toplevel):
             "project.outline_locked": model["project"]["outline_locked"],
             "project.outline_generation.role_file": model["project"]["outline_generation"]["role_file"],
             "project.outline_file": model["project"]["outline_file"],
+            "project.writing_plan_file": model["project"]["writing_plan_file"],
             "project.bid_requirements_mode": model["project"]["bid_requirements_mode"],
             "project.bid_requirements_file": model["project"]["bid_requirements_file"],
             "project.scoring_criteria_mode": model["project"]["scoring_criteria_mode"],
@@ -1003,6 +1006,7 @@ class ConfigEditorDialog(tk.Toplevel):
                     "role_file": self.vars["project.outline_generation.role_file"].get().strip(),
                 },
                 "outline_file": self.vars["project.outline_file"].get().strip(),
+                "writing_plan_file": self.vars["project.writing_plan_file"].get().strip(),
                 "bid_requirements_mode": self.vars["project.bid_requirements_mode"].get().strip() or "file",
                 "bid_requirements_file": self.vars["project.bid_requirements_file"].get().strip(),
                 "bid_requirements_text": self._get_text_value("project.bid_requirements_text"),

@@ -781,6 +781,7 @@ def test_config_editor_project_section_collects_outline_generation_fields():
         "project.outline_locked": StubVar(False),
         "project.outline_generation.role_file": StubVar("./roles/标书架构师.md"),
         "project.outline_file": StubVar("./outline.md"),
+        "project.writing_plan_file": StubVar("./writing-plan.json"),
         "project.bid_requirements_mode": StubVar("file"),
         "project.bid_requirements_file": StubVar("./bid_requirements.md"),
         "project.scoring_criteria_mode": StubVar("file"),
@@ -846,6 +847,7 @@ def test_config_editor_project_section_collects_outline_generation_fields():
 
     assert model["project"]["outline_locked"] is False
     assert model["project"]["outline_generation"]["role_file"] == "./roles/标书架构师.md"
+    assert model["project"]["writing_plan_file"] == "./writing-plan.json"
 
 
 def test_new_config_project_section_hides_outline_lock_and_role(monkeypatch):
@@ -888,6 +890,10 @@ def test_new_config_project_section_hides_outline_lock_and_role(monkeypatch):
     assert ("大纲已锁定", "project.outline_locked") not in check_rows
     assert not any(key == "project.outline_generation.role_file" for _label, key, _kwargs in path_rows)
     assert any(label == "大纲保存位置 / 已有大纲文件" and key == "project.outline_file" for label, key, _kwargs in path_rows)
+    assert any(
+        label == "节点撰写计划文件" and key == "project.writing_plan_file"
+        for label, key, _kwargs in path_rows
+    )
 
 
 def test_new_config_project_section_adds_tender_import_button(monkeypatch):
@@ -968,3 +974,7 @@ def test_existing_config_project_section_keeps_outline_advanced_fields(monkeypat
     assert ("大纲已锁定", "project.outline_locked") in check_rows
     assert any(key == "project.outline_generation.role_file" for _label, key, _kwargs in path_rows)
     assert any(label == "大纲文件" and key == "project.outline_file" for label, key, _kwargs in path_rows)
+    assert any(
+        label == "节点撰写计划文件" and key == "project.writing_plan_file"
+        for label, key, _kwargs in path_rows
+    )

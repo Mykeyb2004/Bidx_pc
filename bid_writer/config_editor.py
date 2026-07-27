@@ -119,6 +119,7 @@ def build_default_editor_model() -> dict[str, Any]:
                 "role_file": "./roles/标书架构师.md",
             },
             "outline_file": "./投标大纲.md",
+            "writing_plan_file": "",
             "bid_requirements_mode": "file",
             "bid_requirements_file": "./项目要求/项目采购需求.md",
             "bid_requirements_text": "",
@@ -366,6 +367,13 @@ def normalize_raw_config_to_editor_model(raw_config: dict[str, Any]) -> dict[str
                     ("inputs", "outline_file"),
                     "outline_file",
                     default="./outline.md",
+                )
+            ),
+            "writing_plan_file": _coerce_str(
+                _first_defined(
+                    raw_config,
+                    ("project", "inputs", "writing_plan_file"),
+                    default="",
                 )
             ),
             "bid_requirements_mode": bid_requirements_mode,
@@ -635,6 +643,10 @@ def build_canonical_config(model: dict[str, Any]) -> dict[str, Any]:
     project_inputs: dict[str, Any] = {
         "outline_file": model["project"]["outline_file"].strip() or "./outline.md",
     }
+    writing_plan_file = model["project"].get("writing_plan_file", "").strip()
+    if writing_plan_file:
+        project_inputs["writing_plan_file"] = writing_plan_file
+
     if model["project"]["bid_requirements_mode"] == "inline":
         project_inputs["bid_requirements"] = model["project"]["bid_requirements_text"]
     else:
@@ -1246,6 +1258,7 @@ _ROOT_MANAGED_SCHEMA: dict[str, Any] = {
         },
         "inputs": {
             "outline_file": True,
+            "writing_plan_file": True,
             "bid_requirements": True,
             "bid_requirements_file": True,
             "scoring_criteria": True,
