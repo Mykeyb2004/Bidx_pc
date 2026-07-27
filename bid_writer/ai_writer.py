@@ -860,7 +860,7 @@ class AIWriter:
                 name == "scoring_criteria" for name, _ in full_context_sections
             )
             shared_prompt_prefix = self._join_prompt_section_contents(full_context_sections)
-            if self.chapter_writing_plan_generator is not None and not has_node_writing_plan:
+            if self.chapter_writing_plan_generator is not None:
                 if status_callback is not None:
                     status_callback("生成章节写作计划", "正在生成章节写作计划...")
                 try:

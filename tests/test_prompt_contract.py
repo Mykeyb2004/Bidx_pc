@@ -578,7 +578,9 @@ def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_p
     assert "2. 再回应质量评分点。" in result.prompt
 
 
-def test_node_writing_plan_suppresses_legacy_generated_plan(monkeypatch, tmp_path):
+def test_transient_node_plan_keeps_legacy_generated_plan_without_configured_file(
+    monkeypatch, tmp_path
+):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)
     calls: list[str] = []
@@ -588,7 +590,7 @@ def test_node_writing_plan_suppresses_legacy_generated_plan(monkeypatch, tmp_pat
         def get_or_generate(*args, **kwargs):
             del args, kwargs
             calls.append("called")
-            return "不应出现的旧版章节写作计划"
+            return "保留的旧版章节写作计划"
 
     writer.chapter_writing_plan_generator = DummyPlanGenerator()
     heading = _select_leaf_heading(config, "质量保障措施")
@@ -599,10 +601,10 @@ def test_node_writing_plan_suppresses_legacy_generated_plan(monkeypatch, tmp_pat
         target_words=1200,
     )
 
-    assert calls == []
+    assert calls == ["called"]
     assert "## 节点撰写计划\n按节点计划组织正文。" in result.prompt
-    assert "不应出现的旧版章节写作计划" not in result.prompt
-    assert "- 章节写作计划：" not in result.prompt
+    assert "保留的旧版章节写作计划" in result.prompt
+    assert "- 章节写作计划：" in result.prompt
 
 
 def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch, tmp_path):
