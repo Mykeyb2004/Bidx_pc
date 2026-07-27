@@ -15,12 +15,19 @@ from bid_writer.outline_parser import parse_outline
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXPECTED_BLOCK_IDS = [
     "system_constraints",
-    "chapter_task",
-    "structure_rules",
-    "chapter_scope",
-    "project_background",
+    "chapter_context",
+    "output_constraints",
     "fact_card_context",
-    "scoring_context",
+    "node_writing_plan",
+    "chapter_task",
+]
+EXPECTED_BLOCK_SPECS = [
+    ("system_constraints", "System Constraints", "system"),
+    ("chapter_context", "Chapter Context", "user"),
+    ("output_constraints", "Output Constraints", "user"),
+    ("fact_card_context", "Fact Card Context", "user"),
+    ("node_writing_plan", "Node Writing Plan", "user"),
+    ("chapter_task", "Chapter Task", "user"),
 ]
 
 
@@ -100,9 +107,21 @@ def test_current_prompt_config_exposes_expected_prompt_contract_blocks(monkeypat
     )
 
     assert [block["id"] for block in result.prompt_contract_blocks] == EXPECTED_BLOCK_IDS
+    assert [
+        (block["id"], block["label"], block["prompt_kind"])
+        for block in result.prompt_contract_blocks
+    ] == EXPECTED_BLOCK_SPECS
     block_map = {block["id"]: block for block in result.prompt_contract_blocks}
     assert block_map["system_constraints"]["prompt_kind"] == "system"
-    assert block_map["chapter_task"]["section_names"] == ["task_card", "additional_requirements"]
+    assert block_map["system_constraints"]["section_names"] == []
+    assert block_map["system_constraints"]["chars"] == len(writer.build_system_prompt())
+    assert block_map["chapter_context"]["section_names"] == ["chapter_context"]
+    assert block_map["output_constraints"]["section_names"] == [
+        "output_constraint_reminder"
+    ]
+    assert block_map["node_writing_plan"]["section_names"] == ["node_writing_plan"]
+    assert block_map["node_writing_plan"]["source_context"] == ["additional_requirements"]
+    assert block_map["chapter_task"]["section_names"] == ["task_card"]
     assert "knowledge_context" not in block_map
     assert block_map["fact_card_context"]["section_names"] == []
     assert "source_context" in block_map["system_constraints"]
@@ -126,31 +145,172 @@ def test_fact_card_prompt_contract_exposes_fact_card_block(monkeypatch, tmp_path
     assert "build_fact_card_prompt_section" in fact_card_block["source_context"]
 
 
-def test_extra_rules_are_folded_into_structure_contract(monkeypatch, tmp_path):
+def test_node_writing_plan_is_between_context_and_final_task_card(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        additional_requirements="先写责任分工，再写闭环台账。\n必须对应评分点。",
+        target_words=1200,
+    )
+
+    prompt = result.prompt
+    node_plan_section = next(
+        section["content"]
+        for section in result.prompt_sections
+        if section["name"] == "node_writing_plan"
+    )
+    assert "## 用户附加要求" not in prompt
+    assert node_plan_section == "## 节点撰写计划\n先写责任分工，再写闭环台账。\n必须对应评分点。"
+    assert prompt.index("## 当前章节边界及招标/评分要求") < prompt.index("## 输出硬约束提醒")
+    assert prompt.index("## 输出硬约束提醒") < prompt.index("## 节点撰写计划")
+    assert prompt.index("## 节点撰写计划") < prompt.index("## 章节任务卡")
+    assert prompt.rstrip().endswith("最终执行说明：直接输出当前章节投标正文。")
+
+
+def test_auto_prompt_uses_the_same_business_order(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("processing", {})["path"] = "auto"
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+    monkeypatch.setattr(
+        writer.context_pruner,
+        "build_context",
+        lambda _: ChapterContext(chapter_focus_terms=["质量保障措施"]),
+    )
+    monkeypatch.setattr(writer.context_pruner, "dump_debug", lambda *args, **kwargs: None)
+
+    result = writer.build_prompt_result(
+        heading,
+        additional_requirements="按责任、动作和佐证组织。",
+        target_words=1200,
+    )
+
+    names = [section["name"] for section in result.prompt_sections]
+    assert names == [
+        "chapter_context",
+        "output_constraint_reminder",
+        "node_writing_plan",
+        "task_card",
+    ]
+    assert "### 招标需求参考" not in result.prompt
+    chapter_block = next(
+        block for block in result.prompt_contract_blocks if block["id"] == "chapter_context"
+    )
+    assert "Config.bid_requirements" not in chapter_block["source_context"]
+
+
+def test_empty_node_writing_plan_changes_neither_plan_section_nor_task_requirement(
+    monkeypatch, tmp_path
+):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, additional_requirements="  \n ", target_words=1200)
+
+    assert "## 节点撰写计划" not in result.prompt
+    assert "按照节点撰写计划组织本节点正文" not in result.prompt
+    block = next(
+        item for item in result.prompt_contract_blocks if item["id"] == "node_writing_plan"
+    )
+    assert block["section_names"] == []
+    assert block["source_context"] == []
+    assert block["chars"] == 0
+
+
+def test_node_writing_plan_is_bounded_by_context_conflict_rule(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        additional_requirements="把内容写入同级章节。",
+        target_words=1200,
+    )
+
+    assert "把内容写入同级章节。" in result.prompt
+    assert (
+        "- 执行要求：按照节点撰写计划组织本节点正文；计划未覆盖的必要评分点应补齐，"
+        "计划与当前章节边界、招标/评分要求或 system 硬约束冲突时不得照搬。"
+    ) in result.prompt
+
+
+def test_fact_card_content_precedes_node_writing_plan(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "fact_card_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    store = FactCardStore(config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        additional_requirements="先回应评分点。",
+        target_words=1200,
+        fact_card_mode=True,
+        selected_fact_cards=store.resolve_chapter_prompt_cards(heading.full_path),
+    )
+
+    assert result.prompt.index("## 事实卡片参考") < result.prompt.index("## 节点撰写计划")
+
+
+def test_system_prompt_remains_a_separate_api_message(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    prepared = writer.prepare_generation(
+        heading,
+        additional_requirements="按计划执行。",
+        target_words=1200,
+        stream=False,
+    )
+
+    messages = prepared.request_options["messages"]
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert messages[0]["content"] == writer.build_system_prompt()
+    assert "【最高优先级输出强约束】" not in messages[1]["content"]
+
+
+def test_system_gate_allows_required_mermaid_without_user_prompt_duplication(
+    monkeypatch, tmp_path
+):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
     result = writer.build_prompt_result(heading, target_words=1200)
-    structure_section = next(
+    system_prompt = writer.build_system_prompt()
+
+    assert "明确要求的 Mermaid 代码块及其必要语法除外" in system_prompt
+    assert "绝对禁止在正文中写入自解释、自评述、自引导的内容" not in result.prompt
+
+
+def test_extra_rules_are_folded_into_output_constraint_reminder(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(heading, target_words=1200)
+    reminder_section = next(
         section["content"]
         for section in result.prompt_sections
-        if section["name"] == "structure_contract"
+        if section["name"] == "output_constraint_reminder"
     )
 
     assert "请为以下标书章节撰写投标正文。" not in result.prompt
     assert "## 其他写作要求" not in result.prompt
-    assert "请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。" in structure_section
-    assert "请根据以上任务卡，结合采购需求、评分标准撰写投标正文。" in structure_section
-    assert "内容要专业、严谨，符合标书撰写规范。" in structure_section
-    assert (
-        "- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。"
-        in structure_section
-    )
-    assert (
-        "- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。"
-        in structure_section
-    )
+    assert reminder_section.splitlines()[:5] == [
+        "## 输出硬约束提醒",
+        "- 请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。",
+        "- 节点撰写计划和事实材料不得突破本章边界及招标/评分要求。",
+        "- 请优先围绕当前章节任务、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。",
+        "- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。",
+    ]
+    assert "- 请根据以上任务卡，结合采购需求、评分标准撰写投标正文。" in reminder_section
+    assert "- 内容要专业、严谨，符合标书撰写规范。" in reminder_section
     assert "- 篇幅目标：建议控制在 1200-1400 字，优先完整覆盖本章重点，不为凑字数重复展开。" in result.prompt
     assert "- 结构要求：默认使用正式层级序号组织正文，不要写成整篇无序号的长段落。" not in result.prompt
 
@@ -227,12 +387,12 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
         "- 写作依据：优先依据前文固定参考材料中的招标需求与评分标准组织内容，"
         "并严格围绕当前章节任务卡和章节边界展开。"
     ) in result.prompt
-    assert "## 章节边界参考" in result.prompt
+    assert "### 当前章节边界" in result.prompt
     assert "## 完整总大纲参考" not in result.prompt
-    assert result.prompt.index("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。") < result.prompt.index("## 招标需求参考")
+    assert result.prompt.index("### 招标需求参考") < result.prompt.index("## 输出硬约束提醒")
     assert "## 投标方知识库" not in result.prompt
-    assert result.prompt.index("## 评分标准参考") < result.prompt.index("## 章节边界参考")
-    assert result.prompt.index("## 章节边界参考") < result.prompt.index("## 章节任务卡")
+    assert result.prompt.index("### 评分要求") < result.prompt.index("### 当前章节边界")
+    assert result.prompt.index("### 当前章节边界") < result.prompt.index("## 章节任务卡")
 
 
 def test_full_context_prompt_omits_scoring_when_processing_scoring_disabled(monkeypatch, tmp_path):
@@ -245,10 +405,10 @@ def test_full_context_prompt_omits_scoring_when_processing_scoring_disabled(monk
     result = writer.build_prompt_result(heading, target_words=1200)
     block_map = {block["id"]: block for block in result.prompt_contract_blocks}
 
-    assert "## 招标需求参考" in result.prompt
-    assert "## 评分标准参考" not in result.prompt
+    assert "### 招标需求参考" in result.prompt
+    assert "### 评分要求" not in result.prompt
     assert "评分标准正文" not in result.prompt
-    assert block_map["scoring_context"]["section_names"] == []
+    assert "Config.scoring_criteria" not in block_map["chapter_context"]["source_context"]
     assert result.full_context_stats["scoring_criteria_chars"] == 0
 
 
@@ -275,7 +435,7 @@ def test_auto_prompt_omits_scoring_focus_and_task_basis_when_scoring_disabled(mo
     assert "## 评分关注" not in result.prompt
     assert "评分关注" not in result.prompt
     assert "- 写作依据：优先根据前文项目背景和章节边界组织内容。" in result.prompt
-    assert block_map["scoring_context"]["section_names"] == []
+    assert "pruned_context.scoring_items" not in block_map["chapter_context"]["source_context"]
 
 
 def test_prompt_ignores_deprecated_output_format_and_first_line_template(monkeypatch, tmp_path):
@@ -295,9 +455,9 @@ def test_prompt_ignores_deprecated_output_format_and_first_line_template(monkeyp
     assert "旧提示词格式" not in result.prompt
     assert "## 首行要求" not in result.prompt
     assert "#### 质量保障措施" not in result.prompt
-    assert "first_line_rule" not in block_map["structure_rules"]["section_names"]
+    assert "first_line_rule" not in block_map["output_constraints"]["section_names"]
     assert "prompt.output_format" not in block_map["chapter_task"]["source_context"]
-    assert "prompt.first_line_template" not in block_map["structure_rules"]["source_context"]
+    assert "prompt.first_line_template" not in block_map["output_constraints"]["source_context"]
 
 
 def test_full_context_prompt_ignores_deprecated_knowledge_context(monkeypatch, tmp_path):
@@ -418,6 +578,33 @@ def test_full_context_prompt_can_include_chapter_writing_plan(monkeypatch, tmp_p
     assert "2. 再回应质量评分点。" in result.prompt
 
 
+def test_node_writing_plan_suppresses_legacy_generated_plan(monkeypatch, tmp_path):
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    writer = _build_writer(monkeypatch, config)
+    calls: list[str] = []
+
+    class DummyPlanGenerator:
+        @staticmethod
+        def get_or_generate(*args, **kwargs):
+            del args, kwargs
+            calls.append("called")
+            return "不应出现的旧版章节写作计划"
+
+    writer.chapter_writing_plan_generator = DummyPlanGenerator()
+    heading = _select_leaf_heading(config, "质量保障措施")
+
+    result = writer.build_prompt_result(
+        heading,
+        additional_requirements="按节点计划组织正文。",
+        target_words=1200,
+    )
+
+    assert calls == []
+    assert "## 节点撰写计划\n按节点计划组织正文。" in result.prompt
+    assert "不应出现的旧版章节写作计划" not in result.prompt
+    assert "- 章节写作计划：" not in result.prompt
+
+
 def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch, tmp_path):
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     config._config.setdefault("processing", {}).setdefault("full_context", {}).setdefault(
@@ -442,16 +629,16 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert captured["system_prompt"] == writer.build_system_prompt()
-    assert captured["shared_prompt_prefix"].startswith("请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。")
+    assert captured["shared_prompt_prefix"].startswith(config.bid_requirements)
     assert "## 投标方知识库" not in captured["shared_prompt_prefix"]
     assert "## 项目背景" not in captured["shared_prompt_prefix"]
-    assert "## 招标需求参考" in captured["shared_prompt_prefix"]
-    assert "## 评分标准参考" in captured["shared_prompt_prefix"]
+    assert config.bid_requirements in captured["shared_prompt_prefix"]
+    assert config.scoring_criteria.strip() in captured["shared_prompt_prefix"]
     assert "## 章节边界参考" not in captured["shared_prompt_prefix"]
-    assert captured["scope_reference"].startswith("## 章节边界参考")
-    assert result.prompt.startswith(captured["shared_prompt_prefix"])
-    assert result.prompt.index("## 章节任务卡") > result.prompt.index("## 评分标准参考")
-    assert result.prompt.index("## 章节边界参考") < result.prompt.index("## 章节任务卡")
+    assert captured["scope_reference"].startswith("- 上级标题：")
+    assert result.prompt.startswith("## 当前章节边界及招标/评分要求")
+    assert result.prompt.index("## 章节任务卡") > result.prompt.index("### 评分要求")
+    assert result.prompt.index("### 当前章节边界") < result.prompt.index("## 章节任务卡")
 
 
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):
@@ -596,15 +783,18 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
 
     result = writer.build_prompt_result(heading, target_words=1200)
 
-    assert "## 项目背景" in result.prompt
-    assert "以下可参考的目背景，供理解整体项目采购目标和需求：" in result.prompt
+    assert "### 项目背景参考" in result.prompt
+    assert "以下项目背景供理解整体采购目标和需求：" in result.prompt
     assert "以下为当前 H2 相关项目背景材料，供理解整体目标和范围，不直接作为正文内容：" not in result.prompt
     assert "H2专属背景摘要。" in result.prompt
     section_order = [section["name"] for section in result.prompt_sections]
-    assert section_order.index("project_background") < section_order.index("scoring_focus")
-    assert section_order.index("scoring_focus") < section_order.index("scope_reference")
-    assert section_order.index("scope_reference") < section_order.index("task_card")
-    block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
+    assert section_order == ["chapter_context", "output_constraint_reminder", "task_card"]
+    chapter_context = result.prompt_sections[0]["content"]
+    assert chapter_context.index("### 项目背景参考") < chapter_context.index("### 评分要求")
+    assert chapter_context.index("### 评分要求") < chapter_context.index("### 当前章节边界")
+    assert "\n## 项目背景" not in chapter_context
+    assert "\n## 评分" not in chapter_context
+    block = next(block for block in result.prompt_contract_blocks if block["id"] == "chapter_context")
     assert "H2ProjectBackgroundGenerator.get_for_heading" in block["source_context"]
     assert result.project_background_trace["h2_title"] == "项目实施方案"
     assert result.project_background_trace["cache_status"] == "hit"
@@ -636,8 +826,8 @@ def test_auto_prompt_does_not_fallback_to_global_project_background(monkeypatch,
                 h2_title="项目实施方案",
                 h2_full_path="综合服务项目投标方案 > 项目实施方案",
                 summary="",
-                evidence_unit_ids=[],
-                evidence_blocks=[],
+                evidence_unit_ids=["requirements_0"],
+                evidence_blocks=["只有证据但没有可用摘要"],
                 source_hash="source",
                 subtree_hash="tree",
                 cache_status="fallback",
@@ -649,6 +839,10 @@ def test_auto_prompt_does_not_fallback_to_global_project_background(monkeypatch,
     result = writer.build_prompt_result(heading, target_words=1200)
 
     assert "## 项目背景" not in result.prompt
+    chapter_block = next(
+        block for block in result.prompt_contract_blocks if block["id"] == "chapter_context"
+    )
+    assert "H2ProjectBackgroundGenerator.get_for_heading" not in chapter_block["source_context"]
     assert result.project_background_trace["scope"] == "h2"
     assert result.project_background_trace["fallback_reason"] == "测试空回退"
 
@@ -666,8 +860,8 @@ def test_full_context_prompt_skips_project_background_even_when_configured(monke
 
     assert "## 项目背景" not in result.prompt
     assert "全局项目背景摘要。" not in result.prompt
-    block = next(block for block in result.prompt_contract_blocks if block["id"] == "project_background")
-    assert block["section_names"] == []
+    block = next(block for block in result.prompt_contract_blocks if block["id"] == "chapter_context")
+    assert "H2ProjectBackgroundGenerator.get_for_heading" not in block["source_context"]
     assert result.project_background_trace == {}
 
 

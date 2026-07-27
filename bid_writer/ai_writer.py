@@ -71,12 +71,11 @@ class AIWriter:
 
     _PROMPT_CONTRACT_BLOCKS: tuple[tuple[str, str, str], ...] = (
         ("system_constraints", "System Constraints", "system"),
-        ("chapter_task", "Chapter Task", "user"),
-        ("structure_rules", "Structure Rules", "user"),
-        ("chapter_scope", "Chapter Scope", "user"),
-        ("project_background", "Project Background", "user"),
+        ("chapter_context", "Chapter Context", "user"),
+        ("output_constraints", "Output Constraints", "user"),
         ("fact_card_context", "Fact Card Context", "user"),
-        ("scoring_context", "Scoring Context", "user"),
+        ("node_writing_plan", "Node Writing Plan", "user"),
+        ("chapter_task", "Chapter Task", "user"),
     )
 
     _FORMAL_HEADING_LINE_RE = re.compile(
@@ -195,6 +194,7 @@ class AIWriter:
         pruned_context: Optional[ChapterContext],
         target_word_range: TargetWordRange,
         chapter_writing_plan: str = "",
+        has_node_writing_plan: bool = False,
         max_mermaid_flowcharts_per_section_override: Optional[int] = None,
         task_basis_line: str = "",
     ) -> str:
@@ -229,6 +229,12 @@ class AIWriter:
                 stripped = line.strip()
                 if stripped:
                     lines.append(f"  {stripped}")
+        if has_node_writing_plan:
+            lines.append(
+                "- 执行要求：按照节点撰写计划组织本节点正文；计划未覆盖的必要评分点应补齐，"
+                "计划与当前章节边界、招标/评分要求或 system 硬约束冲突时不得照搬。"
+            )
+        lines.append("- 最终执行说明：直接输出当前章节投标正文。")
         return "\n".join(lines)
 
     def _build_scope_reference(self, heading: HeadingNode) -> str:
@@ -241,7 +247,6 @@ class AIWriter:
 
         return "\n".join(
             [
-                "## 章节边界参考",
                 f"- 上级标题：{parent_title}",
                 f"- 当前扩写标题：{current_title}",
                 f"- 同级标题：{sibling_text}",
@@ -250,9 +255,7 @@ class AIWriter:
         )
 
     def _build_scoring_focus_section(self, pruned_context: ChapterContext) -> str:
-        lines = [
-            "## 评分关注",
-        ]
+        lines: list[str] = []
         unique_subitems = {item.subitem for item in pruned_context.scoring_items if item.subitem}
         response_labels = [label for label in pruned_context.response_labels if label]
         if len(unique_subitems) == 1 and len(response_labels) == 1:
@@ -272,8 +275,7 @@ class AIWriter:
     @staticmethod
     def _build_project_background_section(background: str) -> str:
         return "\n".join([
-            "## 项目背景",
-            "以下可参考的目背景，供理解整体项目采购目标和需求：",
+            "以下项目背景供理解整体采购目标和需求：",
             background.strip(),
         ])
 
@@ -282,7 +284,7 @@ class AIWriter:
         must_respond: list,
         reference: list,
     ) -> str:
-        lines = ["## 评分关注"]
+        lines: list[str] = []
         if must_respond:
             lines.append("**必须响应**（以下评分项与本章节所属板块直接相关，正文必须明确覆盖）")
             lines.append(self._format_scoring_items(must_respond))
@@ -312,7 +314,8 @@ class AIWriter:
         gate_rules = self._render_system_gate_rules()
         sections.append(
             "【最高优先级输出强约束】\n"
-            "以下规则优先级高于其他风格建议、默认模板和惯常表达；如有冲突，必须以本节规则为准。\n"
+            "以下规则仅约束输出形式、投标主体称谓和禁用表达；在这些范围内如有冲突，"
+            "必须以本节规则为准，但不得覆盖招标事实或评分要求。\n"
             f"{gate_rules}"
         )
 
@@ -419,16 +422,33 @@ class AIWriter:
             "必须使用```mermaid代码块，可按内容需要选择合适的 Mermaid 图类型，图内文案保持简洁。"
         )
 
-    def _build_structure_contract_section(self) -> str:
-        rules = self.config.prompt_extra_rules
-        lines = [
-            "请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。",
-            "- 请优先围绕当前章节任务卡、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。",
-            "- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。",
-        ]
-        if rules:
-            lines.extend(f"- {rule}" for rule in rules)
+    def _build_chapter_context_section(
+        self,
+        *,
+        heading: HeadingNode,
+        bid_requirements: str = "",
+        scoring_section: str = "",
+        project_background: str = "",
+    ) -> str:
+        lines = ["## 当前章节边界及招标/评分要求"]
+        if bid_requirements.strip():
+            lines.extend(["### 招标需求参考", bid_requirements.strip()])
+        if project_background.strip():
+            lines.extend(["### 项目背景参考", project_background.strip()])
+        if scoring_section.strip():
+            lines.extend(["### 评分要求", scoring_section.strip()])
+        lines.extend(["### 当前章节边界", self._build_scope_reference(heading)])
         return "\n".join(lines)
+
+    def _build_output_constraint_reminder_section(self) -> str:
+        return "\n".join([
+            "## 输出硬约束提醒",
+            "- 请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。",
+            "- 节点撰写计划和事实材料不得突破本章边界及招标/评分要求。",
+            "- 请优先围绕当前章节任务、上下文材料和章节边界展开，不要偏题，不要与同级章节重复。",
+            "- 在满足完整响应前提下，优先提高针对性、可执行性和评审可读性，不为凑篇幅重复展开。",
+            *[f"- {rule}" for rule in self.config.prompt_extra_rules],
+        ])
 
     @classmethod
     def _is_protected_bidder_alias_match(cls, text: str, start: int, end: int, alias: str) -> bool:
@@ -565,22 +585,12 @@ class AIWriter:
         self,
         full_context_stats: dict[str, Any],
     ) -> list[tuple[str, str]]:
-        sections: list[tuple[str, str]] = [
-            ("structure_contract", self._build_structure_contract_section())
-        ]
+        sections: list[tuple[str, str]] = []
 
         bid_requirements = self.config.bid_requirements.strip()
         full_context_stats["bid_requirements_chars"] = len(bid_requirements)
         if bid_requirements:
-            sections.append(
-                (
-                    "bid_requirements",
-                    f"""
-## 招标需求参考
-{bid_requirements}
-""",
-                )
-            )
+            sections.append(("bid_requirements", bid_requirements))
 
         scoring_criteria = (
             self.config.scoring_criteria.strip()
@@ -589,15 +599,7 @@ class AIWriter:
         )
         full_context_stats["scoring_criteria_chars"] = len(scoring_criteria)
         if scoring_criteria:
-            sections.append(
-                (
-                    "scoring_criteria",
-                    f"""
-## 评分标准参考
-{scoring_criteria}
-""",
-                )
-            )
+            sections.append(("scoring_criteria", scoring_criteria))
 
         return sections
 
@@ -663,60 +665,47 @@ class AIWriter:
                 "chars_override": len(system_prompt),
             },
             {
-                "id": "chapter_task",
-                "label": "Chapter Task",
+                "id": "chapter_context",
+                "label": "Chapter Context",
                 "prompt_kind": "user",
-                "section_names": ["task_card", "additional_requirements"],
+                "section_names": ["chapter_context"],
                 "source_context": [
-                    "HeadingNode.title",
-                    "HeadingNode.full_path",
-                    "target_word_range",
-                    "prompt_bidder_name",
-                    (
-                        "runtime.max_mermaid_flowcharts_per_section_override"
-                        if max_mermaid_flowcharts_per_section_override is not None and mermaid_rule_present
-                        else "prompt.max_mermaid_flowcharts_per_section"
-                        if mermaid_rule_present
-                        else ""
-                    ),
-                    "pruned_context.chapter_focus_terms" if pruned_context is not None else "HeadingNode.title",
-                    "ChapterWritingPlanGenerator.get_or_generate"
-                    if "task_card" in section_map and "章节写作计划" in section_map.get("task_card", "")
+                    "Config.bid_requirements"
+                    if pruned_context is None and self.config.bid_requirements.strip()
                     else "",
-                    "additional_requirements" if additional_requirements.strip() else "",
-                ],
-            },
-            {
-                "id": "structure_rules",
-                "label": "Structure Rules",
-                "prompt_kind": "user",
-                "section_names": ["structure_contract"],
-                "source_context": [
-                    "structure_contract",
-                    "prompt.extra_rules" if self.config.prompt_extra_rules else "",
-                ],
-            },
-            {
-                "id": "chapter_scope",
-                "label": "Chapter Scope",
-                "prompt_kind": "user",
-                "section_names": ["scope_reference"],
-                "source_context": [
-                    "context_mode",
+                    "Config.scoring_criteria"
+                    if pruned_context is None
+                    and self.config.processing_scoring_enabled
+                    and self.config.scoring_criteria.strip()
+                    else "",
+                    "H2ProjectBackgroundGenerator.get_for_heading"
+                    if project_background_trace.get("summary_chars", 0) > 0
+                    else "",
+                    "pruned_context.scoring_must_respond"
+                    if pruned_context is not None and pruned_context.scoring_must_respond
+                    else "",
+                    "pruned_context.scoring_reference"
+                    if pruned_context is not None and pruned_context.scoring_reference
+                    else "",
+                    "pruned_context.scoring_items"
+                    if pruned_context is not None and pruned_context.scoring_items
+                    else "",
+                    "pruned_context.response_labels"
+                    if pruned_context is not None and pruned_context.response_labels
+                    else "",
                     "HeadingNode.parent",
                     "HeadingNode.title",
-                    "HeadingNode.full_path",
                     "HeadingNode.siblings",
                 ],
             },
             {
-                "id": "project_background",
-                "label": "Project Background",
+                "id": "output_constraints",
+                "label": "Output Constraints",
                 "prompt_kind": "user",
-                "section_names": ["project_background"],
+                "section_names": ["output_constraint_reminder"],
                 "source_context": [
-                    "H2ProjectBackgroundGenerator.get_for_heading"
-                    if "project_background" in section_map else "",
+                    "system_constraints",
+                    "prompt.extra_rules" if self.config.prompt_extra_rules else "",
                 ],
             },
             {
@@ -731,16 +720,38 @@ class AIWriter:
                 ],
             },
             {
-                "id": "scoring_context",
-                "label": "Scoring Context",
+                "id": "node_writing_plan",
+                "label": "Node Writing Plan",
                 "prompt_kind": "user",
-                "section_names": ["scoring_focus", "scoring_criteria"],
+                "section_names": ["node_writing_plan"],
                 "source_context": [
-                    "pruned_context.scoring_must_respond" if "scoring_focus" in section_map else "",
-                    "pruned_context.scoring_reference" if "scoring_focus" in section_map else "",
-                    "pruned_context.scoring_items" if "scoring_focus" in section_map else "",
-                    "pruned_context.response_labels" if "scoring_focus" in section_map else "",
-                    "Config.scoring_criteria" if "scoring_criteria" in section_map else "",
+                    "additional_requirements" if "node_writing_plan" in section_map else "",
+                ],
+            },
+            {
+                "id": "chapter_task",
+                "label": "Chapter Task",
+                "prompt_kind": "user",
+                "section_names": ["task_card"],
+                "source_context": [
+                    "HeadingNode.title",
+                    "HeadingNode.full_path",
+                    "target_word_range",
+                    "prompt_bidder_name",
+                    (
+                        "runtime.max_mermaid_flowcharts_per_section_override"
+                        if max_mermaid_flowcharts_per_section_override is not None and mermaid_rule_present
+                        else "prompt.max_mermaid_flowcharts_per_section"
+                        if mermaid_rule_present
+                        else ""
+                    ),
+                    "pruned_context.chapter_focus_terms"
+                    if pruned_context is not None
+                    else "HeadingNode.title",
+                    "ChapterWritingPlanGenerator.get_or_generate"
+                    if "task_card" in section_map
+                    and "章节写作计划" in section_map.get("task_card", "")
+                    else "",
                 ],
             },
         ]
@@ -835,6 +846,7 @@ class AIWriter:
 
         full_context_sections: list[tuple[str, str]] = []
         chapter_writing_plan = ""
+        has_node_writing_plan = bool(additional_requirements.strip())
         full_context_has_bid_requirements = False
         full_context_has_scoring_criteria = False
         if pruned_context is None:
@@ -848,7 +860,7 @@ class AIWriter:
                 name == "scoring_criteria" for name, _ in full_context_sections
             )
             shared_prompt_prefix = self._join_prompt_section_contents(full_context_sections)
-            if self.chapter_writing_plan_generator is not None:
+            if self.chapter_writing_plan_generator is not None and not has_node_writing_plan:
                 if status_callback is not None:
                     status_callback("生成章节写作计划", "正在生成章节写作计划...")
                 try:
@@ -874,86 +886,64 @@ class AIWriter:
             pruned_context,
             target_word_range,
             chapter_writing_plan=chapter_writing_plan,
+            has_node_writing_plan=has_node_writing_plan,
             max_mermaid_flowcharts_per_section_override=max_mermaid_flowcharts_per_section_override,
             task_basis_line=task_basis_line,
         )
 
+        bid_requirements = ""
+        scoring_section = ""
         if pruned_context is not None:
             context_mode = "pruned"
-            if background:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "project_background",
-                    self._build_project_background_section(background),
-                )
             # 评分注入：优先用分类结果
             has_classified = bool(
                 pruned_context.scoring_must_respond or pruned_context.scoring_reference
             )
             if has_classified:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "scoring_focus",
-                    self._build_scoring_labeled_section(
-                        pruned_context.scoring_must_respond,
-                        pruned_context.scoring_reference,
-                    ),
+                scoring_section = self._build_scoring_labeled_section(
+                    pruned_context.scoring_must_respond,
+                    pruned_context.scoring_reference,
                 )
             elif pruned_context.scoring_items:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "scoring_focus",
-                    self._build_scoring_focus_section(pruned_context),
-                )
-
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "scope_reference",
-                scope_reference,
-            )
-            if fact_card_context:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "fact_card_context",
-                    fact_card_context,
-                )
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "structure_contract",
-                self._build_structure_contract_section(),
-            )
+                scoring_section = self._build_scoring_focus_section(pruned_context)
         else:
-            self._append_prompt_sections(prompt_parts, prompt_sections, full_context_sections)
-            self._append_prompt_section(
-                prompt_parts,
-                prompt_sections,
-                "scope_reference",
-                scope_reference,
-            )
-            if fact_card_context:
-                self._append_prompt_section(
-                    prompt_parts,
-                    prompt_sections,
-                    "fact_card_context",
-                    fact_card_context,
-                )
+            full_context_map = dict(full_context_sections)
+            bid_requirements = full_context_map.get("bid_requirements", "")
+            scoring_section = full_context_map.get("scoring_criteria", "")
 
-        # 添加用户附加要求
-        if additional_requirements:
+        project_background = (
+            self._build_project_background_section(background) if background else ""
+        )
+        self._append_prompt_section(
+            prompt_parts,
+            prompt_sections,
+            "chapter_context",
+            self._build_chapter_context_section(
+                heading=heading,
+                bid_requirements=bid_requirements,
+                project_background=project_background,
+                scoring_section=scoring_section,
+            ),
+        )
+        self._append_prompt_section(
+            prompt_parts,
+            prompt_sections,
+            "output_constraint_reminder",
+            self._build_output_constraint_reminder_section(),
+        )
+        if fact_card_context:
             self._append_prompt_section(
                 prompt_parts,
                 prompt_sections,
-                "additional_requirements",
-                f"""
-## 用户附加要求
-{additional_requirements}
-""",
+                "fact_card_context",
+                fact_card_context,
+            )
+        if has_node_writing_plan:
+            self._append_prompt_section(
+                prompt_parts,
+                prompt_sections,
+                "node_writing_plan",
+                f"## 节点撰写计划\n{additional_requirements}",
             )
 
         self._append_prompt_section(
