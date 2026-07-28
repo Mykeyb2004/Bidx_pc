@@ -748,6 +748,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         state.writing_plan_path = writing_plan_path
         state.output_dir = output_dir
         state.bidder_name = self.vars["bidder_name"].get().strip()
+        state.outline_source = self.vars["outline_source"].get().strip() or "generate"
         if state.source_path is not None:
             state.should_copy_source = should_copy_source_file(state.source_path, state.project_root)
             state.source_copy_path = (
@@ -809,6 +810,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         current.bidder_name = previous.bidder_name
         current.created_paths = list(previous.created_paths)
         current.manual_inputs = previous.manual_inputs
+        current.outline_source = previous.outline_source
 
         old_defaults = build_state_from_project_root(previous.project_root)
         if previous.requirements_path != old_defaults.requirements_path:
@@ -1040,6 +1042,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         state.should_copy_source = False
         state.source_copy_path = None
         state.manual_inputs = True
+        state.outline_source = "generate"
         self.vars["outline_source"].set("generate")
         self.current_step_index = max(self.current_step_index, 1)
         self.max_completed_step_index = max(self.max_completed_step_index, 1)
@@ -1178,6 +1181,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             bidder_name=state.bidder_name,
             created_paths=list(getattr(state, "created_paths", [])),
             manual_inputs=state.manual_inputs,
+            outline_source=state.outline_source,
         )
 
     def _start_import_worker(self, job: _ImportJob) -> None:

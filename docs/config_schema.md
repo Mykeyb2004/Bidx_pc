@@ -76,7 +76,7 @@ project:
 
 - `project.root_dir` 用于声明项目资料根目录
 - `project.inputs.*` 与 `project.output_dir` 默认相对 `project.root_dir` 解析
-- 新建配置默认使用 `./投标大纲.md` 作为大纲保存位置；如果已有大纲，也可以把 `project.inputs.outline_file` 指向现有 Markdown 文件
+- 新建配置默认使用 `./投标大纲.md` 作为大纲保存位置；如果已有大纲，也可以把 `project.inputs.outline_file` 指向现有 Markdown 文件，并将 `project.outline_locked` 写为 `true`
 - `project.inputs.writing_plan_file` 是可选的节点撰写计划库；示例 `./撰写计划.json` 会解析到 `project.root_dir/撰写计划.json`，不是配置文件所在目录
 - `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
 
@@ -145,7 +145,7 @@ JSON v1 格式：
 
 `project.outline_locked` 表示当前配置是否已经完成大纲确认：
 
-- `false`：新建配置的大纲准备阶段，GUI 会先打开“大纲准备”窗口。
+- `false`：新建配置选择“生成后保存”时进入大纲准备阶段，GUI 会先打开“大纲准备”窗口。
 - `true`：大纲已固定，GUI 直接加载章节树并允许扩写。
 
 大纲未锁定时，用户可以在“大纲准备”窗口直接编辑 Markdown 标题。窗口提供“格式化大纲”按钮，会按当前标题顺序重算 H2/H3/H4 的数字前缀，例如 `## 1. ...`、`### 1.1 ...`、`#### 1.1.1 ...`；确认大纲时也会自动执行同样的格式化后再写入 `project.inputs.outline_file`。

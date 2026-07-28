@@ -5,6 +5,7 @@ import tkinter as tk
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from bid_writer.gui import ensure_tk_runtime
 from bid_writer.config_editor_tooltips import get_tooltip_text
@@ -647,6 +648,25 @@ def test_save_and_apply_persists_auto_config_without_pruning_env(monkeypatch, tm
     assert dialog.state.config_path.exists()
     assert dialog.result == {"saved_path": dialog.state.config_path, "apply_path": dialog.state.config_path}
     assert destroyed == [True]
+
+
+def test_save_and_apply_existing_outline_locks_config(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("测试公司")
+    dialog.state.requirements_path.parent.mkdir(parents=True)
+    dialog.state.requirements_path.write_text("采购需求", encoding="utf-8")
+    dialog.state.scoring_path.write_text("评分标准", encoding="utf-8")
+    outline = tmp_path / "已有投标大纲.md"
+    outline.write_text("# 项目\n## 章节\n### 内容\n", encoding="utf-8")
+    dialog.vars["outline_source"].set("existing")
+    dialog.vars["outline_path"].set(str(outline))
+    dialog.destroy = lambda: None
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    payload = yaml.safe_load(dialog.state.config_path.read_text(encoding="utf-8"))
+    assert payload["project"]["outline_locked"] is True
+    assert payload["project"]["inputs"]["outline_file"] == "./已有投标大纲.md"
 
 
 def test_save_and_apply_initializes_missing_writing_plan_before_config_save(monkeypatch, tmp_path: Path):

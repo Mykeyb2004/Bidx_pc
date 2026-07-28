@@ -26,6 +26,7 @@ class NewConfigWizardState:
     bidder_name: str
     created_paths: list[Path] = field(default_factory=list)
     manual_inputs: bool = False
+    outline_source: str = "generate"
 
 
 _TENDER_SUFFIXES = (
@@ -76,6 +77,7 @@ def build_initial_state_from_source(
         bidder_name="",
         created_paths=[],
         manual_inputs=False,
+        outline_source="generate",
     )
 
 
@@ -104,6 +106,7 @@ def build_state_from_project_root(project_root: str | Path) -> NewConfigWizardSt
         bidder_name="",
         created_paths=[],
         manual_inputs=True,
+        outline_source="generate",
     )
 
 
@@ -125,6 +128,7 @@ def build_manual_state(*, project_root: str | Path, config_path: str | Path) -> 
         bidder_name="",
         created_paths=[],
         manual_inputs=True,
+        outline_source="generate",
     )
 
 
@@ -133,7 +137,7 @@ def build_editor_document_from_state(state: NewConfigWizardState) -> ConfigEdito
     model = copy.deepcopy(document.model)
     model["project"]["root_dir"] = "."
     model["project"]["bidder_name"] = state.bidder_name.strip()
-    model["project"]["outline_locked"] = False
+    model["project"]["outline_locked"] = state.outline_source == "existing"
     model["project"]["outline_file"] = format_relative_path(state.outline_path, state.project_root)
     model["project"]["writing_plan_file"] = format_relative_path(
         state.writing_plan_path,

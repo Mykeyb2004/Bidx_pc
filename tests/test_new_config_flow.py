@@ -205,6 +205,24 @@ def test_build_editor_document_uses_relative_project_paths(tmp_path: Path):
     assert payload["project"]["output_dir"] == "./output"
 
 
+def test_build_editor_document_locks_existing_outline(tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    outline = project / "已有投标大纲.md"
+    outline.write_text("# 项目\n## 章节\n### 内容\n", encoding="utf-8")
+
+    state = build_state_from_project_root(project)
+    state.bidder_name = "测试公司"
+    state.outline_path = outline
+    state.outline_source = "existing"
+
+    document = build_editor_document_from_state(state)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert payload["project"]["outline_locked"] is True
+    assert payload["project"]["inputs"]["outline_file"] == "./已有投标大纲.md"
+
+
 def test_build_editor_document_preserves_project_external_writing_plan_as_absolute(tmp_path: Path):
     project = tmp_path / "项目"
     project.mkdir()
