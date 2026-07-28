@@ -914,6 +914,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             requirements_path=self.state.requirements_path,
             scoring_path=self.state.scoring_path,
             outline_path=self.state.outline_path,
+            writing_plan_path=self.state.writing_plan_path,
             output_dir=self.state.output_dir,
             bidder_name=self.state.bidder_name,
             created_paths=list(getattr(self.state, "created_paths", [])),

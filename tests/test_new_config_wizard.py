@@ -69,6 +69,7 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
         "scoring_path": StubVar(str(tmp_path / "项目要求" / "评分标准.md")),
         "outline_source": StubVar("generate"),
         "outline_path": StubVar(str(tmp_path / "投标大纲.md")),
+        "writing_plan_path": StubVar(str(tmp_path / "撰写计划.json")),
         "output_dir": StubVar(str(tmp_path / "output")),
         "bidder_name": StubVar(""),
     }
@@ -97,6 +98,7 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
         requirements_path=None,
         scoring_path=None,
         outline_path=tmp_path / "投标大纲.md",
+        writing_plan_path=tmp_path / "撰写计划.json",
         output_dir=tmp_path / "output",
         bidder_name="",
         created_paths=[],
@@ -146,6 +148,15 @@ def test_show_dialog_activates_wizard(monkeypatch):
     NewConfigWizardDialog._show_dialog(dialog)
 
     assert activated == [dialog]
+
+
+def test_snapshot_import_state_preserves_writing_plan_path(tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.state.writing_plan_path = tmp_path / "自定义撰写计划.json"
+
+    snapshot = NewConfigWizardDialog._snapshot_import_state(dialog)
+
+    assert snapshot.writing_plan_path == tmp_path / "自定义撰写计划.json"
 
 
 def test_new_config_wizard_tooltips_cover_core_controls():

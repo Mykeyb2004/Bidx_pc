@@ -131,10 +131,14 @@ def build_manual_state(*, project_root: str | Path, config_path: str | Path) -> 
 def build_editor_document_from_state(state: NewConfigWizardState) -> ConfigEditorDocument:
     document = create_new_config_editor_document(state.config_path)
     model = copy.deepcopy(document.model)
-    model["project"]["root_dir"] = format_relative_path(state.project_root, state.config_path.parent)
+    model["project"]["root_dir"] = "."
     model["project"]["bidder_name"] = state.bidder_name.strip()
     model["project"]["outline_locked"] = False
     model["project"]["outline_file"] = format_relative_path(state.outline_path, state.project_root)
+    model["project"]["writing_plan_file"] = format_relative_path(
+        state.writing_plan_path,
+        state.project_root,
+    )
     model["project"]["bid_requirements_mode"] = "file"
     model["project"]["bid_requirements_file"] = (
         format_relative_path(state.requirements_path, state.project_root)

@@ -195,13 +195,31 @@ def test_build_editor_document_uses_relative_project_paths(tmp_path: Path):
     payload = yaml.safe_load(document.render_yaml())
 
     assert document.config_path == config_path.resolve()
-    assert payload["project"]["root_dir"] == "./项目"
+    assert payload["project"]["root_dir"] == "."
     assert payload["project"]["bidder_name"] == "测试公司"
     assert payload["project"]["outline_locked"] is False
     assert payload["project"]["inputs"]["outline_file"] == "./投标大纲.md"
+    assert payload["project"]["inputs"]["writing_plan_file"] == "./撰写计划.json"
     assert payload["project"]["inputs"]["bid_requirements_file"] == "./项目要求/项目采购需求.md"
     assert payload["project"]["inputs"]["scoring_criteria_file"] == "./项目要求/评分标准.md"
     assert payload["project"]["output_dir"] == "./output"
+
+
+def test_build_editor_document_preserves_project_external_writing_plan_as_absolute(tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    external = tmp_path / "shared" / "writing-plan.json"
+    external.parent.mkdir()
+    external.write_text('{"version": 1, "items": []}', encoding="utf-8")
+
+    state = build_state_from_project_root(project)
+    state.bidder_name = "测试公司"
+    state.writing_plan_path = external
+
+    document = build_editor_document_from_state(state)
+    payload = yaml.safe_load(document.render_yaml())
+
+    assert payload["project"]["inputs"]["writing_plan_file"] == str(external)
 
 
 def test_build_editor_document_requires_bidder_identity(tmp_path: Path):
