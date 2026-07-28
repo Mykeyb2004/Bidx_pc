@@ -28,6 +28,7 @@ from bid_writer.new_config_flow import (
     register_created_path,
     should_copy_source_file,
 )
+from bid_writer.path_purposes import PathPurpose, file_dialog_options, require_supported_suffix
 from bid_writer.tender_import_dialog import confirm_tender_sections
 from bid_writer.tender_import_service import TenderImportError, TenderImportResult, TenderImportService
 from bid_writer.ui_icons import configure_icon_button
@@ -323,7 +324,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
         self._add_path_row(form, 0, "项目根目录", "project_root", browse_kind="dir", tooltip_key="new_config.location.project_root")
-        self._add_path_row(form, 1, "配置文件保存位置", "config_path", browse_kind="file", tooltip_key="new_config.location.config_path")
+        self._add_path_row(form, 1, "配置文件保存位置", "config_path", browse_kind="yaml", tooltip_key="new_config.location.config_path")
 
     def _build_materials_step(self) -> None:
         frame = self._create_step_frame(
@@ -350,8 +351,8 @@ class NewConfigWizardDialog(tk.Toplevel):
             padx=(10, 0),
             pady=(0, 10),
         )
-        self._add_path_row(form, 1, "采购需求文件", "requirements_path", browse_kind="file", tooltip_key="new_config.materials.requirements")
-        self._add_path_row(form, 2, "评分标准文件", "scoring_path", browse_kind="file", tooltip_key="new_config.materials.scoring")
+        self._add_path_row(form, 1, "采购需求文件", "requirements_path", browse_kind="markdown", tooltip_key="new_config.materials.requirements")
+        self._add_path_row(form, 2, "评分标准文件", "scoring_path", browse_kind="markdown", tooltip_key="new_config.materials.scoring")
 
     def _build_basics_step(self) -> None:
         frame = self._create_step_frame("basics", "基础设置", "填写投标主体、大纲来源和输出目录。")
@@ -403,7 +404,15 @@ class NewConfigWizardDialog(tk.Toplevel):
         outline_box.grid(row=2, column=0, columnspan=3, sticky="ew")
         outline_box.columnconfigure(1, weight=1)
         self._add_outline_path_row(outline_box, 0, tooltip_key="new_config.basics.outline_path")
-        self._add_path_row(outline_box, 2, "输出目录", "output_dir", browse_kind="dir", tooltip_key="new_config.basics.output_dir")
+        self._add_path_row(
+            outline_box,
+            2,
+            "节点撰写计划文件",
+            "writing_plan_path",
+            browse_kind="json",
+            tooltip_key="new_config.basics.writing_plan_path",
+        )
+        self._add_path_row(outline_box, 3, "输出目录", "output_dir", browse_kind="dir", tooltip_key="new_config.basics.output_dir")
 
     def _build_review_step(self) -> None:
         frame = self._create_step_frame("review", "保存确认", "保存前再核对一次配置摘要，确认后将切换到新配置。")
@@ -520,6 +529,12 @@ class NewConfigWizardDialog(tk.Toplevel):
             return False
 
         state = self._require_state()
+        try:
+            self._validate_path_suffixes()
+        except ValueError as exc:
+            messagebox.showerror("路径格式无效", str(exc), parent=self)
+            return False
+
         if step_key == "source":
             source_value = self.vars["source_path"].get().strip()
             if source_value:
@@ -700,11 +715,14 @@ class NewConfigWizardDialog(tk.Toplevel):
         state.source_path = source_path
         state.project_root = project_root
         state.config_path = config_path
-        requirements_path, scoring_path = self._rebase_default_material_paths(
+        requirements_path, scoring_path, outline_path, writing_plan_path, output_dir = self._rebase_default_project_paths(
             previous_project_root=previous_project_root,
             project_root=project_root,
             requirements_path=requirements_path,
             scoring_path=scoring_path,
+            outline_path=outline_path,
+            writing_plan_path=writing_plan_path,
+            output_dir=output_dir,
         )
         state.requirements_path = requirements_path
         state.scoring_path = scoring_path
@@ -787,29 +805,50 @@ class NewConfigWizardDialog(tk.Toplevel):
             current.source_copy_path = None
         current.import_dir = current.project_root / ".bid_writer" / "imports" / "pending"
 
-    def _rebase_default_material_paths(
+    def _validate_path_suffixes(self) -> None:
+        state = self._require_state()
+        if state.source_path is not None:
+            require_supported_suffix(state.source_path, PathPurpose.TENDER, label="招标文件")
+        if state.requirements_path is not None:
+            require_supported_suffix(state.requirements_path, PathPurpose.MARKDOWN, label="采购需求文件")
+        if state.scoring_path is not None:
+            require_supported_suffix(state.scoring_path, PathPurpose.MARKDOWN, label="评分标准文件")
+        require_supported_suffix(state.outline_path, PathPurpose.MARKDOWN, label="投标大纲文件")
+        require_supported_suffix(state.writing_plan_path, PathPurpose.JSON, label="节点撰写计划文件")
+
+    def _rebase_default_project_paths(
         self,
         *,
         previous_project_root: Path,
         project_root: Path,
         requirements_path: Path | None,
         scoring_path: Path | None,
-    ) -> tuple[Path | None, Path | None]:
+        outline_path: Path,
+        writing_plan_path: Path,
+        output_dir: Path,
+    ) -> tuple[Path | None, Path | None, Path, Path, Path]:
         if previous_project_root == project_root:
-            return requirements_path, scoring_path
+            return requirements_path, scoring_path, outline_path, writing_plan_path, output_dir
 
-        old_requirements = previous_project_root / "项目要求" / "项目采购需求.md"
-        old_scoring = previous_project_root / "项目要求" / "评分标准.md"
-        new_requirements = project_root / "项目要求" / "项目采购需求.md"
-        new_scoring = project_root / "项目要求" / "评分标准.md"
+        old_defaults = build_state_from_project_root(previous_project_root)
+        new_defaults = build_state_from_project_root(project_root)
 
-        if requirements_path == old_requirements:
-            requirements_path = new_requirements
-            self.vars["requirements_path"].set(str(new_requirements))
-        if scoring_path == old_scoring:
-            scoring_path = new_scoring
-            self.vars["scoring_path"].set(str(new_scoring))
-        return requirements_path, scoring_path
+        if requirements_path == old_defaults.requirements_path:
+            requirements_path = new_defaults.requirements_path
+            self.vars["requirements_path"].set(str(requirements_path))
+        if scoring_path == old_defaults.scoring_path:
+            scoring_path = new_defaults.scoring_path
+            self.vars["scoring_path"].set(str(scoring_path))
+        if outline_path == old_defaults.outline_path:
+            outline_path = new_defaults.outline_path
+            self.vars["outline_path"].set(str(outline_path))
+        if writing_plan_path == old_defaults.writing_plan_path:
+            writing_plan_path = new_defaults.writing_plan_path
+            self.vars["writing_plan_path"].set(str(writing_plan_path))
+        if output_dir == old_defaults.output_dir:
+            output_dir = new_defaults.output_dir
+            self.vars["output_dir"].set(str(output_dir))
+        return requirements_path, scoring_path, outline_path, writing_plan_path, output_dir
 
     def _path_from_var(self, key: str) -> Path:
         raw = self.vars[key].get().strip()
@@ -903,16 +942,11 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._show_step()
 
     def _select_source_file(self) -> None:
+        options = file_dialog_options(PathPurpose.TENDER)
         selected = filedialog.askopenfilename(
             parent=self,
             title="选择招标文件",
-            filetypes=[
-                ("招标文件", "*.pdf *.docx *.doc *.xlsx *.xls"),
-                ("PDF", "*.pdf"),
-                ("Word", "*.docx *.doc"),
-                ("Excel", "*.xlsx *.xls"),
-                ("全部文件", "*.*"),
-            ],
+            filetypes=list(options.filetypes),
         )
         if not selected:
             return
@@ -951,15 +985,13 @@ class NewConfigWizardDialog(tk.Toplevel):
             selected = filedialog.askdirectory(parent=self, initialdir=str(initial_dir))
         elif browse_kind == "outline":
             outline_source = self.vars["outline_source"].get().strip() or "generate"
+            options = file_dialog_options(PathPurpose.MARKDOWN)
             if outline_source == "existing":
                 selected = filedialog.askopenfilename(
                     parent=self,
                     title="选择已有 Markdown 大纲",
                     initialdir=str(initial_dir),
-                    filetypes=[
-                        ("Markdown", "*.md"),
-                        ("全部文件", "*.*"),
-                    ],
+                    filetypes=list(options.filetypes),
                 )
             else:
                 selected = filedialog.asksaveasfilename(
@@ -967,12 +999,34 @@ class NewConfigWizardDialog(tk.Toplevel):
                     title="选择大纲保存位置",
                     initialdir=str(initial_dir),
                     initialfile=Path(current_value).name if current_value else "投标大纲.md",
-                    defaultextension=".md",
-                    filetypes=[
-                        ("Markdown", "*.md"),
-                        ("全部文件", "*.*"),
-                    ],
+                    defaultextension=options.defaultextension,
+                    filetypes=list(options.filetypes),
                 )
+        elif browse_kind == "markdown":
+            options = file_dialog_options(PathPurpose.MARKDOWN)
+            selected = filedialog.askopenfilename(
+                parent=self,
+                initialdir=str(initial_dir),
+                filetypes=list(options.filetypes),
+            )
+        elif browse_kind == "json":
+            options = file_dialog_options(PathPurpose.JSON)
+            selected = filedialog.askopenfilename(
+                parent=self,
+                title="选择节点撰写计划 JSON",
+                initialdir=str(initial_dir),
+                filetypes=list(options.filetypes),
+            )
+        elif browse_kind == "yaml":
+            options = file_dialog_options(PathPurpose.YAML)
+            selected = filedialog.asksaveasfilename(
+                parent=self,
+                title="选择配置文件保存位置",
+                initialdir=str(initial_dir),
+                initialfile=Path(current_value).name if current_value else "config_新项目.yaml",
+                defaultextension=options.defaultextension,
+                filetypes=list(options.filetypes),
+            )
         else:
             selected = filedialog.askopenfilename(parent=self, initialdir=str(initial_dir))
         if selected:

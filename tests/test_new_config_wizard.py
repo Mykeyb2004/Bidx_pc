@@ -480,6 +480,63 @@ def test_project_root_change_preserves_custom_material_paths(tmp_path: Path):
     assert dialog.vars["scoring_path"].get() == str(custom_scoring)
 
 
+def test_project_root_change_rebases_default_writing_plan_and_preserves_custom(tmp_path: Path):
+    old_root = tmp_path / "旧项目"
+    new_root = tmp_path / "新项目"
+    old_root.mkdir()
+    new_root.mkdir()
+    dialog = _dialog(old_root)
+    custom = tmp_path / "shared" / "custom-plan.json"
+    custom.parent.mkdir()
+    custom.write_text('{"version": 1, "items": []}', encoding="utf-8")
+
+    dialog.vars["project_root"].set(str(new_root))
+    NewConfigWizardDialog._confirm_project_root_from_var(dialog)
+    assert dialog.state.writing_plan_path == new_root / "撰写计划.json"
+
+    dialog.vars["writing_plan_path"].set(str(custom))
+    NewConfigWizardDialog._sync_state_from_fields(dialog)
+    dialog.vars["project_root"].set(str(old_root))
+    NewConfigWizardDialog._confirm_project_root_from_var(dialog)
+
+    assert dialog.state.writing_plan_path == custom
+
+
+def test_wizard_browse_writing_plan_uses_json_filter(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    captured = {}
+    selected = tmp_path / "plans" / "writing-plan.json"
+    selected.parent.mkdir()
+    selected.write_text('{"version": 1, "items": []}', encoding="utf-8")
+
+    def fake_open(**kwargs):
+        captured.update(kwargs)
+        return str(selected)
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.filedialog.askopenfilename", fake_open)
+
+    NewConfigWizardDialog._browse_path(dialog, "writing_plan_path", "json")
+
+    assert captured["filetypes"] == [("JSON", "*.json")]
+    assert ("全部文件", "*.*") not in captured["filetypes"]
+    assert dialog.vars["writing_plan_path"].get() == str(selected)
+
+
+def test_wrong_writing_plan_extension_blocks_basics_step(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.current_step_index = [step.key for step in WIZARD_STEPS].index("basics")
+    dialog.vars["bidder_name"].set("测试公司")
+    dialog.vars["writing_plan_path"].set(str(tmp_path / "撰写计划.txt"))
+    shown_errors = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+
+    assert NewConfigWizardDialog._validate_current_step(dialog) is False
+    assert shown_errors and ".json" in shown_errors[0][1]
+
+
 def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["bidder_name"].set("测试公司")
