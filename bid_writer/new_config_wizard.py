@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from bid_writer.gui import (
     _activate_window,
@@ -1088,34 +1088,19 @@ class NewConfigWizardDialog(tk.Toplevel):
         fallback = self._project_root_for_browse() or Path.home()
         initial = Path(current_value).expanduser() if current_value else fallback
         initial_dir = initial.parent if initial.suffix else initial
-        selected_dir = filedialog.askdirectory(
+        selected = filedialog.asksaveasfilename(
             parent=self,
-            title=f"选择{label}所在文件夹",
+            title=f"新建{label}位置",
             initialdir=str(initial_dir),
+            initialfile=self._default_filename_for_key(key),
+            defaultextension=options.defaultextension,
+            filetypes=list(options.filetypes),
+            confirmoverwrite=False,
         )
-        if not selected_dir:
+        if not selected:
             return
 
-        filename = simpledialog.askstring(
-            "填写文件名",
-            f"请输入{label}文件名：",
-            initialvalue=self._default_filename_for_key(key),
-            parent=self,
-        )
-        if filename is None:
-            return
-
-        filename = filename.strip()
-        if not filename:
-            messagebox.showerror("文件名无效", f"{label}文件名不能为空。", parent=self)
-            return
-
-        filename_path = Path(filename)
-        if filename_path.name != filename:
-            messagebox.showerror("文件名无效", "这里只填写文件名，不要包含文件夹路径。", parent=self)
-            return
-
-        target = Path(selected_dir).expanduser() / filename
+        target = Path(selected).expanduser()
         if target.suffix == "" and options.defaultextension:
             target = target.with_suffix(options.defaultextension)
 

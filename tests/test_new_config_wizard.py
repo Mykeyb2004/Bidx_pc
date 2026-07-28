@@ -462,29 +462,24 @@ def test_config_browse_opens_existing_yaml_from_selected_project_root(monkeypatc
     assert dialog.vars["config_path"].get() == str(selected)
 
 
-def test_new_file_location_uses_directory_and_filename_without_save_dialog(monkeypatch, tmp_path: Path):
+def test_new_file_location_uses_save_dialog_without_creating_file(monkeypatch, tmp_path: Path):
     dialog = _dialog(tmp_path)
     target_dir = tmp_path / "项目要求"
     target_dir.mkdir()
+    selected = target_dir / "采购需求"
     calls = []
 
     monkeypatch.setattr(
-        "bid_writer.new_config_wizard.filedialog.askdirectory",
-        lambda *args, **kwargs: calls.append(("dir", kwargs)) or str(target_dir),
-    )
-    monkeypatch.setattr(
-        "bid_writer.new_config_wizard.simpledialog.askstring",
-        lambda *args, **kwargs: calls.append(("name", kwargs)) or "采购需求",
-    )
-    monkeypatch.setattr(
         "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
-        lambda *args, **kwargs: calls.append(("save", kwargs)) or "",
+        lambda *args, **kwargs: calls.append(("save", kwargs)) or str(selected),
     )
 
     NewConfigWizardDialog._choose_new_file_location(dialog, "requirements_path", "markdown", "采购需求文件")
 
-    assert [call[0] for call in calls] == ["dir", "name"]
-    assert calls[0][1]["title"] == "选择采购需求文件所在文件夹"
+    assert [call[0] for call in calls] == ["save"]
+    assert calls[0][1]["title"] == "新建采购需求文件位置"
+    assert calls[0][1]["defaultextension"] == ".md"
+    assert calls[0][1]["confirmoverwrite"] is False
     assert dialog.vars["requirements_path"].get() == str((target_dir / "采购需求.md").resolve())
     assert not (target_dir / "采购需求.md").exists()
 
@@ -499,12 +494,8 @@ def test_new_file_location_rejects_existing_file(monkeypatch, tmp_path: Path):
     warnings = []
 
     monkeypatch.setattr(
-        "bid_writer.new_config_wizard.filedialog.askdirectory",
-        lambda *args, **kwargs: str(target_dir),
-    )
-    monkeypatch.setattr(
-        "bid_writer.new_config_wizard.simpledialog.askstring",
-        lambda *args, **kwargs: "评分标准.md",
+        "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
+        lambda *args, **kwargs: str(existing),
     )
     monkeypatch.setattr(
         "bid_writer.new_config_wizard.messagebox.showwarning",
