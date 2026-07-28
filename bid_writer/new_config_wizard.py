@@ -23,7 +23,7 @@ from bid_writer.new_config_flow import (
     NewConfigWizardState,
     build_editor_document_from_state,
     build_initial_state_from_source,
-    build_manual_state,
+    build_state_from_project_root,
     cleanup_created_paths,
     copy_source_file_if_needed,
     register_created_path,
@@ -76,9 +76,9 @@ class _ImportWorkerOutcome:
 
 
 WIZARD_STEPS = [
-    WizardStep("source", "选择起点"),
     WizardStep("location", "项目位置"),
-    WizardStep("materials", "资料整理"),
+    WizardStep("source", "招标文件"),
+    WizardStep("materials", "项目资料"),
     WizardStep("basics", "基础设置"),
     WizardStep("review", "保存确认"),
 ]
@@ -91,7 +91,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.style = setup_gui_theme(self)
         apply_window_surface(self)
 
-        initial_config_path = Path(config_path or "config_新项目.yaml").expanduser().resolve()
+        self.initial_config_path = Path(config_path or "config_新项目.yaml").expanduser().resolve()
         self.result: dict[str, Path | None] = {"saved_path": None, "apply_path": None}
         self.current_step_index = 0
         self.max_completed_step_index = 0
@@ -100,10 +100,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._import_result_queue: queue.Queue[_ImportWorkerOutcome] = queue.Queue()
         self._import_poll_after_id: str | None = None
         self._tooltips: list[HoverTooltip] = []
-        self.state = build_manual_state(
-            project_root=initial_config_path.parent,
-            config_path=initial_config_path,
-        )
+        self.state: NewConfigWizardState | None = None
 
         self.step_buttons: list[ttk.Button] = []
         self.step_frames: dict[str, ttk.Frame] = {}
@@ -120,7 +117,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.outline_path_hint_var = tk.StringVar(
             value="可以先不创建文件；进入大纲准备窗口后会在此位置生成大纲。"
         )
-        self._sync_fields_from_state()
+        self.config_summary_var.set("先选择项目根目录")
 
         self.title("新建配置向导")
         window_size = _compute_screen_limited_dialog_size(
@@ -155,6 +152,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             "scoring_path": tk.StringVar(value=""),
             "outline_source": tk.StringVar(value="generate"),
             "outline_path": tk.StringVar(value=""),
+            "writing_plan_path": tk.StringVar(value=""),
             "output_dir": tk.StringVar(value=""),
             "bidder_name": tk.StringVar(value=""),
         }
@@ -202,8 +200,8 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.content_container.rowconfigure(0, weight=1)
         self.content_container.columnconfigure(0, weight=1)
 
-        self._build_source_step()
         self._build_location_step()
+        self._build_source_step()
         self._build_materials_step()
         self._build_basics_step()
         self._build_review_step()
@@ -260,8 +258,8 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _build_source_step(self) -> None:
         frame = self._create_step_frame(
             "source",
-            "选择起点",
-            "先选招标文件开始，系统会自动推导项目位置；也可以直接走手动创建，后续再补资料文件。",
+            "招标文件",
+            "选择招标文件用于后续抽取，或跳过并手动指定资料文件。项目根目录不会因招标文件而改变。",
         )
         controls = ttk.Frame(frame)
         controls.grid(row=2, column=0, sticky="ew", pady=(18, 0))
@@ -276,7 +274,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         import_card.columnconfigure(0, weight=1)
         ttk.Label(
             import_card,
-            text="适合你手上已经有招标文件，希望系统帮你推导项目目录并自动整理资料。",
+            text="适合你手上已经有招标文件，希望系统自动整理采购需求和评分标准。",
             style="Muted.TLabel",
             wraplength=280,
             justify=tk.LEFT,
@@ -321,7 +319,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
 
     def _build_location_step(self) -> None:
-        frame = self._create_step_frame("location", "项目位置", "确认系统推导出的项目根目录和配置文件保存位置。")
+        frame = self._create_step_frame("location", "项目位置", "选择一个已存在的项目根目录，后续默认路径都从这里派生。")
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
@@ -331,7 +329,7 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _build_materials_step(self) -> None:
         frame = self._create_step_frame(
             "materials",
-            "资料整理",
+            "项目资料",
             "可以先自动抽取采购需求和评分标准；如果不导入，也可以直接指定已有文件。",
         )
         form = ttk.Frame(frame)
@@ -512,13 +510,17 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._show_step()
 
     def _validate_current_step(self) -> bool:
+        step_key = WIZARD_STEPS[self.current_step_index].key
+        if step_key == "location":
+            return self._confirm_project_root_from_var()
+
         try:
             self._sync_state_from_fields()
         except ValueError as exc:
             messagebox.showerror("路径无效", str(exc), parent=self)
             return False
 
-        step_key = WIZARD_STEPS[self.current_step_index].key
+        state = self._require_state()
         if step_key == "source":
             source_value = self.vars["source_path"].get().strip()
             if source_value:
@@ -530,18 +532,9 @@ class NewConfigWizardDialog(tk.Toplevel):
                     messagebox.showwarning("格式可能不支持", f"当前文件格式可能无法自动抽取：{source_path.suffix or '无扩展名'}", parent=self)
             return True
 
-        if step_key == "location":
-            if not self.state.project_root:
-                messagebox.showerror("路径无效", "项目根目录不能为空。", parent=self)
-                return False
-            if not self.state.config_path.name:
-                messagebox.showerror("路径无效", "配置文件保存位置不能为空。", parent=self)
-                return False
-            return True
-
         if step_key == "materials":
             missing = []
-            for label, path in (("采购需求文件", self.state.requirements_path), ("评分标准文件", self.state.scoring_path)):
+            for label, path in (("采购需求文件", state.requirements_path), ("评分标准文件", state.scoring_path)):
                 if path is None:
                     missing.append(f"{label}不能为空。")
                 elif not path.exists():
@@ -552,14 +545,14 @@ class NewConfigWizardDialog(tk.Toplevel):
             return True
 
         if step_key == "basics":
-            if not self.state.bidder_name:
+            if not state.bidder_name:
                 messagebox.showerror("基本信息不完整", "请填写投标主体名称。", parent=self)
                 return False
             outline_source = self.vars["outline_source"].get().strip() or "generate"
-            if outline_source == "existing" and not self.state.outline_path.exists():
+            if outline_source == "existing" and not state.outline_path.exists():
                 messagebox.showerror(
                     "大纲文件不存在",
-                    f"大纲文件不存在，请选择一个已存在的 Markdown 大纲文件：{self.state.outline_path}",
+                    f"大纲文件不存在，请选择一个已存在的 Markdown 大纲文件：{state.outline_path}",
                     parent=self,
                 )
                 return False
@@ -568,7 +561,8 @@ class NewConfigWizardDialog(tk.Toplevel):
         return True
 
     def _show_step(self) -> None:
-        self._sync_state_from_fields(silent=True)
+        if self.state is not None:
+            self._sync_state_from_fields(silent=True)
         step = WIZARD_STEPS[self.current_step_index]
         if step.key == "review":
             self._sync_review_summary()
@@ -604,10 +598,11 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _save_and_apply(self) -> None:
         try:
             self._sync_state_from_fields()
-            self.state.project_root.mkdir(parents=True, exist_ok=True)
-            self.state.config_path.parent.mkdir(parents=True, exist_ok=True)
-            document = build_editor_document_from_state(self.state)
-            messages = document.validate(document.model, config_path=self.state.config_path)
+            state = self._require_state()
+            if not state.project_root.exists() or not state.project_root.is_dir():
+                raise ValueError(f"项目根目录不存在或不是目录：{state.project_root}")
+            document = build_editor_document_from_state(state)
+            messages = document.validate(document.model, config_path=state.config_path)
         except Exception as exc:
             messagebox.showerror("保存失败", str(exc), parent=self)
             return
@@ -618,7 +613,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             return
 
         try:
-            saved_path = document.save(document.model, target_path=self.state.config_path, create_backup=True)
+            saved_path = document.save(document.model, target_path=self._require_state().config_path, create_backup=True)
         except Exception as exc:
             messagebox.showerror("保存失败", str(exc), parent=self)
             return
@@ -630,6 +625,9 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _cancel(self) -> None:
         if getattr(self, "_import_in_progress", False):
             messagebox.showwarning("正在抽取", "招标文件正在转换和抽取，请等待完成后再关闭向导。", parent=self)
+            return
+        if self.state is None or not self.state.created_paths:
+            self.destroy()
             return
         if self.state.created_paths:
             choice = messagebox.askyesnocancel(
@@ -648,6 +646,20 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.destroy()
 
     def _sync_fields_from_state(self) -> None:
+        if self.state is None:
+            self.vars["source_path"].set("")
+            self.vars["project_root"].set("")
+            self.vars["config_path"].set("")
+            self.vars["requirements_path"].set("")
+            self.vars["scoring_path"].set("")
+            self.vars["outline_path"].set("")
+            self.vars["writing_plan_path"].set("")
+            self.vars["output_dir"].set("")
+            self.vars["bidder_name"].set("")
+            if hasattr(self, "config_summary_var"):
+                self.config_summary_var.set("先选择项目根目录")
+            return
+
         self.vars["source_path"].set("" if self.state.source_path is None else str(self.state.source_path))
         self.vars["project_root"].set(str(self.state.project_root))
         self.vars["config_path"].set(str(self.state.config_path))
@@ -655,6 +667,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.vars["scoring_path"].set("" if self.state.scoring_path is None else str(self.state.scoring_path))
         self.vars["outline_source"].set(getattr(self.state, "outline_source", self.vars["outline_source"].get() or "generate"))
         self.vars["outline_path"].set(str(self.state.outline_path))
+        self.vars["writing_plan_path"].set(str(self.state.writing_plan_path))
         self.vars["output_dir"].set(str(self.state.output_dir))
         self.vars["bidder_name"].set(self.state.bidder_name)
         if hasattr(self, "config_summary_var"):
@@ -662,8 +675,14 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._sync_outline_source_ui()
         self._sync_source_hint()
 
+    def _require_state(self) -> NewConfigWizardState:
+        if self.state is None:
+            raise ValueError("请先选择一个现有项目根目录。")
+        return self.state
+
     def _sync_state_from_fields(self, *, silent: bool = False) -> None:
-        previous_project_root = self.state.project_root
+        state = self._require_state()
+        previous_project_root = state.project_root
         try:
             source_value = self.vars["source_path"].get().strip()
             source_path = Path(source_value).expanduser().resolve() if source_value else None
@@ -672,40 +691,106 @@ class NewConfigWizardDialog(tk.Toplevel):
             requirements_path = self._optional_path_from_var("requirements_path")
             scoring_path = self._optional_path_from_var("scoring_path")
             outline_path = self._path_from_var("outline_path")
+            writing_plan_path = self._path_from_var("writing_plan_path")
             output_dir = self._path_from_var("output_dir")
         except RuntimeError as exc:
             if silent:
                 return
             raise ValueError(str(exc)) from exc
 
-        self.state.source_path = source_path
-        self.state.project_root = project_root
-        self.state.config_path = config_path
+        state.source_path = source_path
+        state.project_root = project_root
+        state.config_path = config_path
         requirements_path, scoring_path = self._rebase_default_material_paths(
             previous_project_root=previous_project_root,
             project_root=project_root,
             requirements_path=requirements_path,
             scoring_path=scoring_path,
         )
-        self.state.requirements_path = requirements_path
-        self.state.scoring_path = scoring_path
-        self.state.outline_path = outline_path
-        self.state.output_dir = output_dir
-        self.state.bidder_name = self.vars["bidder_name"].get().strip()
-        if self.state.source_path is not None:
-            self.state.should_copy_source = should_copy_source_file(self.state.source_path, self.state.project_root)
-            self.state.source_copy_path = (
-                self.state.project_root / "招标文件" / self.state.source_path.name
-                if self.state.should_copy_source
+        state.requirements_path = requirements_path
+        state.scoring_path = scoring_path
+        state.outline_path = outline_path
+        state.writing_plan_path = writing_plan_path
+        state.output_dir = output_dir
+        state.bidder_name = self.vars["bidder_name"].get().strip()
+        if state.source_path is not None:
+            state.should_copy_source = should_copy_source_file(state.source_path, state.project_root)
+            state.source_copy_path = (
+                state.project_root / "招标文件" / state.source_path.name
+                if state.should_copy_source
                 else None
             )
-        self.state.import_dir = (
-            self.state.project_root / ".bid_writer" / "imports" / "pending"
-            if self.state.source_path is not None
+        state.import_dir = (
+            state.project_root / ".bid_writer" / "imports" / "pending"
+            if state.source_path is not None
             else None
         )
         self._sync_outline_source_ui()
         self._sync_source_hint()
+
+    def _confirm_project_root_from_var(self) -> bool:
+        root_value = self.vars["project_root"].get().strip()
+        if not root_value:
+            messagebox.showerror("路径无效", "项目根目录不能为空。", parent=self)
+            return False
+
+        root = Path(root_value).expanduser().resolve()
+        if not root.exists():
+            messagebox.showerror("路径无效", f"项目根目录不存在：{root}", parent=self)
+            return False
+        if not root.is_dir():
+            messagebox.showerror("路径无效", f"项目根目录不是目录：{root}", parent=self)
+            return False
+
+        previous_state = self.state
+        next_state = build_state_from_project_root(root)
+        if previous_state is not None:
+            self._carry_over_state_for_new_root(previous_state, next_state)
+        self.state = next_state
+        self._sync_fields_from_state()
+        if self.state.config_path.exists():
+            messagebox.showerror(
+                "配置已存在",
+                f"默认配置文件已经存在：{self.state.config_path}\n请打开已有配置或选择其他项目根目录。",
+                parent=self,
+            )
+            return False
+        return True
+
+    def _carry_over_state_for_new_root(
+        self,
+        previous: NewConfigWizardState,
+        current: NewConfigWizardState,
+    ) -> None:
+        current.source_path = previous.source_path
+        current.copied_source_path = previous.copied_source_path
+        current.bidder_name = previous.bidder_name
+        current.created_paths = list(previous.created_paths)
+        current.manual_inputs = previous.manual_inputs
+
+        old_defaults = build_state_from_project_root(previous.project_root)
+        if previous.requirements_path != old_defaults.requirements_path:
+            current.requirements_path = previous.requirements_path
+        if previous.scoring_path != old_defaults.scoring_path:
+            current.scoring_path = previous.scoring_path
+        if previous.outline_path != old_defaults.outline_path:
+            current.outline_path = previous.outline_path
+        if previous.writing_plan_path != old_defaults.writing_plan_path:
+            current.writing_plan_path = previous.writing_plan_path
+        if previous.output_dir != old_defaults.output_dir:
+            current.output_dir = previous.output_dir
+
+        if current.source_path is not None:
+            current.should_copy_source = should_copy_source_file(current.source_path, current.project_root)
+            current.source_copy_path = (
+                current.project_root / "招标文件" / current.source_path.name
+                if current.should_copy_source
+                else None
+            )
+        else:
+            current.should_copy_source = False
+            current.source_copy_path = None
+        current.import_dir = current.project_root / ".bid_writer" / "imports" / "pending"
 
     def _rebase_default_material_paths(
         self,
@@ -744,6 +829,9 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _sync_source_hint(self) -> None:
         if not hasattr(self, "source_hint_var"):
             return
+        if self.state is None:
+            self.source_hint_var.set("先选择项目根目录，再选择招标文件或进入手动创建。")
+            return
         if self.state.source_path is None:
             self.source_hint_var.set("未选择招标文件时，将直接进入手动创建流程，按你指定的资料路径创建配置。")
             return
@@ -778,7 +866,7 @@ class NewConfigWizardDialog(tk.Toplevel):
             )
 
     def _sync_review_summary(self) -> None:
-        if not hasattr(self, "review_summary_var"):
+        if not hasattr(self, "review_summary_var") or self.state is None:
             return
         created = "\n".join(f"- {path}" for path in self.state.created_paths) or "- 暂无"
         outline_source = self.vars["outline_source"].get().strip() or "generate"
@@ -850,7 +938,8 @@ class NewConfigWizardDialog(tk.Toplevel):
 
     def _browse_path(self, key: str, browse_kind: str) -> None:
         current_value = self.vars[key].get().strip()
-        initial = Path(current_value).expanduser() if current_value else self.state.project_root
+        fallback = self.state.project_root if self.state is not None else Path.home()
+        initial = Path(current_value).expanduser() if current_value else fallback
         initial_dir = initial.parent if initial.suffix else initial
         if browse_kind == "dir":
             selected = filedialog.askdirectory(parent=self, initialdir=str(initial_dir))
@@ -903,22 +992,23 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._start_import_worker(job)
 
     def _snapshot_import_state(self) -> NewConfigWizardState:
+        state = self._require_state()
         return NewConfigWizardState(
-            source_path=self.state.source_path,
-            project_root=self.state.project_root,
-            config_path=self.state.config_path,
-            import_dir=self.state.import_dir,
-            should_copy_source=self.state.should_copy_source,
-            source_copy_path=self.state.source_copy_path,
-            copied_source_path=self.state.copied_source_path,
-            requirements_path=self.state.requirements_path,
-            scoring_path=self.state.scoring_path,
-            outline_path=self.state.outline_path,
-            writing_plan_path=self.state.writing_plan_path,
-            output_dir=self.state.output_dir,
-            bidder_name=self.state.bidder_name,
-            created_paths=list(getattr(self.state, "created_paths", [])),
-            manual_inputs=self.state.manual_inputs,
+            source_path=state.source_path,
+            project_root=state.project_root,
+            config_path=state.config_path,
+            import_dir=state.import_dir,
+            should_copy_source=state.should_copy_source,
+            source_copy_path=state.source_copy_path,
+            copied_source_path=state.copied_source_path,
+            requirements_path=state.requirements_path,
+            scoring_path=state.scoring_path,
+            outline_path=state.outline_path,
+            writing_plan_path=state.writing_plan_path,
+            output_dir=state.output_dir,
+            bidder_name=state.bidder_name,
+            created_paths=list(getattr(state, "created_paths", [])),
+            manual_inputs=state.manual_inputs,
         )
 
     def _start_import_worker(self, job: _ImportJob) -> None:

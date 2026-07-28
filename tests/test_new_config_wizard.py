@@ -8,6 +8,7 @@ import pytest
 
 from bid_writer.gui import ensure_tk_runtime
 from bid_writer.config_editor_tooltips import get_tooltip_text
+from bid_writer.new_config_flow import build_state_from_project_root
 from bid_writer.new_config_wizard import NewConfigWizardDialog, WIZARD_STEPS, _has_visible_parent
 from bid_writer.tender_import_models import (
     ManualTenderConfirmationResult,
@@ -56,21 +57,26 @@ class StubParent:
         return self._state
 
 
-def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
+def _dialog(tmp_path: Path, *, initialize_state: bool = True) -> NewConfigWizardDialog:
     dialog = NewConfigWizardDialog.__new__(NewConfigWizardDialog)
+    dialog.parent_window = StubParent()
     dialog.current_step_index = 0
     dialog.max_completed_step_index = 0
+    dialog._import_in_progress = False
+    dialog._import_ui_requests = queue.Queue()
+    dialog._import_result_queue = queue.Queue()
+    dialog._import_poll_after_id = None
     dialog.result = {"saved_path": None, "apply_path": None}
     dialog.vars = {
         "source_path": StubVar(""),
-        "project_root": StubVar(str(tmp_path)),
-        "config_path": StubVar(str(tmp_path / "config.yaml")),
-        "requirements_path": StubVar(str(tmp_path / "项目要求" / "项目采购需求.md")),
-        "scoring_path": StubVar(str(tmp_path / "项目要求" / "评分标准.md")),
+        "project_root": StubVar(""),
+        "config_path": StubVar(""),
+        "requirements_path": StubVar(""),
+        "scoring_path": StubVar(""),
         "outline_source": StubVar("generate"),
-        "outline_path": StubVar(str(tmp_path / "投标大纲.md")),
-        "writing_plan_path": StubVar(str(tmp_path / "撰写计划.json")),
-        "output_dir": StubVar(str(tmp_path / "output")),
+        "outline_path": StubVar(""),
+        "writing_plan_path": StubVar(""),
+        "output_dir": StubVar(""),
         "bidder_name": StubVar(""),
     }
     dialog.outline_path_label_var = StubVar("大纲保存位置")
@@ -87,23 +93,13 @@ def _dialog(tmp_path: Path) -> NewConfigWizardDialog:
     dialog.next_button = StubButton()
     dialog.step_buttons = []
     dialog.step_frames = {key: StubFrame() for key in [step.key for step in WIZARD_STEPS]}
-    dialog.state = SimpleNamespace(
-        source_path=None,
-        project_root=tmp_path,
-        config_path=tmp_path / "config.yaml",
-        import_dir=None,
-        should_copy_source=False,
-        source_copy_path=None,
-        copied_source_path=None,
-        requirements_path=None,
-        scoring_path=None,
-        outline_path=tmp_path / "投标大纲.md",
-        writing_plan_path=tmp_path / "撰写计划.json",
-        output_dir=tmp_path / "output",
-        bidder_name="",
-        created_paths=[],
-        manual_inputs=True,
-    )
+    dialog.state = None
+    if initialize_state:
+        dialog.state = build_state_from_project_root(tmp_path)
+        NewConfigWizardDialog._sync_fields_from_state(dialog)
+    else:
+        dialog.config_summary_var.set("先选择项目根目录")
+    dialog.destroy = lambda: None
     return dialog
 
 
@@ -115,8 +111,8 @@ def _run_import_job_inline(dialog: NewConfigWizardDialog, job) -> None:
 
 def test_wizard_defines_five_steps():
     assert [step.key for step in WIZARD_STEPS] == [
-        "source",
         "location",
+        "source",
         "materials",
         "basics",
         "review",
@@ -125,9 +121,9 @@ def test_wizard_defines_five_steps():
 
 def test_wizard_steps_use_user_facing_titles():
     assert [step.title for step in WIZARD_STEPS] == [
-        "选择起点",
         "项目位置",
-        "资料整理",
+        "招标文件",
+        "项目资料",
         "基础设置",
         "保存确认",
     ]
@@ -215,7 +211,10 @@ def test_constructor_builds_initial_wizard_shell(tmp_path: Path):
         assert dialog.result == {"saved_path": None, "apply_path": None}
         assert dialog.current_step_index == 0
         assert dialog.max_completed_step_index == 0
-        assert dialog.state.config_path == config_path.resolve()
+        assert dialog.state is None
+        assert dialog.vars["project_root"].get() == ""
+        assert dialog.vars["config_path"].get() == ""
+        assert dialog.config_summary_var.get() == "先选择项目根目录"
         assert set(dialog.step_frames) == {step.key for step in WIZARD_STEPS}
     finally:
         if dialog is not None:
