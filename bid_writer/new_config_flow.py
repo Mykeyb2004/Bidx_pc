@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,7 @@ class NewConfigWizardState:
     requirements_path: Path | None
     scoring_path: Path | None
     outline_path: Path
+    writing_plan_path: Path
     output_dir: Path
     bidder_name: str
     created_paths: list[Path] = field(default_factory=list)
@@ -41,6 +43,10 @@ _TENDER_SUFFIXES = (
 )
 DEFAULT_REQUIREMENTS_RELATIVE = "./项目要求/项目采购需求.md"
 DEFAULT_SCORING_RELATIVE = "./项目要求/评分标准.md"
+DEFAULT_OUTLINE_FILENAME = "投标大纲.md"
+DEFAULT_WRITING_PLAN_FILENAME = "撰写计划.json"
+DEFAULT_OUTPUT_DIRNAME = "output"
+DEFAULT_IMPORT_DIR = Path(".bid_writer") / "imports" / "pending"
 
 
 def build_initial_state_from_source(
@@ -58,17 +64,46 @@ def build_initial_state_from_source(
         source_path=source,
         project_root=project_root,
         config_path=config_dir / f"config_{project_name}.yaml",
-        import_dir=project_root / ".bid_writer" / "imports" / "pending",
+        import_dir=project_root / DEFAULT_IMPORT_DIR,
         should_copy_source=copy_source,
         source_copy_path=source_copy_path,
         copied_source_path=None,
         requirements_path=project_root / "项目要求" / "项目采购需求.md",
         scoring_path=project_root / "项目要求" / "评分标准.md",
-        outline_path=project_root / "投标大纲.md",
-        output_dir=project_root / "output",
+        outline_path=project_root / DEFAULT_OUTLINE_FILENAME,
+        writing_plan_path=project_root / DEFAULT_WRITING_PLAN_FILENAME,
+        output_dir=project_root / DEFAULT_OUTPUT_DIRNAME,
         bidder_name="",
         created_paths=[],
         manual_inputs=False,
+    )
+
+
+def sanitize_config_name(name: str) -> str:
+    sanitized = re.sub(r'[\\/:*?"<>|\n\r\t]', "_", name)
+    sanitized = re.sub(r"[_\s]+", "_", sanitized).strip(" ._")
+    return sanitized or "新项目"
+
+
+def build_state_from_project_root(project_root: str | Path) -> NewConfigWizardState:
+    root = Path(project_root)
+    config_stem = sanitize_config_name(root.name)
+    return NewConfigWizardState(
+        source_path=None,
+        project_root=root,
+        config_path=root / f"config_{config_stem}.yaml",
+        import_dir=root / DEFAULT_IMPORT_DIR,
+        should_copy_source=False,
+        source_copy_path=None,
+        copied_source_path=None,
+        requirements_path=root / "项目要求" / "项目采购需求.md",
+        scoring_path=root / "项目要求" / "评分标准.md",
+        outline_path=root / DEFAULT_OUTLINE_FILENAME,
+        writing_plan_path=root / DEFAULT_WRITING_PLAN_FILENAME,
+        output_dir=root / DEFAULT_OUTPUT_DIRNAME,
+        bidder_name="",
+        created_paths=[],
+        manual_inputs=True,
     )
 
 
@@ -78,14 +113,15 @@ def build_manual_state(*, project_root: str | Path, config_path: str | Path) -> 
         source_path=None,
         project_root=root,
         config_path=Path(config_path),
-        import_dir=None,
+        import_dir=root / DEFAULT_IMPORT_DIR,
         should_copy_source=False,
         source_copy_path=None,
         copied_source_path=None,
         requirements_path=root / "项目要求" / "项目采购需求.md",
         scoring_path=root / "项目要求" / "评分标准.md",
-        outline_path=root / "投标大纲.md",
-        output_dir=root / "output",
+        outline_path=root / DEFAULT_OUTLINE_FILENAME,
+        writing_plan_path=root / DEFAULT_WRITING_PLAN_FILENAME,
+        output_dir=root / DEFAULT_OUTPUT_DIRNAME,
         bidder_name="",
         created_paths=[],
         manual_inputs=True,

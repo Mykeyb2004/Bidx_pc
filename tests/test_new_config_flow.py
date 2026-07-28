@@ -7,6 +7,7 @@ from bid_writer.new_config_flow import (
     build_editor_document_from_state,
     build_initial_state_from_source,
     build_manual_state,
+    build_state_from_project_root,
     copy_source_file_if_needed,
     cleanup_created_paths,
     derive_project_name,
@@ -116,13 +117,50 @@ def test_build_manual_state_uses_manual_paths(tmp_path: Path):
     assert state.source_path is None
     assert state.project_root == project
     assert state.config_path == config
-    assert state.import_dir is None
+    assert state.import_dir == project / ".bid_writer" / "imports" / "pending"
     assert state.should_copy_source is False
     assert state.requirements_path == project / "项目要求" / "项目采购需求.md"
     assert state.scoring_path == project / "项目要求" / "评分标准.md"
     assert state.outline_path == project / "投标大纲.md"
+    assert state.writing_plan_path == project / "撰写计划.json"
     assert state.output_dir == project / "output"
     assert state.manual_inputs is True
+
+
+def test_build_state_from_project_root_derives_all_default_paths(tmp_path: Path):
+    project = tmp_path / "公共服务项目"
+    project.mkdir()
+
+    state = build_state_from_project_root(project)
+
+    assert state.source_path is None
+    assert state.project_root == project
+    assert state.config_path == project / "config_公共服务项目.yaml"
+    assert state.import_dir == project / ".bid_writer" / "imports" / "pending"
+    assert state.requirements_path == project / "项目要求" / "项目采购需求.md"
+    assert state.scoring_path == project / "项目要求" / "评分标准.md"
+    assert state.outline_path == project / "投标大纲.md"
+    assert state.writing_plan_path == project / "撰写计划.json"
+    assert state.output_dir == project / "output"
+    assert state.manual_inputs is True
+
+
+def test_build_state_from_project_root_sanitizes_config_filename(tmp_path: Path):
+    project = tmp_path / " 公共:服务*项目 "
+    project.mkdir()
+
+    state = build_state_from_project_root(project)
+
+    assert state.config_path == project / "config_公共_服务_项目.yaml"
+
+
+def test_build_state_from_project_root_uses_new_project_fallback(tmp_path: Path):
+    project = tmp_path / "   "
+    project.mkdir()
+
+    state = build_state_from_project_root(project)
+
+    assert state.config_path == project / "config_新项目.yaml"
 
 
 def test_build_editor_document_uses_relative_project_paths(tmp_path: Path):
@@ -146,6 +184,7 @@ def test_build_editor_document_uses_relative_project_paths(tmp_path: Path):
         requirements_path=requirements,
         scoring_path=scoring,
         outline_path=project / "投标大纲.md",
+        writing_plan_path=project / "撰写计划.json",
         output_dir=project / "output",
         bidder_name="测试公司",
         created_paths=[],
@@ -249,6 +288,7 @@ def test_cleanup_created_paths_removes_only_recorded_files_and_empty_dirs(tmp_pa
         requirements_path=None,
         scoring_path=created_file,
         outline_path=tmp_path / "投标大纲.md",
+        writing_plan_path=tmp_path / "撰写计划.json",
         output_dir=tmp_path / "output",
         bidder_name="",
         created_paths=[created_file, created_dir],
@@ -276,6 +316,7 @@ def test_register_created_path_records_each_path_once(tmp_path: Path):
         requirements_path=None,
         scoring_path=None,
         outline_path=tmp_path / "投标大纲.md",
+        writing_plan_path=tmp_path / "撰写计划.json",
         output_dir=tmp_path / "output",
         bidder_name="",
         created_paths=[],
@@ -306,6 +347,7 @@ def test_copy_source_file_if_needed_copies_external_source_and_records_path(tmp_
         requirements_path=None,
         scoring_path=None,
         outline_path=project / "投标大纲.md",
+        writing_plan_path=project / "撰写计划.json",
         output_dir=project / "output",
         bidder_name="",
         created_paths=[],
@@ -340,6 +382,7 @@ def test_copy_source_file_if_needed_avoids_overwriting_existing_project_file(tmp
         requirements_path=None,
         scoring_path=None,
         outline_path=project / "投标大纲.md",
+        writing_plan_path=project / "撰写计划.json",
         output_dir=project / "output",
         bidder_name="",
         created_paths=[],
@@ -373,6 +416,7 @@ def test_copy_source_file_if_needed_records_new_parent_dir_for_cleanup(tmp_path:
         requirements_path=None,
         scoring_path=None,
         outline_path=project / "投标大纲.md",
+        writing_plan_path=project / "撰写计划.json",
         output_dir=project / "output",
         bidder_name="",
         created_paths=[],
@@ -404,6 +448,7 @@ def test_copy_source_file_if_needed_skips_project_internal_source(tmp_path: Path
         requirements_path=None,
         scoring_path=None,
         outline_path=project / "投标大纲.md",
+        writing_plan_path=project / "撰写计划.json",
         output_dir=project / "output",
         bidder_name="",
         created_paths=[],
