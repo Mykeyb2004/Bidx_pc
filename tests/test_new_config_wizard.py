@@ -409,6 +409,27 @@ def test_outline_browse_uses_save_dialog_for_generate_mode(monkeypatch, tmp_path
     assert dialog.vars["outline_path"].get() == str(selected)
 
 
+def test_outline_browse_existing_file_from_generate_mode_reuses_outline(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["outline_source"].set("generate")
+    selected = tmp_path / "已有投标大纲.md"
+    selected.write_text("# 项目\n", encoding="utf-8")
+    calls = []
+
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
+        lambda *args, **kwargs: calls.append(("save", kwargs)) or str(selected),
+    )
+
+    NewConfigWizardDialog._browse_path(dialog, "outline_path", "outline")
+
+    assert calls and calls[0][0] == "save"
+    assert calls[0][1]["confirmoverwrite"] is False
+    assert dialog.vars["outline_source"].get() == "existing"
+    assert dialog.outline_path_label_var.get() == "已有大纲文件"
+    assert dialog.vars["outline_path"].get() == str(selected)
+
+
 def test_outline_browse_uses_open_dialog_for_existing_mode(monkeypatch, tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["outline_source"].set("existing")

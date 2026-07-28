@@ -1109,6 +1109,7 @@ class NewConfigWizardDialog(tk.Toplevel):
                     initialfile=Path(current_value).name if current_value else "投标大纲.md",
                     defaultextension=options.defaultextension,
                     filetypes=list(options.filetypes),
+                    confirmoverwrite=False,
                 )
         elif browse_kind == "markdown":
             options = file_dialog_options(PathPurpose.MARKDOWN)
@@ -1138,7 +1139,17 @@ class NewConfigWizardDialog(tk.Toplevel):
         else:
             selected = filedialog.askopenfilename(parent=self, initialdir=str(initial_dir))
         if selected:
-            self.vars[key].set(str(Path(selected).expanduser().resolve()))
+            selected_path = Path(selected).expanduser().resolve()
+            if (
+                key == "outline_path"
+                and browse_kind == "outline"
+                and (self.vars["outline_source"].get().strip() or "generate") == "generate"
+                and selected_path.suffix.lower() == ".md"
+                and selected_path.is_file()
+            ):
+                self.vars["outline_source"].set("existing")
+                self._sync_outline_source_ui()
+            self.vars[key].set(str(selected_path))
 
     def _run_import(self) -> None:
         if getattr(self, "_import_in_progress", False):
