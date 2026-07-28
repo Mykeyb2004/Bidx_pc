@@ -20,8 +20,17 @@ def test_config_example_documents_relative_writing_plan_file():
     payload = yaml.safe_load(example_path.read_text(encoding="utf-8"))
 
     writing_plan_file = payload["project"]["inputs"]["writing_plan_file"]
-    assert writing_plan_file == "./writing-plan.json"
+    assert writing_plan_file == "./撰写计划.json"
     assert not Path(writing_plan_file).is_absolute()
+
+
+def test_config_schema_docs_describe_project_root_first_wizard():
+    docs = (REPO_ROOT / "docs" / "config_schema.md").read_text(encoding="utf-8")
+
+    assert "新建配置向导会先要求选择一个已存在的项目根目录" in docs
+    assert "project.inputs.writing_plan_file" in docs
+    assert "./撰写计划.json" in docs
+    assert "文件选择器不会提供“全部文件”选项" in docs
 
 
 def test_songzi_config_documents_project_relative_writing_plan_file():

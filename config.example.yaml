@@ -8,7 +8,7 @@ project:
     outline_file: ./outline.md
     bid_requirements_file: ./bid_requirements.md
     scoring_criteria_file: ./scoring_criteria.md
-    writing_plan_file: ./writing-plan.json
+    writing_plan_file: ./撰写计划.json
   output_dir: ./output
 
 writing:

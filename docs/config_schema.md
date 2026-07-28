@@ -80,7 +80,7 @@ project:
 - `project.inputs.writing_plan_file` 是可选的节点撰写计划库；示例 `./撰写计划.json` 会解析到 `project.root_dir/撰写计划.json`，不是配置文件所在目录
 - `project.inputs.knowledge_files` / `project.inputs.knowledge_directory` 仅作为旧配置兼容字段保留；当前章节生成 prompt 不再读取这些字段
 
-GUI 新建配置向导会根据招标文件位置生成这些路径。选择招标文件后，`project.root_dir` 默认设置为该招标文件所在目录，并尽量相对配置文件保存；`project.inputs.*` 和 `project.output_dir` 会尽量相对 `project.root_dir` 保存。
+GUI 新建配置向导会先要求选择一个已存在的项目根目录。配置文件默认保存为 `project.root_dir/config_<项目文件夹名>.yaml`，保存后的 YAML 使用 `project.root_dir: "."`。采购需求、评分标准、大纲、节点撰写计划和输出目录的默认值都从该项目根目录派生。选择招标文件只会更新来源文件、复制目标和导入目录，不会重新推导或覆盖项目根目录。
 
 ### 3.1.1 跨平台路径规范
 
@@ -103,9 +103,13 @@ project:
 - 如果必须写 Windows 绝对路径，建议使用 `C:/Users/example/project`，或使用单引号包裹反斜杠路径：`'C:\Users\example\project'`
 - 配置编辑器选择项目内文件时，会优先保存为相对路径并使用 `/` 分隔符，便于跨系统迁移
 
+GUI 文件选择器按字段严格过滤扩展名：招标文件仅 `.pdf/.docx/.doc/.xlsx/.xls`，Markdown 资源仅 `.md`，节点撰写计划仅 `.json`，配置文件仅 `.yaml/.yml`。文件选择器不会提供“全部文件”选项；手工输入路径仍会在保存前独立校验扩展名。
+
 ### 3.1.2 节点撰写计划文件
 
 `project.inputs.writing_plan_file` 是可选字段，用于启用按大纲节点编号保存撰写计划的 JSON v1 文件。未配置时，系统保留旧的临时附加要求输入；配置后，单章弹窗会把该字段作为“节点撰写计划”读写，批量生成只读取冻结快照且不会写回。
+
+新建配置向导默认写入 `project.inputs.writing_plan_file: "./撰写计划.json"`。保存并应用时，如果该文件不存在，向导会在已确认的项目根目录下创建规范空 JSON v1；如果文件已存在且合法，则原样复用；如果文件已存在但不是合法 JSON v1，则阻止保存配置且不会覆盖。用户选择项目外 JSON 时会直接引用原文件，不复制。
 
 配置编辑器入口：`项目信息` → `输入资源` → `节点撰写计划文件`。留空表示不启用节点撰写计划库；填写相对路径时按下方规则解析。
 
