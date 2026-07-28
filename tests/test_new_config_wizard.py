@@ -732,6 +732,20 @@ def test_cancel_keeps_created_paths_when_user_chooses_keep(monkeypatch, tmp_path
     assert destroyed == [True]
 
 
+def test_cancel_before_project_root_confirmation_destroys_without_cleanup_prompt(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path, initialize_state=False)
+    calls = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.askyesnocancel",
+        lambda *args, **kwargs: calls.append(args),
+    )
+    dialog.destroy = lambda: calls.append(("destroy",))
+
+    NewConfigWizardDialog._cancel(dialog)
+
+    assert calls == [("destroy",)]
+
+
 def test_select_source_file_updates_source_without_changing_project_root(monkeypatch, tmp_path: Path):
     project = tmp_path / "项目"
     project.mkdir()
@@ -881,6 +895,30 @@ def test_run_import_starts_background_worker_without_running_import_inline(monke
     assert worker_jobs
     assert import_calls == []
     assert "正在" in dialog.import_status_var.get()
+
+
+def test_run_import_rejects_missing_project_root_without_creating(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    missing_root = tmp_path / "missing-project"
+    source = tmp_path / "downloads" / "招标文件.pdf"
+    source.parent.mkdir()
+    source.write_text("fake", encoding="utf-8")
+    dialog.vars["project_root"].set(str(missing_root))
+    dialog.vars["source_path"].set(str(source))
+    shown_errors = []
+    worker_jobs = []
+
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+    dialog._start_import_worker = lambda job: worker_jobs.append(job)
+
+    NewConfigWizardDialog._run_import(dialog)
+
+    assert not missing_root.exists()
+    assert worker_jobs == []
+    assert shown_errors and "项目根目录不存在或不是目录" in shown_errors[0][1]
 
 
 def test_import_worker_marshals_ui_callbacks_to_main_queue(tmp_path: Path):

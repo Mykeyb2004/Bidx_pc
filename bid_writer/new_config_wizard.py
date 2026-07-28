@@ -1098,11 +1098,15 @@ class NewConfigWizardDialog(tk.Toplevel):
             return
 
         self._sync_state_from_fields()
-        if self.state.source_path is None:
+        state = self._require_state()
+        if state.source_path is None:
             messagebox.showwarning("缺少招标文件", "请先选择招标文件，或手动选择采购需求和评分标准文件。", parent=self)
             return
 
-        self.state.project_root.mkdir(parents=True, exist_ok=True)
+        if not state.project_root.exists() or not state.project_root.is_dir():
+            messagebox.showerror("路径无效", f"项目根目录不存在或不是目录：{state.project_root}", parent=self)
+            return
+
         existing_paths = self._snapshot_existing_import_paths()
         job = _ImportJob(state=self._snapshot_import_state(), existing_paths=existing_paths)
         self._import_ui_requests = queue.Queue()
