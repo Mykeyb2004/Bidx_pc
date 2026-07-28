@@ -22,7 +22,6 @@ from bid_writer.hover_tooltip import HoverTooltip
 from bid_writer.new_config_flow import (
     NewConfigWizardState,
     build_editor_document_from_state,
-    build_initial_state_from_source,
     build_state_from_project_root,
     cleanup_created_paths,
     copy_source_file_if_needed,
@@ -720,11 +719,7 @@ class NewConfigWizardDialog(tk.Toplevel):
                 if state.should_copy_source
                 else None
             )
-        state.import_dir = (
-            state.project_root / ".bid_writer" / "imports" / "pending"
-            if state.source_path is not None
-            else None
-        )
+        state.import_dir = state.project_root / ".bid_writer" / "imports" / "pending"
         self._sync_outline_source_ui()
         self._sync_source_hint()
 
@@ -894,14 +889,15 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._tooltips.append(HoverTooltip(widget, text))
 
     def _skip_source_selection(self) -> None:
+        state = self._require_state()
         self.vars["source_path"].set("")
-        self.state.source_path = None
-        self.state.import_dir = None
-        self.state.should_copy_source = False
-        self.state.source_copy_path = None
-        self.state.manual_inputs = True
+        state.source_path = None
+        state.import_dir = state.project_root / ".bid_writer" / "imports" / "pending"
+        state.should_copy_source = False
+        state.source_copy_path = None
+        state.manual_inputs = True
         self.vars["outline_source"].set("generate")
-        self.current_step_index = 1
+        self.current_step_index = max(self.current_step_index, 1)
         self.max_completed_step_index = max(self.max_completed_step_index, 1)
         self._sync_fields_from_state()
         self._show_step()
@@ -930,9 +926,19 @@ class NewConfigWizardDialog(tk.Toplevel):
             ):
                 return
 
-        self.state = build_initial_state_from_source(selected_path, current_config_path=self.state.config_path)
+        state = self._require_state()
+        state.source_path = selected_path
+        state.manual_inputs = False
+        state.should_copy_source = should_copy_source_file(selected_path, state.project_root)
+        state.source_copy_path = (
+            state.project_root / "招标文件" / selected_path.name
+            if state.should_copy_source
+            else None
+        )
+        state.import_dir = state.project_root / ".bid_writer" / "imports" / "pending"
+        self.vars["source_path"].set(str(selected_path))
         self._sync_fields_from_state()
-        self.current_step_index = 1
+        self.current_step_index = max(self.current_step_index, 1)
         self.max_completed_step_index = max(self.max_completed_step_index, 1)
         self._show_step()
 

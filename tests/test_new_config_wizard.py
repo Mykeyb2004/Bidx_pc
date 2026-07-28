@@ -576,25 +576,54 @@ def test_cancel_keeps_created_paths_when_user_chooses_keep(monkeypatch, tmp_path
     assert destroyed == [True]
 
 
-def test_select_source_file_rebuilds_state_and_moves_to_location(monkeypatch, tmp_path: Path):
-    source = tmp_path / "公共服务满意度项目招标文件.pdf"
-    source.write_text("fake", encoding="utf-8")
-    dialog = _dialog(tmp_path)
+def test_select_source_file_updates_source_without_changing_project_root(monkeypatch, tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    external = tmp_path / "downloads" / "公共服务满意度项目招标文件.pdf"
+    external.parent.mkdir()
+    external.write_text("fake", encoding="utf-8")
+    dialog = _dialog(project)
+    dialog.current_step_index = 1
     shown = []
     monkeypatch.setattr(
         "bid_writer.new_config_wizard.filedialog.askopenfilename",
-        lambda *args, **kwargs: str(source),
+        lambda *args, **kwargs: str(external),
     )
     dialog._show_step = lambda: shown.append(dialog.current_step_index)
 
     NewConfigWizardDialog._select_source_file(dialog)
 
-    assert dialog.state.source_path == source
-    assert dialog.vars["source_path"].get() == str(source)
-    assert dialog.vars["project_root"].get() == str(tmp_path)
+    assert dialog.state.project_root == project
+    assert dialog.state.config_path == project / "config_项目.yaml"
+    assert dialog.state.source_path == external
+    assert dialog.state.should_copy_source is True
+    assert dialog.state.source_copy_path == project / "招标文件" / external.name
+    assert dialog.vars["source_path"].get() == str(external)
+    assert dialog.vars["project_root"].get() == str(project)
     assert dialog.current_step_index == 1
     assert dialog.max_completed_step_index == 1
     assert shown == [1]
+
+
+def test_select_project_internal_source_does_not_copy(monkeypatch, tmp_path: Path):
+    project = tmp_path / "项目"
+    source = project / "招标文件" / "采购文件.pdf"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake", encoding="utf-8")
+    dialog = _dialog(project)
+    dialog.current_step_index = 1
+
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.askopenfilename",
+        lambda *args, **kwargs: str(source),
+    )
+
+    NewConfigWizardDialog._select_source_file(dialog)
+
+    assert dialog.state.project_root == project
+    assert dialog.state.source_path == source
+    assert dialog.state.should_copy_source is False
+    assert dialog.state.source_copy_path is None
 
 
 def test_run_import_updates_material_paths_and_records_only_new_paths(monkeypatch, tmp_path: Path):
