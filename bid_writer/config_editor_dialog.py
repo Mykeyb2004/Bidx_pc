@@ -21,6 +21,7 @@ from .config_editor import (
 )
 from .config_editor_tooltips import get_tooltip_text
 from .hover_tooltip import HoverTooltip
+from .path_purposes import PathPurpose, file_dialog_options
 from .gui import (
     _bootstyle_kwargs,
     _compute_screen_limited_dialog_size,
@@ -44,6 +45,15 @@ PATH_BROWSE_BUTTON_RIGHT_GUTTER = 12
 INFO_LABEL_WRAP_HORIZONTAL_PADDING = 48
 INTEGER_FIELD_MAX = 1_000_000
 RATIO_FIELD_MAX = 10.0
+
+_PATH_PURPOSE_BY_KEY = {
+    "project.outline_generation.role_file": PathPurpose.MARKDOWN,
+    "project.outline_file": PathPurpose.MARKDOWN,
+    "project.writing_plan_file": PathPurpose.JSON,
+    "project.bid_requirements_file": PathPurpose.MARKDOWN,
+    "project.scoring_criteria_file": PathPurpose.MARKDOWN,
+    "writing.role_file": PathPurpose.MARKDOWN,
+}
 
 
 def _label_wraplength_for_width(
@@ -836,7 +846,16 @@ class ConfigEditorDialog(tk.Toplevel):
         if browse_kind == "dir":
             selected = filedialog.askdirectory(parent=self, initialdir=initial_dir)
         else:
-            selected = filedialog.askopenfilename(parent=self, initialdir=initial_dir)
+            purpose = _PATH_PURPOSE_BY_KEY.get(key)
+            if purpose is None:
+                selected = filedialog.askopenfilename(parent=self, initialdir=initial_dir)
+            else:
+                options = file_dialog_options(purpose)
+                selected = filedialog.askopenfilename(
+                    parent=self,
+                    initialdir=initial_dir,
+                    filetypes=list(options.filetypes),
+                )
 
         if not selected:
             return

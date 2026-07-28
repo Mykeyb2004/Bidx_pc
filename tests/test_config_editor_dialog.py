@@ -124,6 +124,52 @@ def test_config_editor_path_browse_button_keeps_right_gutter(monkeypatch):
     assert created_buttons[0].grid_kwargs["padx"] == (8, 12)
 
 
+def test_config_editor_writing_plan_browse_uses_json_filter(monkeypatch, tmp_path):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {"project.writing_plan_file": StubVar("./撰写计划.json")}
+    dialog._current_project_root = lambda: tmp_path
+    dialog._current_config_dir = lambda: tmp_path
+    dialog._display_relative_path = ConfigEditorDialog._display_relative_path.__get__(dialog, ConfigEditorDialog)
+    selected = tmp_path / "plans" / "撰写计划.json"
+    selected.parent.mkdir()
+    selected.write_text('{"version": 1, "items": []}', encoding="utf-8")
+    captured = {}
+
+    def fake_open(**kwargs):
+        captured.update(kwargs)
+        return str(selected)
+
+    monkeypatch.setattr(config_editor_dialog.filedialog, "askopenfilename", fake_open)
+
+    ConfigEditorDialog._browse_path(dialog, "project.writing_plan_file", "file", "project")
+
+    assert captured["filetypes"] == [("JSON", "*.json")]
+    assert ("全部文件", "*.*") not in captured["filetypes"]
+    assert dialog.vars["project.writing_plan_file"].get() == "plans/撰写计划.json"
+
+
+def test_config_editor_markdown_and_yaml_filters_are_strict(monkeypatch, tmp_path):
+    dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
+    dialog.vars = {"project.outline_file": StubVar("./投标大纲.md")}
+    dialog._current_project_root = lambda: tmp_path
+    dialog._current_config_dir = lambda: tmp_path
+    dialog._display_relative_path = ConfigEditorDialog._display_relative_path.__get__(dialog, ConfigEditorDialog)
+    selected = tmp_path / "投标大纲.md"
+    selected.write_text("# 大纲", encoding="utf-8")
+    captured = {}
+
+    def fake_open(**kwargs):
+        captured["open"] = kwargs
+        return str(selected)
+
+    monkeypatch.setattr(config_editor_dialog.filedialog, "askopenfilename", fake_open)
+
+    ConfigEditorDialog._browse_path(dialog, "project.outline_file", "file", "project")
+
+    assert captured["open"]["filetypes"] == [("Markdown", "*.md")]
+    assert ("全部文件", "*.*") not in captured["open"]["filetypes"]
+
+
 def test_config_editor_widgets_do_not_create_side_assessment_panel(monkeypatch):
     dialog = ConfigEditorDialog.__new__(ConfigEditorDialog)
     dialog.SECTION_LABELS = [("project", "项目")]
