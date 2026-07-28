@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from bid_writer.gui import (
     _activate_window,
@@ -410,16 +410,39 @@ class NewConfigWizardDialog(tk.Toplevel):
         tooltip_key: str | None = None,
     ) -> ttk.Entry:
         entry = self._add_entry_row(parent, row, label, key, tooltip_key=tooltip_key)
-        browse_button = ttk.Button(
-            parent,
-            text="选择...",
-            command=lambda: self._browse_path(key, browse_kind),
-            **_bootstyle_kwargs("secondary"),
-        )
-        configure_icon_button(browse_button, self, "browse")
-        browse_button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        if browse_kind == "dir":
+            browse_button = ttk.Button(
+                button_frame,
+                text="选择...",
+                command=lambda: self._browse_path(key, browse_kind),
+                **_bootstyle_kwargs("secondary"),
+            )
+            configure_icon_button(browse_button, self, "browse")
+            browse_button.pack(side=tk.LEFT)
+            tooltip_widgets = [browse_button]
+        else:
+            new_button = ttk.Button(
+                button_frame,
+                text="新建位置...",
+                command=lambda: self._choose_new_file_location(key, browse_kind, label),
+                **_bootstyle_kwargs("secondary"),
+            )
+            configure_icon_button(new_button, self, "add")
+            new_button.pack(side=tk.LEFT, padx=(0, 6))
+            browse_button = ttk.Button(
+                button_frame,
+                text="选择已有...",
+                command=lambda: self._browse_path(key, browse_kind),
+                **_bootstyle_kwargs("secondary"),
+            )
+            configure_icon_button(browse_button, self, "browse")
+            browse_button.pack(side=tk.LEFT)
+            tooltip_widgets = [new_button, browse_button]
         if tooltip_key is not None:
-            self._register_tooltip(browse_button, tooltip_key)
+            for widget in tooltip_widgets:
+                self._register_tooltip(widget, tooltip_key)
         return entry
 
     def _add_outline_path_row(self, parent: tk.Misc, row: int, *, tooltip_key: str | None = None) -> ttk.Entry:
@@ -433,14 +456,24 @@ class NewConfigWizardDialog(tk.Toplevel):
         )
         entry = ttk.Entry(parent, textvariable=self.vars["outline_path"])
         entry.grid(row=row, column=1, sticky="ew", pady=6)
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        new_button = ttk.Button(
+            button_frame,
+            text="新建位置...",
+            command=lambda: self._choose_new_file_location("outline_path", "outline", "大纲文件"),
+            **_bootstyle_kwargs("secondary"),
+        )
+        configure_icon_button(new_button, self, "add")
+        new_button.pack(side=tk.LEFT, padx=(0, 6))
         outline_button = ttk.Button(
-            parent,
+            button_frame,
             textvariable=self.outline_path_action_var,
             command=lambda: self._browse_path("outline_path", "outline"),
             **_bootstyle_kwargs("secondary"),
         )
         configure_icon_button(outline_button, self, "browse")
-        outline_button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=6)
+        outline_button.pack(side=tk.LEFT)
         ttk.Label(
             parent,
             textvariable=self.outline_path_hint_var,
@@ -451,6 +484,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         if tooltip_key is not None:
             self._register_tooltip(label_widget, tooltip_key)
             self._register_tooltip(entry, tooltip_key)
+            self._register_tooltip(new_button, tooltip_key)
             self._register_tooltip(outline_button, tooltip_key)
         return entry
 
@@ -1021,6 +1055,86 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.current_step_index = max(self.current_step_index, 1)
         self.max_completed_step_index = max(self.max_completed_step_index, 1)
         self._show_step()
+
+    def _purpose_for_browse_kind(self, browse_kind: str) -> PathPurpose:
+        if browse_kind in {"outline", "markdown"}:
+            return PathPurpose.MARKDOWN
+        if browse_kind == "json":
+            return PathPurpose.JSON
+        if browse_kind == "yaml":
+            return PathPurpose.YAML
+        raise ValueError(f"不支持新建文件位置：{browse_kind}")
+
+    def _default_filename_for_key(self, key: str) -> str:
+        current_value = self.vars[key].get().strip()
+        if current_value:
+            current_name = Path(current_value).name
+            if current_name:
+                return current_name
+
+        defaults = {
+            "config_path": "config_新项目.yaml",
+            "requirements_path": "项目采购需求.md",
+            "scoring_path": "评分标准.md",
+            "outline_path": "投标大纲.md",
+            "writing_plan_path": "撰写计划.json",
+        }
+        return defaults.get(key, "新文件")
+
+    def _choose_new_file_location(self, key: str, browse_kind: str, label: str) -> None:
+        purpose = self._purpose_for_browse_kind(browse_kind)
+        options = file_dialog_options(purpose)
+        current_value = self.vars[key].get().strip()
+        fallback = self._project_root_for_browse() or Path.home()
+        initial = Path(current_value).expanduser() if current_value else fallback
+        initial_dir = initial.parent if initial.suffix else initial
+        selected_dir = filedialog.askdirectory(
+            parent=self,
+            title=f"选择{label}所在文件夹",
+            initialdir=str(initial_dir),
+        )
+        if not selected_dir:
+            return
+
+        filename = simpledialog.askstring(
+            "填写文件名",
+            f"请输入{label}文件名：",
+            initialvalue=self._default_filename_for_key(key),
+            parent=self,
+        )
+        if filename is None:
+            return
+
+        filename = filename.strip()
+        if not filename:
+            messagebox.showerror("文件名无效", f"{label}文件名不能为空。", parent=self)
+            return
+
+        filename_path = Path(filename)
+        if filename_path.name != filename:
+            messagebox.showerror("文件名无效", "这里只填写文件名，不要包含文件夹路径。", parent=self)
+            return
+
+        target = Path(selected_dir).expanduser() / filename
+        if target.suffix == "" and options.defaultextension:
+            target = target.with_suffix(options.defaultextension)
+
+        try:
+            require_supported_suffix(target, purpose, label=label)
+        except ValueError as exc:
+            messagebox.showerror("文件类型不支持", str(exc), parent=self)
+            return
+
+        target = target.resolve(strict=False)
+        if target.exists():
+            messagebox.showwarning(
+                "文件已存在",
+                f"{target} 已经存在。若要复用它，请使用“选择已有...”按钮。",
+                parent=self,
+            )
+            return
+
+        self.vars[key].set(str(target))
 
     def _browse_path(self, key: str, browse_kind: str) -> None:
         current_value = self.vars[key].get().strip()
