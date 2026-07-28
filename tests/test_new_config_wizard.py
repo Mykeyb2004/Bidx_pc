@@ -564,6 +564,86 @@ def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
     assert destroyed == [True]
 
 
+def test_save_and_apply_initializes_missing_writing_plan_before_config_save(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("测试公司")
+    writing_plan = tmp_path / "撰写计划.json"
+    saved = tmp_path / "config_项目.yaml"
+    order = []
+    destroyed = []
+
+    class FakeDocument:
+        model = {}
+
+        def validate(self, model, *, config_path=None):
+            return []
+
+        def save(self, model=None, *, target_path=None, create_backup=True):
+            order.append(("save", writing_plan.exists()))
+            return saved
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
+    dialog.destroy = lambda: destroyed.append(True)
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    assert order == [("save", True)]
+    assert writing_plan.read_text(encoding="utf-8") == '{\n  "version": 1,\n  "items": []\n}\n'
+    assert dialog.result == {"saved_path": saved, "apply_path": saved}
+    assert destroyed == [True]
+
+
+def test_save_and_apply_reuses_existing_writing_plan_without_overwriting(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("测试公司")
+    raw = '{"version":1,"items":[]}'
+    dialog.state.writing_plan_path.write_text(raw, encoding="utf-8")
+
+    class FakeDocument:
+        model = {}
+
+        def validate(self, model, *, config_path=None):
+            return []
+
+        def save(self, model=None, *, target_path=None, create_backup=True):
+            return target_path
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
+    dialog.destroy = lambda: None
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    assert dialog.state.writing_plan_path.read_text(encoding="utf-8") == raw
+
+
+def test_config_save_failure_rolls_back_only_new_writing_plan(monkeypatch, tmp_path: Path):
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("测试公司")
+    writing_plan = dialog.state.writing_plan_path
+    shown_errors = []
+
+    class FakeDocument:
+        model = {}
+
+        def validate(self, model, *, config_path=None):
+            return []
+
+        def save(self, model=None, *, target_path=None, create_backup=True):
+            raise OSError("disk full")
+
+    monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    assert not writing_plan.exists()
+    assert dialog.result == {"saved_path": None, "apply_path": None}
+    assert shown_errors and "disk full" in shown_errors[0][1]
+
+
 def test_save_and_apply_shows_validation_errors(monkeypatch, tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["bidder_name"].set("")

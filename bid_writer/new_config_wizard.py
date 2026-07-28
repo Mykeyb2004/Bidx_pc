@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -32,6 +33,7 @@ from bid_writer.path_purposes import PathPurpose, file_dialog_options, require_s
 from bid_writer.tender_import_dialog import confirm_tender_sections
 from bid_writer.tender_import_service import TenderImportError, TenderImportResult, TenderImportService
 from bid_writer.ui_icons import configure_icon_button
+from bid_writer.writing_plan_store import WritingPlanStore
 
 
 SUPPORTED_TENDER_SUFFIXES = {".pdf", ".docx", ".doc", ".xlsx", ".xls"}
@@ -610,8 +612,10 @@ class NewConfigWizardDialog(tk.Toplevel):
                 state_var.set("已完成" if index <= self.max_completed_step_index else "未开始")
 
     def _save_and_apply(self) -> None:
+        created_plan_path: Path | None = None
         try:
             self._sync_state_from_fields()
+            self._validate_path_suffixes()
             state = self._require_state()
             if not state.project_root.exists() or not state.project_root.is_dir():
                 raise ValueError(f"项目根目录不存在或不是目录：{state.project_root}")
@@ -627,14 +631,28 @@ class NewConfigWizardDialog(tk.Toplevel):
             return
 
         try:
+            if self._initialize_writing_plan():
+                created_plan_path = self._require_state().writing_plan_path
             saved_path = document.save(document.model, target_path=self._require_state().config_path, create_backup=True)
         except Exception as exc:
+            if created_plan_path is not None:
+                with suppress(OSError):
+                    created_plan_path.unlink()
+                state = self._require_state()
+                state.created_paths = [path for path in state.created_paths if path != created_plan_path]
             messagebox.showerror("保存失败", str(exc), parent=self)
             return
 
         self.result["saved_path"] = saved_path
         self.result["apply_path"] = saved_path
         self.destroy()
+
+    def _initialize_writing_plan(self) -> bool:
+        state = self._require_state()
+        result = WritingPlanStore(state.writing_plan_path).initialize()
+        if result.created:
+            register_created_path(state, state.writing_plan_path)
+        return result.created
 
     def _cancel(self) -> None:
         if getattr(self, "_import_in_progress", False):
