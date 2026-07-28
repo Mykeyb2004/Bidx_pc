@@ -137,7 +137,7 @@ def build_editor_document_from_state(state: NewConfigWizardState) -> ConfigEdito
     model = copy.deepcopy(document.model)
     model["project"]["root_dir"] = "."
     model["project"]["bidder_name"] = state.bidder_name.strip()
-    model["project"]["outline_locked"] = state.outline_source == "existing"
+    model["project"]["outline_locked"] = state.outline_path.exists()
     model["project"]["outline_file"] = format_relative_path(state.outline_path, state.project_root)
     model["project"]["writing_plan_file"] = format_relative_path(
         state.writing_plan_path,

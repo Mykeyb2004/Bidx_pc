@@ -214,7 +214,6 @@ def test_build_editor_document_locks_existing_outline(tmp_path: Path):
     state = build_state_from_project_root(project)
     state.bidder_name = "测试公司"
     state.outline_path = outline
-    state.outline_source = "existing"
 
     document = build_editor_document_from_state(state)
     payload = yaml.safe_load(document.render_yaml())

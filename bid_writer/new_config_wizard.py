@@ -107,17 +107,16 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.step_buttons: list[ttk.Button] = []
         self.step_frames: dict[str, ttk.Frame] = {}
         self.vars = self._create_vars()
-        self.vars["outline_source"].trace_add("write", lambda *_: self._sync_outline_source_ui())
         self.status_var = tk.StringVar(value="")
         self.config_summary_var = tk.StringVar(value="")
         self.source_hint_var = tk.StringVar(value="")
         self.import_status_var = tk.StringVar(value="")
         self.review_summary_var = tk.StringVar(value="")
         self.step_state_vars = [tk.StringVar(value="") for _ in WIZARD_STEPS]
-        self.outline_path_label_var = tk.StringVar(value="大纲保存位置")
-        self.outline_path_action_var = tk.StringVar(value="选择保存位置...")
+        self.outline_path_label_var = tk.StringVar(value="大纲文件")
+        self.outline_path_action_var = tk.StringVar(value="选择已有大纲...")
         self.outline_path_hint_var = tk.StringVar(
-            value="可以先不创建文件；进入大纲准备窗口后会在此位置生成大纲。"
+            value="可选择已有 .md 大纲；若路径不存在，保存后会进入大纲准备窗口并生成到这里。"
         )
         self.config_summary_var.set("先选择项目根目录")
 
@@ -357,7 +356,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self._add_path_row(form, 2, "评分标准文件", "scoring_path", browse_kind="markdown", tooltip_key="new_config.materials.scoring")
 
     def _build_basics_step(self) -> None:
-        frame = self._create_step_frame("basics", "基础设置", "填写投标主体、大纲来源和输出目录。")
+        frame = self._create_step_frame("basics", "基础设置", "填写投标主体、大纲文件和输出目录。")
         form = ttk.Frame(frame)
         form.grid(row=2, column=0, sticky="ew", pady=(18, 0))
         form.columnconfigure(1, weight=1)
@@ -366,44 +365,8 @@ class NewConfigWizardDialog(tk.Toplevel):
         bidder_box.columnconfigure(1, weight=1)
         self._add_entry_row(bidder_box, 0, "投标主体名称", "bidder_name", tooltip_key="new_config.basics.bidder_name")
 
-        source_box = ttk.LabelFrame(form, text="大纲来源", padding=(12, 10))
-        source_box.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        source_box.columnconfigure(1, weight=1)
-
-        existing_radio = ttk.Radiobutton(
-            source_box,
-            text="已有 Markdown 大纲",
-            value="existing",
-            variable=self.vars["outline_source"],
-        )
-        existing_radio.grid(row=0, column=0, sticky="w")
-        self._register_tooltip(existing_radio, "new_config.basics.outline_source.existing")
-        ttk.Label(
-            source_box,
-            text="选择一个已经存在的 .md 大纲文件，系统会直接读取它。",
-            style="Muted.TLabel",
-            wraplength=540,
-            justify=tk.LEFT,
-        ).grid(row=0, column=1, sticky="w", padx=(10, 0))
-
-        generate_radio = ttk.Radiobutton(
-            source_box,
-            text="生成后保存",
-            value="generate",
-            variable=self.vars["outline_source"],
-        )
-        generate_radio.grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self._register_tooltip(generate_radio, "new_config.basics.outline_source.generate")
-        ttk.Label(
-            source_box,
-            text="先保留保存位置，后续在大纲准备窗口生成完毕后写入这里。",
-            style="Muted.TLabel",
-            wraplength=540,
-            justify=tk.LEFT,
-        ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(8, 0))
-
         outline_box = ttk.LabelFrame(form, text="大纲文件与输出", padding=(12, 10))
-        outline_box.grid(row=2, column=0, columnspan=3, sticky="ew")
+        outline_box.grid(row=1, column=0, columnspan=3, sticky="ew")
         outline_box.columnconfigure(1, weight=1)
         self._add_outline_path_row(outline_box, 0, tooltip_key="new_config.basics.outline_path")
         self._add_path_row(
@@ -564,14 +527,6 @@ class NewConfigWizardDialog(tk.Toplevel):
             if not state.bidder_name:
                 messagebox.showerror("基本信息不完整", "请填写投标主体名称。", parent=self)
                 return False
-            outline_source = self.vars["outline_source"].get().strip() or "generate"
-            if outline_source == "existing" and not state.outline_path.exists():
-                messagebox.showerror(
-                    "大纲文件不存在",
-                    f"大纲文件不存在，请选择一个已存在的 Markdown 大纲文件：{state.outline_path}",
-                    parent=self,
-                )
-                return False
             return True
 
         return True
@@ -697,7 +652,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         self.vars["config_path"].set(str(self.state.config_path))
         self.vars["requirements_path"].set("" if self.state.requirements_path is None else str(self.state.requirements_path))
         self.vars["scoring_path"].set("" if self.state.scoring_path is None else str(self.state.scoring_path))
-        self.vars["outline_source"].set(getattr(self.state, "outline_source", self.vars["outline_source"].get() or "generate"))
+        self.vars["outline_source"].set("existing" if self.state.outline_path.exists() else "generate")
         self.vars["outline_path"].set(str(self.state.outline_path))
         self.vars["writing_plan_path"].set(str(self.state.writing_plan_path))
         self.vars["output_dir"].set(str(self.state.output_dir))
@@ -748,7 +703,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         state.writing_plan_path = writing_plan_path
         state.output_dir = output_dir
         state.bidder_name = self.vars["bidder_name"].get().strip()
-        state.outline_source = self.vars["outline_source"].get().strip() or "generate"
+        state.outline_source = "existing" if state.outline_path.exists() else "generate"
         if state.source_path is not None:
             state.should_copy_source = should_copy_source_file(state.source_path, state.project_root)
             state.source_copy_path = (
@@ -810,7 +765,6 @@ class NewConfigWizardDialog(tk.Toplevel):
         current.bidder_name = previous.bidder_name
         current.created_paths = list(previous.created_paths)
         current.manual_inputs = previous.manual_inputs
-        current.outline_source = previous.outline_source
 
         old_defaults = build_state_from_project_root(previous.project_root)
         if previous.requirements_path != old_defaults.requirements_path:
@@ -834,6 +788,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         else:
             current.should_copy_source = False
             current.source_copy_path = None
+        current.outline_source = "existing" if current.outline_path.exists() else "generate"
         current.import_dir = current.project_root / ".bid_writer" / "imports" / "pending"
 
     def _validate_path_suffixes(self) -> None:
@@ -940,29 +895,14 @@ class NewConfigWizardDialog(tk.Toplevel):
             self.source_hint_var.set("招标文件已位于项目目录内，不会重复复制。")
 
     def _sync_outline_source_ui(self) -> None:
-        if not hasattr(self, "vars") or "outline_source" not in self.vars:
-            return
-
-        outline_source = self.vars["outline_source"].get().strip() or "generate"
-        if outline_source not in {"existing", "generate"}:
-            outline_source = "generate"
-            self.vars["outline_source"].set(outline_source)
-
         if not hasattr(self, "outline_path_label_var") or not hasattr(self, "outline_path_action_var") or not hasattr(self, "outline_path_hint_var"):
             return
 
-        if outline_source == "existing":
-            self.outline_path_label_var.set("已有大纲文件")
-            self.outline_path_action_var.set("选择已有大纲...")
-            self.outline_path_hint_var.set(
-                "选择一个已经存在的 Markdown 大纲文件，保存后系统会直接读取它。"
-            )
-        else:
-            self.outline_path_label_var.set("大纲保存位置")
-            self.outline_path_action_var.set("选择保存位置...")
-            self.outline_path_hint_var.set(
-                "可以先不创建文件；生成完毕后再进入大纲准备窗口时，会在此位置写入大纲。"
-            )
+        self.outline_path_label_var.set("大纲文件")
+        self.outline_path_action_var.set("选择已有大纲...")
+        self.outline_path_hint_var.set(
+            "可选择已有 Markdown 大纲；若路径不存在，保存后会进入大纲准备窗口并生成到这里。"
+        )
 
     def _is_project_external(self, path: Path | None) -> bool:
         if path is None:
@@ -990,8 +930,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         if not hasattr(self, "review_summary_var") or self.state is None:
             return
         created = "\n".join(f"- {path}" for path in self.state.created_paths) or "- 暂无"
-        outline_source = self.vars["outline_source"].get().strip() or "generate"
-        outline_source_text = "已有 Markdown 大纲" if outline_source == "existing" else "生成后保存"
+        outline_status_text = "已存在，将直接复用" if self.state.outline_path.exists() else "尚不存在，将进入大纲准备"
         source_copy = (
             f"{self.state.source_path} -> {self.state.source_copy_path}"
             if self.state.should_copy_source and self.state.source_path is not None
@@ -1014,7 +953,7 @@ class NewConfigWizardDialog(tk.Toplevel):
                     f"项目根目录：{self.state.project_root}",
                     f"配置文件：{self.state.config_path}",
                     f"招标文件复制：{source_copy}",
-                    f"大纲来源：{outline_source_text}",
+                    f"大纲状态：{outline_status_text}",
                     f"采购需求：{self._format_review_path(self.state.requirements_path)}",
                     f"评分标准：{self._format_review_path(self.state.scoring_path)}",
                     f"投标大纲：{self._format_review_path(self.state.outline_path)}",
@@ -1042,8 +981,7 @@ class NewConfigWizardDialog(tk.Toplevel):
         state.should_copy_source = False
         state.source_copy_path = None
         state.manual_inputs = True
-        state.outline_source = "generate"
-        self.vars["outline_source"].set("generate")
+        state.outline_source = "existing" if state.outline_path.exists() else "generate"
         self.current_step_index = max(self.current_step_index, 1)
         self.max_completed_step_index = max(self.max_completed_step_index, 1)
         self._sync_fields_from_state()
@@ -1092,25 +1030,13 @@ class NewConfigWizardDialog(tk.Toplevel):
         if browse_kind == "dir":
             selected = filedialog.askdirectory(parent=self, initialdir=str(initial_dir))
         elif browse_kind == "outline":
-            outline_source = self.vars["outline_source"].get().strip() or "generate"
             options = file_dialog_options(PathPurpose.MARKDOWN)
-            if outline_source == "existing":
-                selected = filedialog.askopenfilename(
-                    parent=self,
-                    title="选择已有 Markdown 大纲",
-                    initialdir=str(initial_dir),
-                    filetypes=list(options.filetypes),
-                )
-            else:
-                selected = filedialog.asksaveasfilename(
-                    parent=self,
-                    title="选择大纲保存位置",
-                    initialdir=str(initial_dir),
-                    initialfile=Path(current_value).name if current_value else "投标大纲.md",
-                    defaultextension=options.defaultextension,
-                    filetypes=list(options.filetypes),
-                    confirmoverwrite=False,
-                )
+            selected = filedialog.askopenfilename(
+                parent=self,
+                title="选择已有 Markdown 大纲",
+                initialdir=str(initial_dir),
+                filetypes=list(options.filetypes),
+            )
         elif browse_kind == "markdown":
             options = file_dialog_options(PathPurpose.MARKDOWN)
             selected = filedialog.askopenfilename(
@@ -1138,15 +1064,6 @@ class NewConfigWizardDialog(tk.Toplevel):
             selected = filedialog.askopenfilename(parent=self, initialdir=str(initial_dir))
         if selected:
             selected_path = Path(selected).expanduser().resolve()
-            if (
-                key == "outline_path"
-                and browse_kind == "outline"
-                and (self.vars["outline_source"].get().strip() or "generate") == "generate"
-                and selected_path.suffix.lower() == ".md"
-                and selected_path.is_file()
-            ):
-                self.vars["outline_source"].set("existing")
-                self._sync_outline_source_ui()
             self.vars[key].set(str(selected_path))
 
     def _run_import(self) -> None:
