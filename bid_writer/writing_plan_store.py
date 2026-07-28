@@ -15,6 +15,7 @@ _NODE_NUMBER_PATTERN = re.compile(
     r"^\s*(\d+(?:\.\d+)*)(?:\.|(?=\s|$|、|:|：|-))"
 )
 _NODE_PATTERN = re.compile(r"^\d+(?:\.\d+)*$")
+_EMPTY_PAYLOAD = {"version": 1, "items": []}
 
 
 class WritingPlanStoreError(RuntimeError):
@@ -62,6 +63,12 @@ class WritingPlanCoverage:
         return self.total_headings - self.numbered_headings
 
 
+@dataclass(frozen=True)
+class InitializeWritingPlanResult:
+    created: bool
+    snapshot: WritingPlanSnapshot
+
+
 def extract_node_number(heading: str) -> str | None:
     match = _NODE_NUMBER_PATTERN.match(heading)
     if match is None:
@@ -92,9 +99,69 @@ def summarize_writing_plan_coverage(
     )
 
 
+def _dumps_payload(payload: dict[str, object]) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
 class WritingPlanStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+
+    def initialize(self) -> InitializeWritingPlanResult:
+        raw = self._read_bytes()
+        if raw is not None:
+            return InitializeWritingPlanResult(
+                created=False,
+                snapshot=self._snapshot_from_raw(raw),
+            )
+
+        if not self.path.parent.exists():
+            raise WritingPlanStoreError(
+                f"撰写计划文件父目录不存在：{self.path.parent}"
+            )
+        if not self.path.parent.is_dir():
+            raise WritingPlanStoreError(
+                f"撰写计划文件父路径不是目录：{self.path.parent}"
+            )
+
+        raw = _dumps_payload(_EMPTY_PAYLOAD)
+        try:
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            existing_raw = self._read_bytes()
+            if existing_raw is None:
+                raise WritingPlanExternalModificationError(
+                    f"撰写计划文件创建状态已变化，请重试：{self.path}"
+                )
+            return InitializeWritingPlanResult(
+                created=False,
+                snapshot=self._snapshot_from_raw(existing_raw),
+            )
+        except OSError as exc:
+            raise WritingPlanStoreError(
+                f"无法创建撰写计划文件：{self.path}"
+            ) from exc
+
+        try:
+            with os.fdopen(fd, "wb") as output:
+                output.write(raw)
+                output.flush()
+                os.fsync(output.fileno())
+            self._fsync_parent_directory()
+        except Exception as exc:
+            with suppress(OSError):
+                self.path.unlink()
+            raise WritingPlanStoreError(
+                f"无法创建撰写计划文件：{self.path}"
+            ) from exc
+
+        return InitializeWritingPlanResult(
+            created=True,
+            snapshot=WritingPlanSnapshot(
+                items=(),
+                fingerprint=hashlib.sha256(raw).hexdigest(),
+            ),
+        )
 
     def load_snapshot(self) -> WritingPlanSnapshot:
         raw = self._read_bytes()
@@ -162,9 +229,7 @@ class WritingPlanStore:
             "version": 1,
             "items": [asdict(item) for item in updated_items],
         }
-        raw = (
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-        ).encode("utf-8")
+        raw = _dumps_payload(payload)
         self._write_atomic(raw)
         return WritingPlanSnapshot(
             items=tuple(updated_items),

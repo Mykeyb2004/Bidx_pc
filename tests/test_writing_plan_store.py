@@ -6,6 +6,7 @@ import pytest
 
 import bid_writer.writing_plan_store as writing_plan_store
 from bid_writer.writing_plan_store import (
+    InitializeWritingPlanResult,
     WritingPlanExternalModificationError,
     WritingPlanItem,
     WritingPlanSnapshot,
@@ -60,6 +61,73 @@ def test_load_snapshot_returns_empty_snapshot_for_missing_file(tmp_path) -> None
 
     assert snapshot.items == ()
     assert snapshot.fingerprint is None
+
+
+def test_initialize_creates_canonical_empty_json_v1(tmp_path) -> None:
+    path = tmp_path / "撰写计划.json"
+
+    result = WritingPlanStore(path).initialize()
+
+    assert result == InitializeWritingPlanResult(
+        created=True,
+        snapshot=WritingPlanStore(path).load_snapshot(),
+    )
+    assert path.read_bytes() == b'{\n  "version": 1,\n  "items": []\n}\n'
+
+
+def test_initialize_reuses_valid_existing_file_without_changing_bytes(tmp_path) -> None:
+    path = tmp_path / "撰写计划.json"
+    raw = b'{"version":1,"items":[]}'
+    path.write_bytes(raw)
+
+    result = WritingPlanStore(path).initialize()
+
+    assert result.created is False
+    assert result.snapshot.items == ()
+    assert path.read_bytes() == raw
+
+
+def test_initialize_rejects_invalid_existing_file_without_overwriting(tmp_path) -> None:
+    path = tmp_path / "撰写计划.json"
+    path.write_text("not-json", encoding="utf-8")
+
+    with pytest.raises(WritingPlanValidationError, match="JSON"):
+        WritingPlanStore(path).initialize()
+
+    assert path.read_text(encoding="utf-8") == "not-json"
+
+
+def test_initialize_missing_parent_is_not_created_unless_direct_parent_exists(tmp_path) -> None:
+    path = tmp_path / "missing" / "撰写计划.json"
+
+    with pytest.raises(WritingPlanStoreError, match="父目录不存在"):
+        WritingPlanStore(path).initialize()
+
+    assert not path.exists()
+    assert not path.parent.exists()
+
+
+def test_initialize_does_not_overwrite_file_created_during_race(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "撰写计划.json"
+    race_raw = (
+        '{"version": 1, "items": [{"node": "1.1", "writing_plan": "外部"}]}'
+    ).encode("utf-8")
+    original_open = writing_plan_store.os.open
+
+    def racing_open(filename, flags, mode=0o777):
+        path.write_bytes(race_raw)
+        raise FileExistsError(str(filename))
+
+    monkeypatch.setattr(writing_plan_store.os, "open", racing_open)
+
+    result = WritingPlanStore(path).initialize()
+
+    assert result.created is False
+    assert result.snapshot.items == (
+        WritingPlanItem(node="1.1", writing_plan="外部"),
+    )
+    assert path.read_bytes() == race_raw
+    monkeypatch.setattr(writing_plan_store.os, "open", original_open)
 
 
 def test_summarize_writing_plan_coverage_counts_only_nonempty_exact_plans() -> None:
