@@ -13,6 +13,9 @@ from typing import Any
 
 import yaml
 
+from .path_purposes import PathPurpose, require_supported_suffix
+from .writing_plan_store import WritingPlanStore, WritingPlanStoreError
+
 
 _MISSING = object()
 _SUPPORTED_PROCESSING_PATHS = {"auto", "full_context"}
@@ -803,6 +806,20 @@ def validate_editor_model(
             messages.append(ValidationMessage("error", f"大纲文件不存在：{outline_path}"))
         else:
             messages.append(ValidationMessage("warning", f"大纲文件暂不存在，将在大纲准备阶段创建：{outline_path}"))
+
+    writing_plan_value = _coerce_str(model["project"].get("writing_plan_file", "")).strip()
+    if writing_plan_value:
+        try:
+            require_supported_suffix(writing_plan_value, PathPurpose.JSON, label="节点撰写计划文件")
+        except ValueError as exc:
+            messages.append(ValidationMessage("error", str(exc)))
+        else:
+            writing_plan_path = _resolve_path(writing_plan_value, root_dir)
+            if writing_plan_path.exists():
+                try:
+                    WritingPlanStore(writing_plan_path).load_snapshot()
+                except WritingPlanStoreError as exc:
+                    messages.append(ValidationMessage("error", str(exc)))
 
     for source_key, label in (("bid_requirements", "采购需求"), ("scoring_criteria", "评分标准")):
         mode = model["project"][f"{source_key}_mode"]

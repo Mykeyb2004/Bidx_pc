@@ -128,6 +128,80 @@ project:
     assert payload["project"]["inputs"]["writing_plan_file"] == "./plans/updated-writing-plan.json"
 
 
+def test_config_editor_validation_rejects_existing_invalid_writing_plan(tmp_path: Path):
+    _write_project_files(tmp_path)
+    invalid = tmp_path / "撰写计划.json"
+    invalid.write_text("not-json", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  bidder_name: "测试公司"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+    writing_plan_file: "./撰写计划.json"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate(document.model, config_path=config_path)
+
+    assert any(item.level == "error" and "撰写计划文件必须为有效 JSON" in item.text for item in messages)
+
+
+def test_config_editor_validation_allows_empty_and_missing_writing_plan_for_compatibility(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  bidder_name: "测试公司"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    document.model["project"]["writing_plan_file"] = ""
+    messages = document.validate(document.model, config_path=config_path)
+    assert not any("撰写计划" in item.text for item in messages if item.level == "error")
+
+    document.model["project"]["writing_plan_file"] = "./missing-plan.json"
+    messages = document.validate(document.model, config_path=config_path)
+    assert not any("撰写计划" in item.text for item in messages if item.level == "error")
+
+
+def test_config_editor_validation_rejects_wrong_writing_plan_extension(tmp_path: Path):
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  bidder_name: "测试公司"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+    writing_plan_file: "./撰写计划.txt"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate(document.model, config_path=config_path)
+
+    assert any(item.level == "error" and ".json" in item.text for item in messages)
+
+
 def test_config_editor_preserves_processing_scoring_switch(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "auto.yaml"
