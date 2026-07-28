@@ -365,6 +365,33 @@ processing:
     assert not any("auto 模式需要配置辅助模型" in message.text for message in messages)
 
 
+def test_config_editor_validation_warns_when_auto_runtime_missing(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("BID_WRITER_PRUNING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("BID_WRITER_PRUNING_API_KEY", raising=False)
+    _write_project_files(tmp_path)
+    config_path = tmp_path / "auto.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "."
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+processing:
+  path: "auto"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate()
+    pruning_messages = [message for message in messages if "auto 模式需要配置辅助模型" in message.text]
+
+    assert [message.level for message in pruning_messages] == ["warning"]
+
+
 def test_config_editor_validation_rejects_invalid_h2_project_background_fallback(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "auto.yaml"

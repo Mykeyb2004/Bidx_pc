@@ -347,6 +347,7 @@ BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 说明：
 
 - `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
+- 新建和保存 YAML 项目配置不会因为缺少 `.env.local` 中的模型连接参数而失败；配置编辑器只给出运行环境提示，实际调用生成、抽取、裁剪等模型能力时再按需检查对应 `BID_WRITER_*` 变量
 - 外部 shell 中已设置的环境变量优先级最高，其次是配置文件同目录下的 `.env.local`，再其次是 `.env`
 - 大纲生成参数读取优先级为 `BID_WRITER_OUTLINE_*`、对应的 `BID_WRITER_*`、代码默认值。
 - `BID_WRITER_REASONING_EFFORT` 控制正文章节生成的推理强度，支持 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`；未设置或填写无效值时不发送 `reasoning_effort`，由模型/代理使用自身默认值。

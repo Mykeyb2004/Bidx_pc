@@ -871,7 +871,7 @@ def validate_editor_model(
 
     if processing_path == "auto":
         if not env_status["pruning"].configured:
-            messages.append(ValidationMessage("error", "auto 模式需要配置辅助模型，请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
+            messages.append(ValidationMessage("warning", "auto 模式需要配置辅助模型，请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
     elif processing_path == "hybrid_extract":
         retrieval = model["processing"]["auto"]["retrieval"]
         if not retrieval["lexical_enabled"]:

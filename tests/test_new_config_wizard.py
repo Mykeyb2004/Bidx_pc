@@ -625,6 +625,30 @@ def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
     assert destroyed == [True]
 
 
+def test_save_and_apply_persists_auto_config_without_pruning_env(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("BID_WRITER_PRUNING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("BID_WRITER_PRUNING_API_KEY", raising=False)
+    dialog = _dialog(tmp_path)
+    dialog.vars["bidder_name"].set("测试公司")
+    dialog.state.requirements_path.parent.mkdir(parents=True)
+    dialog.state.requirements_path.write_text("采购需求", encoding="utf-8")
+    dialog.state.scoring_path.write_text("评分标准", encoding="utf-8")
+    shown_errors = []
+    destroyed = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+    dialog.destroy = lambda: destroyed.append(True)
+
+    NewConfigWizardDialog._save_and_apply(dialog)
+
+    assert shown_errors == []
+    assert dialog.state.config_path.exists()
+    assert dialog.result == {"saved_path": dialog.state.config_path, "apply_path": dialog.state.config_path}
+    assert destroyed == [True]
+
+
 def test_save_and_apply_initializes_missing_writing_plan_before_config_save(monkeypatch, tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["bidder_name"].set("测试公司")
