@@ -774,12 +774,23 @@ class NewConfigWizardDialog(tk.Toplevel):
             return False
 
         previous_state = self.state
+        try:
+            selected_config_path = self._selected_config_path_from_var(
+                confirmed_root=root,
+                previous_state=previous_state,
+            )
+        except ValueError as exc:
+            messagebox.showerror("路径格式无效", str(exc), parent=self)
+            return False
+
         next_state = build_state_from_project_root(root)
         if previous_state is not None:
             self._carry_over_state_for_new_root(previous_state, next_state)
+        if selected_config_path is not None:
+            next_state.config_path = selected_config_path
         self.state = next_state
         self._sync_fields_from_state()
-        if self.state.config_path.exists():
+        if selected_config_path is None and self.state.config_path.exists():
             messagebox.showerror(
                 "配置已存在",
                 f"默认配置文件已经存在：{self.state.config_path}\n请打开已有配置或选择其他项目根目录。",
@@ -877,6 +888,40 @@ class NewConfigWizardDialog(tk.Toplevel):
     def _optional_path_from_var(self, key: str) -> Path | None:
         raw = self.vars[key].get().strip()
         return Path(raw).expanduser().resolve() if raw else None
+
+    def _project_root_for_browse(self) -> Path | None:
+        if self.state is not None:
+            return self.state.project_root
+
+        root_value = self.vars["project_root"].get().strip()
+        if not root_value:
+            return None
+
+        root = Path(root_value).expanduser().resolve(strict=False)
+        if root.exists() and root.is_dir():
+            return root
+        return None
+
+    def _selected_config_path_from_var(
+        self,
+        *,
+        confirmed_root: Path,
+        previous_state: NewConfigWizardState | None,
+    ) -> Path | None:
+        raw = self.vars["config_path"].get().strip()
+        if not raw:
+            return None
+
+        selected = Path(raw).expanduser().resolve()
+        require_supported_suffix(selected, PathPurpose.YAML, label="配置文件")
+
+        if previous_state is None:
+            return selected
+
+        previous_default = build_state_from_project_root(previous_state.project_root).config_path.resolve()
+        if selected == previous_default and confirmed_root != previous_state.project_root:
+            return None
+        return selected
 
     def _sync_source_hint(self) -> None:
         if not hasattr(self, "source_hint_var"):
@@ -1038,7 +1083,7 @@ class NewConfigWizardDialog(tk.Toplevel):
 
     def _browse_path(self, key: str, browse_kind: str) -> None:
         current_value = self.vars[key].get().strip()
-        fallback = self.state.project_root if self.state is not None else Path.home()
+        fallback = self._project_root_for_browse() or Path.home()
         initial = Path(current_value).expanduser() if current_value else fallback
         initial_dir = initial.parent if initial.suffix else initial
         if browse_kind == "dir":

@@ -429,6 +429,48 @@ def test_outline_browse_uses_open_dialog_for_existing_mode(monkeypatch, tmp_path
     assert dialog.vars["outline_path"].get() == str(selected)
 
 
+def test_config_browse_uses_selected_project_root_before_confirmation(monkeypatch, tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    selected = project / "config_existing.yaml"
+    selected.write_text("project: {}\n", encoding="utf-8")
+    dialog = _dialog(tmp_path, initialize_state=False)
+    dialog.vars["project_root"].set(str(project))
+    calls = []
+
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
+        lambda *args, **kwargs: calls.append(kwargs) or str(selected),
+    )
+
+    NewConfigWizardDialog._browse_path(dialog, "config_path", "yaml")
+
+    assert calls[0]["initialdir"] == str(project)
+    assert dialog.vars["config_path"].get() == str(selected)
+
+
+def test_project_root_confirmation_accepts_explicit_existing_config_file(monkeypatch, tmp_path: Path):
+    project = tmp_path / "项目"
+    project.mkdir()
+    selected = project / "config_项目.yaml"
+    selected.write_text("project: {}\n", encoding="utf-8")
+    dialog = _dialog(tmp_path, initialize_state=False)
+    dialog.vars["project_root"].set(str(project))
+    dialog.vars["config_path"].set(str(selected))
+    shown_errors = []
+    monkeypatch.setattr(
+        "bid_writer.new_config_wizard.messagebox.showerror",
+        lambda *args, **kwargs: shown_errors.append(args),
+    )
+
+    ok = NewConfigWizardDialog._confirm_project_root_from_var(dialog)
+
+    assert ok is True
+    assert shown_errors == []
+    assert dialog.state.config_path == selected
+    assert dialog.vars["config_path"].get() == str(selected)
+
+
 def test_sync_review_summary_mentions_outline_source(tmp_path: Path):
     dialog = _dialog(tmp_path)
     dialog.vars["outline_source"].set("existing")
