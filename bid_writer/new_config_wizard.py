@@ -1128,12 +1128,10 @@ class NewConfigWizardDialog(tk.Toplevel):
             )
         elif browse_kind == "yaml":
             options = file_dialog_options(PathPurpose.YAML)
-            selected = filedialog.asksaveasfilename(
+            selected = filedialog.askopenfilename(
                 parent=self,
-                title="选择配置文件保存位置",
+                title="选择已有配置文件",
                 initialdir=str(initial_dir),
-                initialfile=Path(current_value).name if current_value else "config_新项目.yaml",
-                defaultextension=options.defaultextension,
                 filetypes=list(options.filetypes),
             )
         else:

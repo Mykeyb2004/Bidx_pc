@@ -451,7 +451,7 @@ def test_outline_browse_uses_open_dialog_for_existing_mode(monkeypatch, tmp_path
     assert dialog.vars["outline_path"].get() == str(selected)
 
 
-def test_config_browse_uses_selected_project_root_before_confirmation(monkeypatch, tmp_path: Path):
+def test_config_browse_opens_existing_yaml_from_selected_project_root(monkeypatch, tmp_path: Path):
     project = tmp_path / "项目"
     project.mkdir()
     selected = project / "config_existing.yaml"
@@ -461,13 +461,14 @@ def test_config_browse_uses_selected_project_root_before_confirmation(monkeypatc
     calls = []
 
     monkeypatch.setattr(
-        "bid_writer.new_config_wizard.filedialog.asksaveasfilename",
+        "bid_writer.new_config_wizard.filedialog.askopenfilename",
         lambda *args, **kwargs: calls.append(kwargs) or str(selected),
     )
 
     NewConfigWizardDialog._browse_path(dialog, "config_path", "yaml")
 
     assert calls[0]["initialdir"] == str(project)
+    assert calls[0]["title"] == "选择已有配置文件"
     assert dialog.vars["config_path"].get() == str(selected)
 
 
