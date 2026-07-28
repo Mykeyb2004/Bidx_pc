@@ -917,22 +917,64 @@ class NewConfigWizardDialog(tk.Toplevel):
                 "可以先不创建文件；生成完毕后再进入大纲准备窗口时，会在此位置写入大纲。"
             )
 
+    def _is_project_external(self, path: Path | None) -> bool:
+        if path is None:
+            return False
+        state = self._require_state()
+        try:
+            path.resolve(strict=False).relative_to(state.project_root.resolve(strict=False))
+        except ValueError:
+            return True
+        return False
+
+    def _format_review_path(self, path: Path | None) -> str:
+        if path is None:
+            return "未填写"
+        suffix = "（项目外文件）" if self._is_project_external(path) else ""
+        return f"{path}{suffix}"
+
+    def _format_writing_plan_status(self) -> str:
+        state = self._require_state()
+        status = "复用" if state.writing_plan_path.exists() else "新建"
+        external = "，项目外文件" if self._is_project_external(state.writing_plan_path) else ""
+        return f"{state.writing_plan_path}（{status}{external}）"
+
     def _sync_review_summary(self) -> None:
         if not hasattr(self, "review_summary_var") or self.state is None:
             return
         created = "\n".join(f"- {path}" for path in self.state.created_paths) or "- 暂无"
         outline_source = self.vars["outline_source"].get().strip() or "generate"
         outline_source_text = "已有 Markdown 大纲" if outline_source == "existing" else "生成后保存"
+        source_copy = (
+            f"{self.state.source_path} -> {self.state.source_copy_path}"
+            if self.state.should_copy_source and self.state.source_path is not None
+            else "无需复制"
+        )
+        external_refs = [
+            str(path)
+            for path in (
+                self.state.requirements_path,
+                self.state.scoring_path,
+                self.state.outline_path,
+                self.state.writing_plan_path,
+            )
+            if self._is_project_external(path)
+        ]
+        external_block = "\n".join(f"- {path}" for path in external_refs) or "- 暂无"
         self.review_summary_var.set(
             "\n".join(
                 [
-                    f"配置文件：{self.state.config_path}",
                     f"项目根目录：{self.state.project_root}",
+                    f"配置文件：{self.state.config_path}",
+                    f"招标文件复制：{source_copy}",
                     f"大纲来源：{outline_source_text}",
-                    f"采购需求：{self.state.requirements_path or '未填写'}",
-                    f"评分标准：{self.state.scoring_path or '未填写'}",
-                    f"投标大纲：{self.state.outline_path}",
+                    f"采购需求：{self._format_review_path(self.state.requirements_path)}",
+                    f"评分标准：{self._format_review_path(self.state.scoring_path)}",
+                    f"投标大纲：{self._format_review_path(self.state.outline_path)}",
+                    f"节点撰写计划：{self._format_writing_plan_status()}",
                     f"输出目录：{self.state.output_dir}",
+                    "项目外引用：",
+                    external_block,
                     "可清理的本次生成内容：",
                     created,
                 ]

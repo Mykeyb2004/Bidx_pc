@@ -440,6 +440,25 @@ def test_sync_review_summary_mentions_outline_source(tmp_path: Path):
     assert f"输出目录：{tmp_path / 'results'}" in dialog.review_summary_var.get()
 
 
+def test_review_summary_lists_writing_plan_status_and_external_references(tmp_path: Path):
+    project = tmp_path / "项目"
+    external_requirements = tmp_path / "shared" / "采购需求.md"
+    external_plan = tmp_path / "shared" / "撰写计划.json"
+    external_requirements.parent.mkdir()
+    external_requirements.write_text("需求", encoding="utf-8")
+    external_plan.write_text('{"version": 1, "items": []}', encoding="utf-8")
+    dialog = _dialog(project)
+    dialog.state.requirements_path = external_requirements
+    dialog.state.writing_plan_path = external_plan
+
+    NewConfigWizardDialog._sync_review_summary(dialog)
+
+    summary = dialog.review_summary_var.get()
+    assert f"节点撰写计划：{external_plan}（复用，项目外文件）" in summary
+    assert f"采购需求：{external_requirements}（项目外文件）" in summary
+    assert "项目外引用：" in summary
+
+
 def test_project_root_change_rebases_default_material_paths(tmp_path: Path):
     old_root = tmp_path / "旧项目"
     new_root = tmp_path / "706-15号楼研究"
