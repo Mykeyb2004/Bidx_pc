@@ -187,8 +187,8 @@ writing:
 
 说明：
 
-- `writing.role_file` 推荐放在仓库根目录的 `roles/` 下，便于按项目复用角色文件
-- `roles/system_gate_rules.md` 是当前固定且唯一的文本来源，用于 system gate 规则
+- `writing.role_file` 推荐放在仓库根目录的 `roles/` 下，便于按项目复用角色文件；读取时会先查配置文件同目录下的 `roles/`，再回退到应用根目录下的 `roles/`
+- `project.outline_generation.role_file` 与 `roles/system_gate_rules.md` 也遵循同样的“配置目录优先、应用根目录兜底”规则
 - `writing.target_words.default` 是运行时输入框的基准值，系统会自动推导目标区间并写入 prompt
 - `writing.target_words.upper_ratio` 用于控制区间上沿的自动放宽幅度，默认 `1.15`
 - `writing.extra_rules` 当前不会单独生成 `## 其他写作要求` 区块，而是直接追加到 `## 结构输出硬要求` 的末尾

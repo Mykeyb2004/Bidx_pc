@@ -333,6 +333,9 @@ def test_system_prompt_fails_fast_when_global_gate_file_missing(monkeypatch, tmp
     config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
     gate_file = Path(config.config_path).parent / "roles" / "system_gate_rules.md"
     gate_file.unlink()
+    empty_resource_root = tmp_path / "empty-app-root"
+    empty_resource_root.mkdir()
+    monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: empty_resource_root)
     writer = _build_writer(monkeypatch, config)
 
     with pytest.raises(FileNotFoundError, match="system_gate_rules.md"):

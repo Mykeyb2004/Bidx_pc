@@ -117,9 +117,12 @@ def test_format_outline_numbering_preserves_score_prefix_text():
     assert "#### 1.1.1 未成年人保护法政策要求响应" in formatted
 
 
-def test_missing_architect_role_file_blocks_generation(tmp_path: Path):
+def test_missing_architect_role_file_blocks_generation(monkeypatch, tmp_path: Path):
     config_path = _write_config(tmp_path)
     (tmp_path / "roles" / "标书架构师.md").unlink()
+    empty_resource_root = tmp_path / "empty-app-root"
+    empty_resource_root.mkdir()
+    monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: empty_resource_root)
     config = Config(str(config_path))
 
     with pytest.raises(OutlineGenerationError, match="大纲生成角色文件不存在"):

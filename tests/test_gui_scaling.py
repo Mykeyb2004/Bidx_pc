@@ -497,6 +497,20 @@ def test_build_generation_error_feedback_for_partial_output_connection_error():
     assert "接收模型输出" in feedback.workspace_body_text
 
 
+def test_build_generation_error_feedback_for_missing_local_resource_file():
+    feedback = _build_generation_error_feedback(
+        heading_title="服务思路",
+        heading_full_path="项目 > 服务思路",
+        stage_label="准备扩写请求",
+        exc=FileNotFoundError("system gate rules 文件不存在: /tmp/project/roles/system_gate_rules.md"),
+        has_partial_output=False,
+    )
+
+    assert feedback.category_title == "本地配置文件缺失"
+    assert "无法连接模型服务" not in feedback.workspace_body_text
+    assert "roles/system_gate_rules.md" in feedback.dialog_message
+
+
 def test_report_generation_failure_shows_dialog_before_workspace_update(monkeypatch):
     fake_window = _FakeMainWindowForGenerationFailure()
     heading = SimpleNamespace(title="服务保障", full_path="项目 > 服务保障")

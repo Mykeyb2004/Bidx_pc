@@ -856,14 +856,17 @@ def validate_editor_model(
         if not _coerce_str(model["writing"]["role_text"]).strip():
             messages.append(ValidationMessage("error", "写作角色当前为内嵌文本模式，但内容为空。"))
     else:
-        role_path = _resolve_path(model["writing"]["role_file"] or "./roles/example_role.md", config_path.parent)
+        role_path = _resolve_config_or_resource_path(
+            model["writing"]["role_file"] or "./roles/example_role.md",
+            config_path.parent,
+        )
         if not role_path.exists():
             messages.append(ValidationMessage("warning", f"role_file 当前不存在：{role_path}"))
 
     outline_role_file = _coerce_str(
         model["project"].get("outline_generation", {}).get("role_file", "./roles/标书架构师.md")
     ).strip() or "./roles/标书架构师.md"
-    outline_role_path = _resolve_path(outline_role_file, config_path.parent)
+    outline_role_path = _resolve_config_or_resource_path(outline_role_file, config_path.parent)
     if not outline_role_path.exists():
         messages.append(ValidationMessage("warning", f"大纲生成角色文件当前不存在：{outline_role_path}"))
 
@@ -1136,6 +1139,14 @@ def _resolve_path(path_value: str, base_dir: Path) -> Path:
     if not path.is_absolute():
         path = base_dir / path
     return path.resolve()
+
+
+def _resolve_config_or_resource_path(path_value: str, config_dir: Path) -> Path:
+    """优先从配置目录解析，找不到时回退到应用级共享资源目录。"""
+    config_candidate = _resolve_path(path_value, config_dir)
+    if config_candidate.exists():
+        return config_candidate
+    return _resolve_path(path_value, get_application_root_dir())
 
 
 def _read_env_files(base_dir: Path) -> dict[str, str]:

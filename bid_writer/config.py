@@ -246,6 +246,22 @@ class Config:
         return self._resolve_with_base(path_value, self.config_path.parent.resolve())
 
     @property
+    def resource_root_path(self) -> Path:
+        """应用级共享资源根目录。"""
+        return get_application_root_dir().resolve()
+
+    def _resolve_resource_path(self, path_value: str) -> Path:
+        """将相对路径解析为相对于应用级共享资源根目录的路径。"""
+        return self._resolve_with_base(path_value, self.resource_root_path)
+
+    def _resolve_config_or_resource_path(self, path_value: str) -> Path:
+        """先查配置文件目录，再回退到应用级共享资源目录。"""
+        config_candidate = self._resolve_path(path_value)
+        if config_candidate.exists():
+            return config_candidate
+        return self._resolve_resource_path(path_value)
+
+    @property
     def project_root_path(self) -> Path:
         """项目根目录；未配置时回退到配置文件所在目录。"""
         value = self._get_first_defined(('project', 'root_dir'), default="")
@@ -477,7 +493,7 @@ class Config:
             ('project', 'outline_generation', 'role_file'),
             default='./roles/标书架构师.md',
         )
-        return str(self._resolve_path(str(value).strip() or './roles/标书架构师.md'))
+        return str(self._resolve_config_or_resource_path(str(value).strip() or './roles/标书架构师.md'))
 
     @property
     def outline_api_base_url(self) -> str:
@@ -594,7 +610,7 @@ class Config:
         """角色设定"""
         role_file = self._get_first_defined(('writing', 'role_file'), 'role_file', default='')
         if isinstance(role_file, str) and role_file.strip():
-            text = self._read_text_file(role_file.strip())
+            text = self._read_text_file(role_file.strip(), resolver=self._resolve_config_or_resource_path)
             if text:
                 return text
         return self._get_first_defined(
@@ -880,13 +896,18 @@ class Config:
 
     @property
     def system_gate_rules_path(self) -> Path:
-        return self.config_path.parent.resolve() / "roles" / "system_gate_rules.md"
+        return self._resolve_config_or_resource_path("roles/system_gate_rules.md")
 
     @property
     def system_gate_rules_template(self) -> str:
         path = self.system_gate_rules_path
         if not path.exists() or not path.is_file():
-            raise FileNotFoundError(f"system gate rules 文件不存在: {path}")
+            config_candidate = self._resolve_path("roles/system_gate_rules.md")
+            resource_candidate = self._resolve_resource_path("roles/system_gate_rules.md")
+            raise FileNotFoundError(
+                "system gate rules 文件不存在: "
+                f"{path}（已检查配置目录: {config_candidate}；应用资源目录: {resource_candidate}）"
+            )
         text = path.read_text(encoding="utf-8").strip()
         if not text:
             raise ValueError(f"system gate rules 文件为空: {path}")

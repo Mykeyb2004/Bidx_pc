@@ -879,6 +879,41 @@ project:
     assert config.outline_generation_role_file == str(role_file)
 
 
+def test_role_files_fall_back_to_application_resource_root(monkeypatch, tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    resource_root = tmp_path / "app-root"
+    roles_dir = resource_root / "roles"
+    roles_dir.mkdir(parents=True)
+    system_gate_rules = roles_dir / "system_gate_rules.md"
+    system_gate_rules.write_text("资源门禁规则", encoding="utf-8")
+    role_file = roles_dir / "通用投标角色.md"
+    role_file.write_text("资源角色", encoding="utf-8")
+    outline_role = roles_dir / "标书架构师.md"
+    outline_role.write_text("资源大纲角色", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: ./project
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
+writing:
+  role_file: "./roles/通用投标角色.md"
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: resource_root)
+
+    config = Config(str(config_path))
+
+    assert config.resource_root_path == resource_root
+    assert config.system_gate_rules_path == system_gate_rules
+    assert config.system_gate_rules_template == "资源门禁规则"
+    assert config.role == "资源角色"
+    assert config.outline_generation_role_file == str(outline_role)
+
+
 def test_outline_model_settings_prefer_outline_env_and_fallback_to_generation(monkeypatch, tmp_path: Path):
     for key in (
         "BID_WRITER_API_BASE_URL",

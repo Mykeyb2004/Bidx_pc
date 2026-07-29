@@ -734,6 +734,45 @@ def test_new_config_defaults_to_unlocked_outline_generation_role(tmp_path: Path)
     assert payload["project"]["inputs"]["outline_file"] == "./投标大纲.md"
 
 
+def test_config_editor_role_validation_falls_back_to_application_resource_root(monkeypatch, tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _write_project_files(project_root)
+    resource_root = tmp_path / "app-root"
+    roles_dir = resource_root / "roles"
+    roles_dir.mkdir(parents=True)
+    (roles_dir / "通用投标角色.md").write_text("正文角色", encoding="utf-8")
+    (roles_dir / "标书架构师.md").write_text("大纲角色", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "./project"
+  bidder_name: "测试投标主体"
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+writing:
+  role_file: "./roles/通用投标角色.md"
+
+processing:
+  path: "full_context"
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("bid_writer.config_editor.get_application_root_dir", lambda: resource_root)
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate(document.model, config_path=config_path, check_model_environment=False)
+
+    assert not any("role_file 当前不存在" in message.text for message in messages)
+    assert not any("大纲生成角色文件当前不存在" in message.text for message in messages)
+
+
 def test_config_editor_preserves_outline_generation_fields(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "config.yaml"

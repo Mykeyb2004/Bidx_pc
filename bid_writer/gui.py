@@ -496,6 +496,20 @@ def _classify_generation_error(exc: BaseException) -> tuple[str, str, list[str]]
 
     if _matches_exception_type(
         exc,
+        names=("FileNotFoundError",),
+        types=(FileNotFoundError,),
+    ) or "文件不存在" in detail or "no such file or directory" in detail_lower:
+        return (
+            "本地配置文件缺失",
+            "扩写所需的本地配置或资源文件不存在。",
+            [
+                "检查配置目录和应用资源目录下的 roles/system_gate_rules.md、role_file 等文件是否存在。",
+                "如果是新建项目，先确认标书角色文件已随 repo 或应用资源一并放置。",
+            ],
+        )
+
+    if _matches_exception_type(
+        exc,
         names=("APIConnectionError", "ConnectionError", "OSError"),
         types=(APIConnectionError, ConnectionError, OSError),
     ) or any(
