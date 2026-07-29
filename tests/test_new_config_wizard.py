@@ -671,16 +671,27 @@ def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
     dialog.vars["config_path"].set(str(tmp_path / "config_测试.yaml"))
     saved = tmp_path / "config_测试.yaml"
     destroyed = []
+    environment_checks = []
+    environment_refreshes = []
 
     class FakeDocument:
         model = {}
 
-        def validate(self, model, *, config_path=None):
+        def validate(self, model, *, config_path=None, check_model_environment=True):
+            environment_checks.append(check_model_environment)
             return []
 
-        def save(self, model=None, *, target_path=None, create_backup=True):
+        def save(
+            self,
+            model=None,
+            *,
+            target_path=None,
+            create_backup=True,
+            refresh_model_environment=True,
+        ):
             assert target_path == saved
             assert create_backup is True
+            environment_refreshes.append(refresh_model_environment)
             return saved
 
     monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
@@ -689,6 +700,8 @@ def test_save_and_apply_sets_result_from_document(monkeypatch, tmp_path: Path):
     NewConfigWizardDialog._save_and_apply(dialog)
 
     assert dialog.result == {"saved_path": saved, "apply_path": saved}
+    assert environment_checks == [False]
+    assert environment_refreshes == [False]
     assert destroyed == [True]
 
 
@@ -706,12 +719,21 @@ def test_save_and_apply_persists_auto_config_without_pruning_env(monkeypatch, tm
         "bid_writer.new_config_wizard.messagebox.showerror",
         lambda *args, **kwargs: shown_errors.append(args),
     )
+    monkeypatch.setattr(
+        "bid_writer.config_editor.detect_connection_status",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("new config flow must not inspect model environment")
+        ),
+    )
     dialog.destroy = lambda: destroyed.append(True)
 
     NewConfigWizardDialog._save_and_apply(dialog)
 
     assert shown_errors == []
     assert dialog.state.config_path.exists()
+    saved_yaml = dialog.state.config_path.read_text(encoding="utf-8")
+    assert ".env.local" not in saved_yaml
+    assert "BID_WRITER_" not in saved_yaml
     assert dialog.result == {"saved_path": dialog.state.config_path, "apply_path": dialog.state.config_path}
     assert destroyed == [True]
 
@@ -745,10 +767,19 @@ def test_save_and_apply_initializes_missing_writing_plan_before_config_save(monk
     class FakeDocument:
         model = {}
 
-        def validate(self, model, *, config_path=None):
+        def validate(self, model, *, config_path=None, check_model_environment=True):
+            assert check_model_environment is False
             return []
 
-        def save(self, model=None, *, target_path=None, create_backup=True):
+        def save(
+            self,
+            model=None,
+            *,
+            target_path=None,
+            create_backup=True,
+            refresh_model_environment=True,
+        ):
+            assert refresh_model_environment is False
             order.append(("save", writing_plan.exists()))
             return saved
 
@@ -772,10 +803,19 @@ def test_save_and_apply_reuses_existing_writing_plan_without_overwriting(monkeyp
     class FakeDocument:
         model = {}
 
-        def validate(self, model, *, config_path=None):
+        def validate(self, model, *, config_path=None, check_model_environment=True):
+            assert check_model_environment is False
             return []
 
-        def save(self, model=None, *, target_path=None, create_backup=True):
+        def save(
+            self,
+            model=None,
+            *,
+            target_path=None,
+            create_backup=True,
+            refresh_model_environment=True,
+        ):
+            assert refresh_model_environment is False
             return target_path
 
     monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
@@ -795,10 +835,19 @@ def test_config_save_failure_rolls_back_only_new_writing_plan(monkeypatch, tmp_p
     class FakeDocument:
         model = {}
 
-        def validate(self, model, *, config_path=None):
+        def validate(self, model, *, config_path=None, check_model_environment=True):
+            assert check_model_environment is False
             return []
 
-        def save(self, model=None, *, target_path=None, create_backup=True):
+        def save(
+            self,
+            model=None,
+            *,
+            target_path=None,
+            create_backup=True,
+            refresh_model_environment=True,
+        ):
+            assert refresh_model_environment is False
             raise OSError("disk full")
 
     monkeypatch.setattr("bid_writer.new_config_wizard.build_editor_document_from_state", lambda _state: FakeDocument())
@@ -827,7 +876,8 @@ def test_save_and_apply_shows_validation_errors(monkeypatch, tmp_path: Path):
     class FakeDocument:
         model = {}
 
-        def validate(self, model, *, config_path=None):
+        def validate(self, model, *, config_path=None, check_model_environment=True):
+            assert check_model_environment is False
             return [FakeMessage()]
 
         def save(self, model=None, *, target_path=None, create_backup=True):

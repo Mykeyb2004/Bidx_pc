@@ -12,7 +12,7 @@ from tkinter import messagebox
 from typing import Callable, Literal
 
 from .config import Config
-from .gui_state import get_default_base_dir
+from .gui_state import get_application_root_dir, get_default_base_dir
 
 EnvPromptPurpose = Literal["startup", "outline", "chapter"]
 
@@ -46,8 +46,9 @@ class EnvLocalPromptResult:
 
 
 def get_env_local_path_for_config(config_path: Path) -> Path:
-    """返回配置文件同目录下的本地模型环境文件路径。"""
-    return config_path.expanduser().resolve().parent / ".env.local"
+    """返回应用根目录下的本地模型环境文件路径。"""
+    del config_path
+    return get_application_root_dir() / ".env.local"
 
 
 def build_default_env_local_content(config_dir: Path) -> str:
@@ -77,7 +78,7 @@ def build_default_env_local_content(config_dir: Path) -> str:
 
 
 def ensure_env_local_file(config_path: Path) -> Path:
-    """创建配置同目录下的 `.env.local`，不会覆盖已有文件。"""
+    """在应用根目录创建 `.env.local`，不会覆盖已有文件。"""
     env_path = get_env_local_path_for_config(config_path)
     if env_path.exists():
         return env_path
@@ -136,12 +137,12 @@ def build_missing_env_local_prompt(
         lead = f"当前还没有可用的模型 API Key，{action_text}前需要先配置 .env.local。"
         question = "是否现在打开它进行设置？"
     else:
-        lead = f"当前配置目录中还没有 .env.local，{action_text}前需要先配置模型连接。"
+        lead = f"当前应用目录中还没有 .env.local，{action_text}前需要先配置模型连接。"
         question = "是否现在创建并打开这个文件？"
 
     return (
         f"{lead}\n\n"
-        f"配置文件位置：\n{env_path}\n\n"
+        f"模型环境文件位置：\n{env_path}\n\n"
         f"请填写以下内容：\n{required_text}\n\n"
         "保存后，请重启软件或重新载入当前配置，再继续生成。\n\n"
         f"{question}"

@@ -609,7 +609,11 @@ class NewConfigWizardDialog(tk.Toplevel):
             if not state.project_root.exists() or not state.project_root.is_dir():
                 raise ValueError(f"项目根目录不存在或不是目录：{state.project_root}")
             document = build_editor_document_from_state(state)
-            messages = document.validate(document.model, config_path=state.config_path)
+            messages = document.validate(
+                document.model,
+                config_path=state.config_path,
+                check_model_environment=False,
+            )
         except Exception as exc:
             messagebox.showerror("保存失败", str(exc), parent=self)
             return
@@ -622,7 +626,12 @@ class NewConfigWizardDialog(tk.Toplevel):
         try:
             if self._initialize_writing_plan():
                 created_plan_path = self._require_state().writing_plan_path
-            saved_path = document.save(document.model, target_path=self._require_state().config_path, create_backup=True)
+            saved_path = document.save(
+                document.model,
+                target_path=self._require_state().config_path,
+                create_backup=True,
+                refresh_model_environment=False,
+            )
         except Exception as exc:
             if created_plan_path is not None:
                 with suppress(OSError):

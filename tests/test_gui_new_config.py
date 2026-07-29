@@ -477,8 +477,8 @@ def test_prepare_startup_outline_cancel_keeps_workbench_open(tmp_path):
     assert fake_window.status_text.value == "大纲准备已取消，可从“项目 -> 继续准备大纲...”继续"
 
 
-def test_ensure_env_local_file_copies_example_next_to_config(tmp_path):
-    config_path = tmp_path / "config.yaml"
+def test_ensure_env_local_file_copies_example_to_app_root(tmp_path):
+    config_path = tmp_path / "project" / "config.yaml"
     example = tmp_path / ".env.example"
     example.write_text("BID_WRITER_API_KEY=\n", encoding="utf-8")
 
@@ -489,7 +489,7 @@ def test_ensure_env_local_file_copies_example_next_to_config(tmp_path):
 
 
 def test_missing_env_local_prompt_creates_and_opens_file(monkeypatch, tmp_path):
-    config_path = tmp_path / "config.yaml"
+    config_path = tmp_path / "project" / "config.yaml"
     (tmp_path / ".env.example").write_text("BID_WRITER_API_KEY=\n", encoding="utf-8")
     opened: list[Path] = []
 
@@ -511,7 +511,7 @@ def test_missing_env_local_prompt_creates_and_opens_file(monkeypatch, tmp_path):
 
 
 def test_missing_env_local_prompt_skips_when_api_key_already_configured(monkeypatch, tmp_path):
-    config_path = tmp_path / "config.yaml"
+    config_path = tmp_path / "project" / "config.yaml"
     asked = []
     fake_window = SimpleNamespace(
         bid_writer=SimpleNamespace(
@@ -529,7 +529,7 @@ def test_missing_env_local_prompt_skips_when_api_key_already_configured(monkeypa
 
 
 def test_batch_generate_prompts_for_env_local_before_params(monkeypatch, tmp_path):
-    config_path = tmp_path / "config.yaml"
+    config_path = tmp_path / "project" / "config.yaml"
     (tmp_path / ".env.example").write_text("BID_WRITER_API_KEY=\n", encoding="utf-8")
     opened: list[Path] = []
     params_requested = []
@@ -572,6 +572,7 @@ def test_switch_to_config_prepares_unlocked_outline_before_applying(monkeypatch,
     prepared = []
     loaded = []
     synced = []
+    env_checks = []
 
     class FakeConfig:
         def __init__(self):
@@ -595,6 +596,7 @@ def test_switch_to_config_prepares_unlocked_outline_before_applying(monkeypatch,
     fake_window.status_text = _FakeVar()
     fake_window.update_idletasks = lambda: None
     fake_window._sync_loaded_outline = lambda reset_tree_view=False: synced.append(reset_tree_view)
+    fake_window._schedule_env_local_check = lambda: env_checks.append(True)
     monkeypatch.setattr("bid_writer.gui.BidWriter", FakeBidWriter)
     monkeypatch.setattr("bid_writer.gui.GUIAdapter", lambda writer: SimpleNamespace(writer=writer))
     fake_window._prepare_unlocked_outline = lambda writer: prepared.append(writer) or True
@@ -605,6 +607,7 @@ def test_switch_to_config_prepares_unlocked_outline_before_applying(monkeypatch,
     assert len(prepared) == 1
     assert loaded == [True]
     assert synced == [True]
+    assert env_checks == []
     assert fake_window.bid_writer.config.config_path == selected_path
 
 

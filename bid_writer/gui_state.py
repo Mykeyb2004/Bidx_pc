@@ -39,6 +39,13 @@ def get_default_base_dir() -> Path:
     return Path.cwd().resolve()
 
 
+def get_application_root_dir() -> Path:
+    """返回应用级共享文件所在目录。"""
+    if getattr(sys, "frozen", False):
+        return get_default_base_dir()
+    return Path(__file__).resolve().parents[1]
+
+
 def get_state_file(base_dir: Optional[Path] = None) -> Path:
     """获取 GUI 状态文件路径"""
     return _base_dir(base_dir) / STATE_FILENAME

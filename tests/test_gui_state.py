@@ -4,12 +4,23 @@ from pathlib import Path
 
 from bid_writer.gui import _resolve_generation_dialog_defaults
 from bid_writer.gui_state import (
+    get_application_root_dir,
     get_default_base_dir,
     get_startup_config_candidates,
     get_state_file,
     load_gui_state,
     remember_generation_dialog_settings,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_application_root_uses_repo_root_outside_frozen_build(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    assert get_application_root_dir() == REPO_ROOT
 
 
 def test_remember_generation_dialog_settings_persists_values(tmp_path):

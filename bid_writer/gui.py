@@ -1870,7 +1870,6 @@ class MainWindow(tk.Tk):
             self.update_action_states()
         else:
             self.load_outline(preserve_tree_view=False, reset_tree_view=True)
-        self._schedule_env_local_check()
         self._schedule_startup_activation()
         if startup_outline_prepare_needed:
             self._schedule_startup_outline_prepare()
@@ -3475,9 +3474,6 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已重载配置: {selected_path.name}")
         else:
             self.status_text.set(f"已切换配置: {selected_path.name}")
-        schedule_env_check = getattr(self, "_schedule_env_local_check", None)
-        if callable(schedule_env_check):
-            schedule_env_check()
         return True
 
     def _prepare_unlocked_outline(self, bid_writer: BidWriter) -> bool:

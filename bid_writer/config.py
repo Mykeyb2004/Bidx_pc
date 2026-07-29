@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 import yaml
 
+from .gui_state import get_application_root_dir
+
 _EXTERNAL_ENV_KEYS = set(os.environ)
 _REASONING_EFFORT_VALUES = frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
 
@@ -89,8 +91,8 @@ class Config:
             self._local_env[key] = value
 
     def _load_local_env(self) -> None:
-        """按项目配置目录优先加载 `.env` / `.env.local`。"""
-        env_dir = self.config_path.parent.resolve()
+        """从应用根目录加载共享的 `.env` / `.env.local`。"""
+        env_dir = get_application_root_dir()
         self._local_env = {}
         for name in (".env", ".env.local"):
             self._load_dotenv_file(env_dir / name, _EXTERNAL_ENV_KEYS)

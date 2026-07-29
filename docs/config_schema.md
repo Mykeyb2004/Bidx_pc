@@ -15,7 +15,7 @@
 - `runtime`
   - stream、trace、debug、输出细节与合并行为
 
-模型连接、模型名和采样/超时/token 等运行参数统一放在 `.env.local` 或外部环境变量中，不再写入 YAML。GUI 在启动、生成大纲和扩写章节前都会检查主生成/大纲生成 API Key；缺失时会提示用户创建或打开 `.env.local`，并展示可直接填写的配置文本。
+模型连接、模型名和采样/超时/token 等运行参数统一放在应用根目录的 `.env.local` 或外部环境变量中，不再写入 YAML。源码运行时应用根目录为 repo 根目录，打包后为可执行文件所在目录。GUI 只在生成大纲、扩写章节等真正调用模型的动作前检查对应 API Key；缺失时会提示用户创建或打开 `.env.local`，并展示可直接填写的配置文本。
 
 ## 1.1 维护约定
 
@@ -347,8 +347,9 @@ BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 说明：
 
 - `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
-- 新建和保存 YAML 项目配置不会因为缺少 `.env.local` 中的模型连接参数而失败；配置编辑器只给出运行环境提示，实际调用生成、抽取、裁剪等模型能力时再按需检查对应 `BID_WRITER_*` 变量
-- 外部 shell 中已设置的环境变量优先级最高，其次是配置文件同目录下的 `.env.local`，再其次是 `.env`
+- 新建配置向导不检测 `.env.local` 或模型连接状态；新建和保存 YAML 项目配置不会因为缺少模型连接参数而失败，实际调用生成、抽取、裁剪等模型能力时再按需检查对应 `BID_WRITER_*` 变量
+- `.env.local` 位于应用根目录，所有项目配置共享，不会记录到任何 `config_*.yaml` 中
+- 外部 shell 中已设置的环境变量优先级最高，其次是应用根目录下的 `.env.local`，再其次是同目录的 `.env`
 - 大纲生成参数读取优先级为 `BID_WRITER_OUTLINE_*`、对应的 `BID_WRITER_*`、代码默认值。
 - `BID_WRITER_REASONING_EFFORT` 控制正文章节生成的推理强度，支持 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`；未设置或填写无效值时不发送 `reasoning_effort`，由模型/代理使用自身默认值。
 - `BID_WRITER_OUTLINE_REASONING_EFFORT` 独立控制大纲生成；未设置或填写无效值时不发送该字段，不会继承正文的 `BID_WRITER_REASONING_EFFORT`。

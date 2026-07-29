@@ -1,6 +1,17 @@
 from pathlib import Path
 
-from bid_writer.env_local_prompt import build_missing_env_local_prompt
+from bid_writer.env_local_prompt import (
+    build_missing_env_local_prompt,
+    get_env_local_path_for_config,
+)
+
+
+def test_env_local_path_uses_app_root_instead_of_project_config_directory(
+    tmp_path: Path,
+):
+    project_config = tmp_path / "projects" / "demo" / "config_demo.yaml"
+
+    assert get_env_local_path_for_config(project_config) == tmp_path / ".env.local"
 
 
 def test_outline_prompt_includes_required_and_optional_env_text(tmp_path: Path):

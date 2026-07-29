@@ -454,7 +454,7 @@ models:
     assert config.embedding_batch_size == 64
 
 
-def test_env_local_values_refresh_between_config_directories(monkeypatch, tmp_path: Path):
+def test_env_local_values_are_shared_across_project_configs(monkeypatch, tmp_path: Path):
     for key in (
         "BID_WRITER_API_KEY",
         "BID_WRITER_MODEL",
@@ -469,28 +469,24 @@ def test_env_local_values_refresh_between_config_directories(monkeypatch, tmp_pa
     project_b.mkdir()
     (project_a / "config.yaml").write_text("project: {}\n", encoding="utf-8")
     (project_b / "config.yaml").write_text("project: {}\n", encoding="utf-8")
-    (project_a / ".env.local").write_text(
-        "BID_WRITER_API_KEY=key-a\nBID_WRITER_MODEL=model-a\n"
-        "BID_WRITER_EMBEDDING_API_KEY=embedding-key-a\nBID_WRITER_EMBEDDING_MODEL=embedding-a\n",
-        encoding="utf-8",
-    )
-    (project_b / ".env.local").write_text(
-        "BID_WRITER_API_KEY=key-b\nBID_WRITER_MODEL=model-b\n"
-        "BID_WRITER_EMBEDDING_API_KEY=embedding-key-b\nBID_WRITER_EMBEDDING_MODEL=embedding-b\n",
+    (tmp_path / ".env.local").write_text(
+        "BID_WRITER_API_KEY=shared-key\nBID_WRITER_MODEL=shared-model\n"
+        "BID_WRITER_EMBEDDING_API_KEY=shared-embedding-key\n"
+        "BID_WRITER_EMBEDDING_MODEL=shared-embedding-model\n",
         encoding="utf-8",
     )
 
     config_a = Config(str(project_a / "config.yaml"))
     config_b = Config(str(project_b / "config.yaml"))
 
-    assert config_a.api_key == "key-a"
-    assert config_a.model == "model-a"
-    assert config_a.embedding_api_key == "embedding-key-a"
-    assert config_a.embedding_model == "embedding-a"
-    assert config_b.api_key == "key-b"
-    assert config_b.model == "model-b"
-    assert config_b.embedding_api_key == "embedding-key-b"
-    assert config_b.embedding_model == "embedding-b"
+    assert config_a.api_key == "shared-key"
+    assert config_a.model == "shared-model"
+    assert config_a.embedding_api_key == "shared-embedding-key"
+    assert config_a.embedding_model == "shared-embedding-model"
+    assert config_b.api_key == "shared-key"
+    assert config_b.model == "shared-model"
+    assert config_b.embedding_api_key == "shared-embedding-key"
+    assert config_b.embedding_model == "shared-embedding-model"
 
 
 def test_auto_retrieval_settings_are_loaded_from_env_local(monkeypatch, tmp_path: Path):

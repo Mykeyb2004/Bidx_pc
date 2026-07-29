@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from .gui_state import get_application_root_dir
 from .path_purposes import PathPurpose, require_supported_suffix
 from .writing_plan_store import WritingPlanStore, WritingPlanStoreError
 
@@ -58,19 +59,23 @@ class ConfigEditorDocument:
         model: dict[str, Any] | None = None,
         *,
         config_path: str | Path | None = None,
+        check_model_environment: bool = True,
     ) -> list[ValidationMessage]:
         validation_path = Path(config_path).expanduser().resolve() if config_path is not None else self.config_path
-        env_status = (
-            detect_connection_status(validation_path, self.raw_config)
-            if config_path is not None
-            else self.env_status
-        )
+        env_status: dict[str, ConnectionStatus] = {}
+        if check_model_environment:
+            env_status = (
+                detect_connection_status(validation_path, self.raw_config)
+                if config_path is not None
+                else self.env_status
+            )
         return validate_editor_model(
             model or self.model,
             validation_path,
             env_status,
             self.raw_config,
             require_project_identity=self.require_project_identity,
+            check_model_environment=check_model_environment,
         )
 
     def save(
@@ -79,6 +84,7 @@ class ConfigEditorDocument:
         *,
         target_path: str | Path | None = None,
         create_backup: bool = True,
+        refresh_model_environment: bool = True,
     ) -> Path:
         output_path = Path(target_path or self.config_path).expanduser()
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +99,8 @@ class ConfigEditorDocument:
         self.raw_config = yaml.safe_load(yaml_text) or {}
         self.preserved_extra = extract_preserved_extra(self.raw_config)
         self.model = normalize_raw_config_to_editor_model(self.raw_config)
-        self.env_status = detect_connection_status(self.config_path, self.raw_config)
+        if refresh_model_environment:
+            self.env_status = detect_connection_status(self.config_path, self.raw_config)
         self.notes = build_editor_notes(self.model, self.raw_config)
         return output_path
 
@@ -242,7 +249,11 @@ def build_default_editor_model() -> dict[str, Any]:
     }
 
 
-def create_new_config_editor_document(config_path: str | Path | None = None) -> ConfigEditorDocument:
+def create_new_config_editor_document(
+    config_path: str | Path | None = None,
+    *,
+    check_model_environment: bool = True,
+) -> ConfigEditorDocument:
     path = Path(config_path or "config_新项目.yaml").expanduser().resolve()
     model = build_default_editor_model()
     raw_config = merge_with_preserved(
@@ -260,7 +271,11 @@ def create_new_config_editor_document(config_path: str | Path | None = None) -> 
         raw_config=raw_config,
         model=copy.deepcopy(model),
         preserved_extra=extract_preserved_extra(raw_config),
-        env_status=detect_connection_status(path, raw_config),
+        env_status=(
+            detect_connection_status(path, raw_config)
+            if check_model_environment
+            else {}
+        ),
         notes=build_editor_notes(model, raw_config),
         require_project_identity=True,
     )
@@ -772,6 +787,7 @@ def validate_editor_model(
     raw_config: dict[str, Any] | None = None,
     *,
     require_project_identity: bool = False,
+    check_model_environment: bool = True,
 ) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
     processing_path = model["processing"]["path"]
@@ -870,13 +886,17 @@ def validate_editor_model(
         messages.append(ValidationMessage("error", f"trace.directory 不是目录：{trace_dir}"))
 
     if processing_path == "auto":
-        if not env_status["pruning"].configured:
+        if check_model_environment and not env_status["pruning"].configured:
             messages.append(ValidationMessage("warning", "auto 模式需要配置辅助模型，请在 .env.local 中设置 BID_WRITER_PRUNING_* 环境变量。"))
     elif processing_path == "hybrid_extract":
         retrieval = model["processing"]["auto"]["retrieval"]
         if not retrieval["lexical_enabled"]:
             messages.append(ValidationMessage("error", f"{processing_path} 模式要求 lexical_enabled=true。"))
-        if retrieval["vector_enabled"] and not env_status["embedding"].configured:
+        if (
+            check_model_environment
+            and retrieval["vector_enabled"]
+            and not env_status["embedding"].configured
+        ):
             messages.append(ValidationMessage("error", "启用 vector_enabled 时，必须先在 .env.local 中配置 embedding 连接信息。"))
     elif processing_path == "full_context":
         plan_max_chars = _coerce_int(
@@ -886,7 +906,7 @@ def validate_editor_model(
         if plan_max_chars <= 0:
             messages.append(ValidationMessage("error", "full_context.chapter_writing_plan.max_chars 必须大于 0。"))
 
-    if not env_status["generation"].configured:
+    if check_model_environment and not env_status["generation"].configured:
         messages.append(ValidationMessage("warning", "当前未检测到 generation 连接配置，保存后可能无法直接运行生成。"))
 
     messages.extend(
@@ -956,7 +976,8 @@ def summarize_model(model: dict[str, Any], env_status: dict[str, ConnectionStatu
 
 
 def detect_connection_status(config_path: Path, raw_config: dict[str, Any]) -> dict[str, ConnectionStatus]:
-    file_env = _read_env_files(config_path.parent)
+    del config_path, raw_config
+    file_env = _read_env_files(get_application_root_dir())
 
     def detect(env_keys: list[str]) -> ConnectionStatus:
         if any(bool(os.environ.get(key, "").strip()) for key in env_keys):

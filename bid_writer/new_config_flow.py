@@ -133,7 +133,10 @@ def build_manual_state(*, project_root: str | Path, config_path: str | Path) -> 
 
 
 def build_editor_document_from_state(state: NewConfigWizardState) -> ConfigEditorDocument:
-    document = create_new_config_editor_document(state.config_path)
+    document = create_new_config_editor_document(
+        state.config_path,
+        check_model_environment=False,
+    )
     model = copy.deepcopy(document.model)
     model["project"]["root_dir"] = "."
     model["project"]["bidder_name"] = state.bidder_name.strip()
