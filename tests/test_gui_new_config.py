@@ -594,6 +594,7 @@ def test_switch_to_config_prepares_unlocked_outline_before_applying(monkeypatch,
 
     fake_window = _fake_window(current_path)
     fake_window.status_text = _FakeVar()
+    fake_window._workspace_generation_failures = {"根 > 旧章节": object()}
     fake_window.update_idletasks = lambda: None
     fake_window._sync_loaded_outline = lambda reset_tree_view=False: synced.append(reset_tree_view)
     fake_window._schedule_env_local_check = lambda: env_checks.append(True)
@@ -609,6 +610,7 @@ def test_switch_to_config_prepares_unlocked_outline_before_applying(monkeypatch,
     assert synced == [True]
     assert env_checks == []
     assert fake_window.bid_writer.config.config_path == selected_path
+    assert fake_window._workspace_generation_failures == {}
 
 
 def test_switch_to_config_cancelled_outline_prepare_keeps_current_config(monkeypatch, tmp_path):

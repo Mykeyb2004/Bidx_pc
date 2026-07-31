@@ -223,6 +223,14 @@ class GenerationErrorFeedback:
 
 
 @dataclass(frozen=True)
+class WorkspaceGenerationFailureState:
+    """可在章节切换和树重绘后恢复的扩写失败快照。"""
+
+    feedback: GenerationErrorFeedback
+    partial_content: str = ""
+
+
+@dataclass(frozen=True)
 class GenerationFactCardSelectionDialogState:
     """生成参数对话框中的事实卡片选择状态。"""
 
@@ -503,8 +511,8 @@ def _classify_generation_error(exc: BaseException) -> tuple[str, str, list[str]]
             "本地配置文件缺失",
             "扩写所需的本地配置或资源文件不存在。",
             [
-                "检查配置目录和应用资源目录下的 roles/system_gate_rules.md、role_file 等文件是否存在。",
-                "如果是新建项目，先确认标书角色文件已随 repo 或应用资源一并放置。",
+                "检查项目材料根目录（project.root_dir）与应用资源根目录（repo 根目录或可执行文件所在目录）的职责是否混用。",
+                "roles/system_gate_rules.md、role_file 等应用级资源应放在应用资源根目录的 roles/ 下；项目采购需求、大纲、评分标准等材料应放在项目材料根目录下。",
             ],
         )
 
@@ -1828,6 +1836,7 @@ class MainWindow(tk.Tk):
         self._workspace_view_heading_path: Optional[str] = None
         self._current_generation_heading_path: Optional[str] = None
         self._workspace_generation_buffers: dict[str, str] = {}
+        self._workspace_generation_failures: dict[str, WorkspaceGenerationFailureState] = {}
         self.is_modal_workflow_active = False
         self._outline_tree_tooltips: dict[str, str] = {}
         self._env_local_prompted_dirs: set[Path] = set()
@@ -2391,6 +2400,17 @@ class MainWindow(tk.Tk):
             )
             return
 
+        failure_state = getattr(self, "_workspace_generation_failures", {}).get(
+            heading.full_path
+        )
+        if failure_state is not None:
+            self._show_generation_failure_in_workspace(
+                heading,
+                failure_state.feedback,
+                partial_content=failure_state.partial_content,
+            )
+            return
+
         filepath = self.bid_writer.file_saver.find_existing_filepath(heading)
         if filepath and filepath.exists():
             content = filepath.read_text(encoding="utf-8")
@@ -2455,28 +2475,26 @@ class MainWindow(tk.Tk):
         self,
         heading: HeadingNode,
         feedback: GenerationErrorFeedback,
+        *,
+        partial_content: str = "",
     ) -> None:
-        """将扩写失败信息直接写到右侧工作区。"""
+        """根据失败快照重建右侧工作区。"""
         if not MainWindow._should_show_generation_updates(self, heading):
             return
         heading_text = f"当前章节：{heading.full_path}"
-        if feedback.append_to_workspace:
-            self.workspace_heading_var.set(heading_text)
-            self.workspace_meta_var.set(feedback.workspace_meta_text)
-            self._set_workspace_text(
-                feedback.workspace_body_text,
-                append=True,
-                scroll_to_end=True,
-                generated_char_count=self._workspace_generated_char_count,
-            )
-            return
+        body_text = feedback.workspace_body_text
+        if partial_content:
+            separator = "" if feedback.append_to_workspace else "\n\n"
+            body_text = f"{partial_content}{separator}{body_text}"
 
         self._show_workspace_message(
             heading_text,
             feedback.workspace_meta_text,
-            feedback.workspace_body_text,
-            generated_char_count=0,
+            body_text,
+            generated_char_count=_count_text_characters(partial_content),
         )
+        if partial_content and feedback.append_to_workspace and hasattr(self, "workspace_text"):
+            self.workspace_text.see(tk.END)
 
     def _report_generation_failure(
         self,
@@ -2486,6 +2504,16 @@ class MainWindow(tk.Tk):
         show_dialog: bool,
     ) -> None:
         """统一处理扩写失败后的工作区、状态栏和弹窗。"""
+        generation_buffers = getattr(self, "_workspace_generation_buffers", {})
+        partial_content = generation_buffers.get(heading.full_path, "")
+        generation_failures = getattr(self, "_workspace_generation_failures", None)
+        if not isinstance(generation_failures, dict):
+            generation_failures = {}
+            self._workspace_generation_failures = generation_failures
+        generation_failures[heading.full_path] = WorkspaceGenerationFailureState(
+            feedback=feedback,
+            partial_content=partial_content,
+        )
         self.status_text.set(feedback.status_text)
         if show_dialog:
             messagebox.showerror(
@@ -2493,7 +2521,11 @@ class MainWindow(tk.Tk):
                 feedback.dialog_message,
                 parent=self,
             )
-        self._show_generation_failure_in_workspace(heading, feedback)
+        self._show_generation_failure_in_workspace(
+            heading,
+            feedback,
+            partial_content=partial_content,
+        )
 
     def on_window_resize(self, event):
         """窗口尺寸变化后刷新自适应布局"""
@@ -3422,6 +3454,8 @@ class MainWindow(tk.Tk):
         """重新加载大纲"""
         self.status_text.set("正在重载大纲...")
         if self.load_outline(preserve_tree_view=True):
+            getattr(self, "_workspace_generation_failures", {}).clear()
+            self._refresh_workspace_from_selection()
             self.status_text.set("大纲重载完成")
 
     def refresh_status(self):
@@ -3483,6 +3517,7 @@ class MainWindow(tk.Tk):
 
         self.bid_writer = next_bid_writer
         self.adapter = GUIAdapter(next_bid_writer)
+        self._workspace_generation_failures = {}
         self._sync_loaded_outline(reset_tree_view=True)
         if selected_path == current_path:
             self.status_text.set(f"已重载配置: {selected_path.name}")
@@ -4953,6 +4988,10 @@ class MainWindow(tk.Tk):
             self._queue_poll_id = None
             if not hasattr(self.parent, "_workspace_generation_buffers"):
                 self.parent._workspace_generation_buffers = {}
+            getattr(self.parent, "_workspace_generation_failures", {}).pop(
+                heading.full_path,
+                None,
+            )
             self.parent._workspace_generation_buffers[heading.full_path] = ""
             self.parent._show_generation_start_in_workspace(heading)
 
@@ -5062,6 +5101,7 @@ class MainWindow(tk.Tk):
                 """后台线程执行生成"""
                 current_stage = "准备扩写请求"
                 content_parts: list[str] = []
+                content_was_enqueued = False
                 prepared = None
 
                 def _publish_status(stage_label: str, message: str) -> None:
@@ -5096,6 +5136,7 @@ class MainWindow(tk.Tk):
                         content_parts.append(result)
                         if not self.cancel_event.is_set():
                             self.text_queue.put(("text", result))
+                            content_was_enqueued = True
                     else:
                         received_first_chunk = False
                         for chunk in result:
@@ -5105,13 +5146,15 @@ class MainWindow(tk.Tk):
                             content_parts.append(chunk)
                             if stream_workspace_updates and not self.cancel_event.is_set():
                                 self.text_queue.put(("text", chunk))
+                                content_was_enqueued = True
 
                     if self.cancel_event.is_set():
                         raise GenerationCancelledError("用户已终止当前章节生成")
 
                     content = "".join(content_parts)
-                    if not stream_workspace_updates:
+                    if not stream_workspace_updates and not content_was_enqueued:
                         self.text_queue.put(("text", content))
+                        content_was_enqueued = True
                     word_count = ai_writer.count_chinese_words(content)
 
                     self.text_queue.put(("status", f"生成完成 - {word_count} 字"))
@@ -5144,6 +5187,9 @@ class MainWindow(tk.Tk):
                                 error="用户已终止当前章节生成",
                             )
                         return
+                    partial_content = "".join(content_parts)
+                    if partial_content and not content_was_enqueued:
+                        self.text_queue.put(("text", partial_content))
                     write_timing_log(
                         "generation_background_error",
                         heading_title=heading.title,
@@ -5326,6 +5372,7 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"保存失败: {heading.title}")
             return "failed"
 
+        getattr(self, "_workspace_generation_failures", {}).pop(heading.full_path, None)
         self._show_generated_content_in_workspace(
             heading,
             content,

@@ -861,14 +861,28 @@ def validate_editor_model(
             config_path.parent,
         )
         if not role_path.exists():
-            messages.append(ValidationMessage("warning", f"role_file 当前不存在：{role_path}"))
+            messages.append(
+                ValidationMessage(
+                    "warning",
+                    "role_file 当前不存在："
+                    f"{role_path}（项目材料根目录：{root_dir}；应用资源根目录：{get_application_root_dir()}；"
+                    "查找顺序：配置文件目录优先、应用资源根目录兜底）",
+                )
+            )
 
     outline_role_file = _coerce_str(
         model["project"].get("outline_generation", {}).get("role_file", "./roles/标书架构师.md")
     ).strip() or "./roles/标书架构师.md"
     outline_role_path = _resolve_config_or_resource_path(outline_role_file, config_path.parent)
     if not outline_role_path.exists():
-        messages.append(ValidationMessage("warning", f"大纲生成角色文件当前不存在：{outline_role_path}"))
+        messages.append(
+            ValidationMessage(
+                "warning",
+                "大纲生成角色文件当前不存在："
+                f"{outline_role_path}（项目材料根目录：{root_dir}；应用资源根目录：{get_application_root_dir()}；"
+                "查找顺序：配置文件目录优先、应用资源根目录兜底）",
+            )
+        )
 
     min_value = _coerce_int(model["writing"]["target_words_min"], default=100)
     default_value = _coerce_int(model["writing"]["target_words_default"], default=500)

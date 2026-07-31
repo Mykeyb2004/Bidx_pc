@@ -773,6 +773,43 @@ processing:
     assert not any("大纲生成角色文件当前不存在" in message.text for message in messages)
 
 
+def test_config_editor_reports_missing_role_files_with_root_context(monkeypatch, tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _write_project_files(project_root)
+    empty_resource_root = tmp_path / "empty-app-root"
+    empty_resource_root.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+project:
+  root_dir: "./project"
+  bidder_name: "测试投标主体"
+  outline_generation:
+    role_file: "./roles/标书架构师.md"
+  inputs:
+    outline_file: "./outline.md"
+    bid_requirements_file: "./bid_requirements.md"
+    scoring_criteria_file: "./scoring_criteria.md"
+
+writing:
+  role_file: "./roles/通用投标角色.md"
+
+processing:
+  path: "full_context"
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("bid_writer.config_editor.get_application_root_dir", lambda: empty_resource_root)
+
+    document = load_config_editor_document(config_path)
+    messages = document.validate(document.model, config_path=config_path, check_model_environment=False)
+    warnings = [message.text for message in messages if message.level == "warning"]
+
+    assert any("role_file 当前不存在" in text and "项目材料根目录" in text and "应用资源根目录" in text for text in warnings)
+    assert any("大纲生成角色文件当前不存在" in text and "项目材料根目录" in text and "应用资源根目录" in text for text in warnings)
+
+
 def test_config_editor_preserves_outline_generation_fields(tmp_path: Path):
     _write_project_files(tmp_path)
     config_path = tmp_path / "config.yaml"

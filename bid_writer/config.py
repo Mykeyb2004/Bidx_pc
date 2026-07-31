@@ -91,7 +91,7 @@ class Config:
             self._local_env[key] = value
 
     def _load_local_env(self) -> None:
-        """从应用根目录加载共享的 `.env` / `.env.local`。"""
+        """从应用资源根目录加载共享的 `.env` / `.env.local`。"""
         env_dir = get_application_root_dir()
         self._local_env = {}
         for name in (".env", ".env.local"):
@@ -906,7 +906,10 @@ class Config:
             resource_candidate = self._resolve_resource_path("roles/system_gate_rules.md")
             raise FileNotFoundError(
                 "system gate rules 文件不存在: "
-                f"{path}（已检查配置目录: {config_candidate}；应用资源目录: {resource_candidate}）"
+                f"{path}（配置文件目录: {config_candidate.parent.resolve()}；"
+                f"项目材料根目录: {self.project_root_path}；"
+                f"应用资源根目录: {self.resource_root_path}；"
+                f"已检查应用资源路径: {resource_candidate}；查找顺序: 配置文件目录优先、应用资源根目录兜底）"
             )
         text = path.read_text(encoding="utf-8").strip()
         if not text:

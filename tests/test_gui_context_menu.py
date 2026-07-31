@@ -91,6 +91,24 @@ def _writing_plan_snapshot(node=None, text=None, *, fingerprint="snapshot"):
     return WritingPlanSnapshot(items, fingerprint)
 
 
+def _generation_failure_feedback(*, has_partial_output: bool = False):
+    return gui.GenerationErrorFeedback(
+        stage_label="接收模型输出",
+        category_title="无法连接模型服务",
+        short_message="无法连接模型服务：连接失败",
+        status_text="扩写失败：质量控制（无法连接模型服务）",
+        workspace_meta_text="扩写失败：无法连接模型服务（阶段：接收模型输出）",
+        workspace_body_text=(
+            "\n\n【生成中断提示】\n连接失败"
+            if has_partial_output
+            else "本次扩写未能完成。"
+        ),
+        dialog_title="章节扩写失败",
+        dialog_message="章节扩写失败。",
+        append_to_workspace=has_partial_output,
+    )
+
+
 def test_outline_context_menu_includes_generate_selected(monkeypatch):
     monkeypatch.setattr(gui.tk, "Menu", _FakeMenu)
     window = SimpleNamespace(
@@ -361,6 +379,119 @@ def test_generation_session_cancel_aborts_wait_completion():
         session.wait_completion()
 
 
+def test_retry_start_clears_previous_failure_feedback():
+    heading = _heading("服务保障")
+    feedback = _generation_failure_feedback()
+    workspace_messages: list[tuple[str, str, str, dict[str, object]]] = []
+    parent = SimpleNamespace(
+        _workspace_generation_buffers={heading.full_path: "旧片段"},
+        _workspace_generation_failures={
+            heading.full_path: gui.WorkspaceGenerationFailureState(feedback, "旧片段")
+        },
+        _workspace_view_heading_path=heading.full_path,
+        _show_workspace_message=lambda heading_text, meta_text, body_text, **kwargs: workspace_messages.append(
+            (heading_text, meta_text, body_text, kwargs)
+        ),
+    )
+    parent._show_generation_start_in_workspace = (
+        lambda selected: MainWindow._show_generation_start_in_workspace(parent, selected)
+    )
+
+    MainWindow.GenerationSession(parent, heading)
+
+    assert heading.full_path not in parent._workspace_generation_failures
+    assert parent._workspace_generation_buffers[heading.full_path] == ""
+    assert workspace_messages == [
+        (
+            f"当前章节：{heading.full_path}",
+            "正在准备扩写请求...",
+            "",
+            {"generated_char_count": 0},
+        )
+    ]
+
+
+def test_non_streaming_generation_failure_retains_partial_content(monkeypatch):
+    heading = _heading("服务保障")
+
+    class _ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    def partial_result():
+        yield "未保存片段"
+        raise ConnectionError("连接中断")
+
+    ai_writer = SimpleNamespace(
+        config=SimpleNamespace(generation_stream=False),
+        prepare_generation=lambda *_args, **_kwargs: SimpleNamespace(
+            trace_id="trace-partial",
+            trace_session=None,
+        ),
+        expand_raw=lambda *_args, **_kwargs: partial_result(),
+    )
+    parent = SimpleNamespace(
+        _workspace_generation_buffers={},
+        _workspace_generation_failures={},
+        _show_generation_start_in_workspace=lambda _heading: None,
+        _should_show_generation_updates=lambda _heading: False,
+        _set_workspace_text=lambda *_args, **_kwargs: None,
+        workspace_meta_var=_FakeVar(),
+        status_text=_FakeVar(),
+        winfo_exists=lambda: True,
+    )
+    monkeypatch.setattr(gui.threading, "Thread", _ImmediateThread)
+    session = MainWindow.GenerationSession(parent, heading)
+
+    session.start_generation(heading, ai_writer, "", 1200, 0)
+
+    with pytest.raises(gui.GenerationFailedError):
+        session.wait_completion()
+    assert parent._workspace_generation_buffers[heading.full_path] == "未保存片段"
+
+
+def test_non_streaming_string_result_is_enqueued_once(monkeypatch):
+    heading = _heading("服务保障")
+    workspace_updates = []
+
+    class _ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    ai_writer = SimpleNamespace(
+        config=SimpleNamespace(generation_stream=False),
+        prepare_generation=lambda *_args, **_kwargs: SimpleNamespace(
+            trace_id="trace-complete",
+            trace_session=None,
+        ),
+        expand_raw=lambda *_args, **_kwargs: "完整正文",
+        count_chinese_words=lambda content: len(content),
+    )
+    parent = SimpleNamespace(
+        _workspace_generation_buffers={},
+        _workspace_generation_failures={},
+        _show_generation_start_in_workspace=lambda _heading: None,
+        _should_show_generation_updates=lambda _heading: True,
+        _set_workspace_text=lambda content, **_kwargs: workspace_updates.append(content),
+        workspace_meta_var=_FakeVar(),
+        status_text=_FakeVar(),
+    )
+    monkeypatch.setattr(gui.threading, "Thread", _ImmediateThread)
+    monkeypatch.setattr(gui, "write_timing_log", lambda *_args, **_kwargs: None)
+    session = MainWindow.GenerationSession(parent, heading)
+
+    session.start_generation(heading, ai_writer, "", 1200, 0)
+
+    assert session.wait_completion()[0] == "完整正文"
+    assert workspace_updates == ["完整正文"]
+
+
 def test_cancelled_generation_session_discards_late_completion_message():
     heading = _heading("服务保障")
     parent = SimpleNamespace(
@@ -413,6 +544,83 @@ def test_do_batch_generate_refreshes_completed_status_before_next_heading():
         ("refresh", ("质量控制",)),
         ("generate", "服务保障"),
     ]
+
+
+def test_failed_batch_refresh_rehydrates_failure_preview(monkeypatch):
+    heading = _heading("质量控制")
+    feedback = _generation_failure_feedback()
+    workspace_messages: list[tuple[str, str, str, dict[str, object]]] = []
+    pending_callbacks = []
+    tree = _FakeTree(clicked_item="item-a", selected_items=("item-a",))
+
+    window = SimpleNamespace(
+        progress_bar=_FakeProgressBar(),
+        batch_progress_text=_FakeVar(),
+        task_text=_FakeVar(),
+        status_text=_FakeVar(),
+        update_action_states=lambda: None,
+        outline_tree=tree,
+        tree_node_map={"item-a": heading},
+        _workspace_view_heading_path=heading.full_path,
+        _current_generation_heading_path=None,
+        _workspace_generation_buffers={heading.full_path: ""},
+        _workspace_generation_failures={},
+        bid_writer=SimpleNamespace(
+            file_saver=SimpleNamespace(find_existing_filepath=lambda _heading: None)
+        ),
+        _show_workspace_message=lambda heading_text, meta_text, body_text, **kwargs: workspace_messages.append(
+            (heading_text, meta_text, body_text, kwargs)
+        ),
+    )
+    window._show_generation_failure_in_workspace = (
+        lambda selected, selected_feedback, **kwargs: MainWindow._show_generation_failure_in_workspace(
+            window,
+            selected,
+            selected_feedback,
+            **kwargs,
+        )
+    )
+    window._get_selected_leaf_headings = (
+        lambda: MainWindow._get_selected_leaf_headings(window)
+    )
+    window._refresh_workspace_from_selection = (
+        lambda: MainWindow._refresh_workspace_from_selection(window)
+    )
+    window._show_heading_preview_in_workspace = (
+        lambda selected: MainWindow._show_heading_preview_in_workspace(window, selected)
+    )
+
+    def generate_into_workspace(selected, *_args, **_kwargs):
+        MainWindow._report_generation_failure(
+            window,
+            selected,
+            feedback,
+            show_dialog=True,
+        )
+        return "failed"
+
+    def refresh_status():
+        pending_callbacks.append(
+            lambda: MainWindow.on_tree_select(window, None)
+        )
+
+    def update_idletasks():
+        while pending_callbacks:
+            pending_callbacks.pop(0)()
+
+    window._generate_into_workspace = generate_into_workspace
+    window.refresh_status = refresh_status
+    window.update_idletasks = update_idletasks
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(MainWindow, "_refresh_heading_tree_row", lambda *_args: None)
+
+    MainWindow._do_batch_generate(window, [heading], "", 1200, 0)
+
+    assert workspace_messages[-1][1:3] == (
+        feedback.workspace_meta_text,
+        feedback.workspace_body_text,
+    )
+    assert "该章节当前没有已生成正文" not in workspace_messages[-1][2]
 
 
 def test_writing_plan_batch_do_generate_resolves_each_heading_from_snapshot():
@@ -580,6 +788,7 @@ def test_completed_generation_is_saved_when_stop_arrives_after_completion():
     )
     window = SimpleNamespace(
         stop_requested=True,
+        _workspace_generation_failures={heading.full_path: object()},
         GenerationSession=_FakeGenerationSession,
         bid_writer=SimpleNamespace(
             resolve_generation_fact_cards=lambda *_args, **_kwargs: [],
@@ -596,6 +805,89 @@ def test_completed_generation_is_saved_when_stop_arrives_after_completion():
 
     assert result == "success"
     assert saves == ["save"]
+    assert window._workspace_generation_failures == {}
+
+
+def test_successful_retry_previews_saved_content_instead_of_old_failure(
+    monkeypatch,
+    tmp_path,
+):
+    heading = _heading("服务保障")
+    feedback = _generation_failure_feedback()
+    saved_path = tmp_path / "服务保障.txt"
+    workspace_messages: list[tuple[str, str, str, dict[str, object]]] = []
+
+    class _FakeGenerationSession:
+        def __init__(self, _parent, _heading):
+            self.result_data = None
+            self.cancel_event = SimpleNamespace(is_set=lambda: False)
+
+        def start_generation(self, *_args, **_kwargs):
+            pass
+
+        def wait_completion(self):
+            self.result_data = ("重试生成的新正文", 8, None)
+            return self.result_data
+
+        def close(self):
+            pass
+
+    def save(_heading, content):
+        saved_path.write_text(content, encoding="utf-8")
+        return saved_path
+
+    ai_writer = SimpleNamespace(
+        finalize_generation=lambda *_args, **_kwargs: SimpleNamespace(
+            content="重试生成的新正文"
+        ),
+        count_chinese_words=lambda _content: 8,
+    )
+    window = SimpleNamespace(
+        stop_requested=False,
+        _current_generation_heading_path=None,
+        _workspace_view_heading_path=heading.full_path,
+        _workspace_generation_buffers={heading.full_path: ""},
+        _workspace_generation_failures={
+            heading.full_path: gui.WorkspaceGenerationFailureState(feedback, "旧片段")
+        },
+        GenerationSession=_FakeGenerationSession,
+        bid_writer=SimpleNamespace(
+            resolve_generation_fact_cards=lambda *_args, **_kwargs: [],
+            ai_writer=ai_writer,
+            file_saver=SimpleNamespace(
+                save=save,
+                find_existing_filepath=lambda _heading: saved_path,
+            ),
+        ),
+        _show_workspace_message=lambda heading_text, meta_text, body_text, **kwargs: workspace_messages.append(
+            (heading_text, meta_text, body_text, kwargs)
+        ),
+        status_text=_FakeVar(),
+    )
+    window._show_generated_content_in_workspace = (
+        lambda selected, content, **kwargs: MainWindow._show_generated_content_in_workspace(
+            window,
+            selected,
+            content,
+            **kwargs,
+        )
+    )
+    window._show_generation_failure_in_workspace = (
+        lambda *_args, **_kwargs: pytest.fail("old failure must not be restored")
+    )
+    monkeypatch.setattr(gui, "write_timing_log", lambda *_args, **_kwargs: None)
+
+    result = MainWindow._generate_into_workspace(window, heading, "", 1200, 0)
+    MainWindow._show_heading_preview_in_workspace(window, heading)
+
+    assert result == "success"
+    assert window._workspace_generation_failures == {}
+    assert workspace_messages[-1] == (
+        f"当前章节：{heading.full_path}",
+        f"已生成文件：{saved_path.name}",
+        "重试生成的新正文",
+        {"generated_char_count": gui._count_text_characters("重试生成的新正文")},
+    )
 
 
 def test_refresh_workspace_updates_single_selection_while_generating():
@@ -714,3 +1006,86 @@ def test_heading_preview_uses_live_buffer_for_current_generating_heading():
             {"generated_char_count": gui._count_text_characters("已收到的正文片段")},
         )
     ]
+
+
+def test_failed_heading_preview_is_rehydrated_after_selection_change():
+    heading = _heading("质量控制")
+    other_heading = _heading("服务保障")
+    feedback = _generation_failure_feedback(has_partial_output=True)
+    partial_content = "已经返回的正文"
+    messages: list[tuple[str, str, str, dict[str, object]]] = []
+    scroll_positions = []
+    tree = _FakeTree(clicked_item="item-b", selected_items=("item-b",))
+
+    def find_existing_filepath(selected):
+        if selected is heading:
+            pytest.fail("failed state must render before a saved file lookup")
+        return None
+
+    window = SimpleNamespace(
+        is_generating=False,
+        status_text=_FakeVar(),
+        update_action_states=lambda: None,
+        outline_tree=tree,
+        tree_node_map={"item-a": heading, "item-b": other_heading},
+        _current_generation_heading_path=None,
+        _workspace_generation_failures={
+            heading.full_path: gui.WorkspaceGenerationFailureState(
+                feedback=feedback,
+                partial_content=partial_content,
+            )
+        },
+        bid_writer=SimpleNamespace(
+            file_saver=SimpleNamespace(find_existing_filepath=find_existing_filepath)
+        ),
+        _show_workspace_message=lambda heading_text, meta_text, body_text, **kwargs: messages.append(
+            (heading_text, meta_text, body_text, kwargs)
+        ),
+        workspace_text=SimpleNamespace(see=lambda position: scroll_positions.append(position)),
+    )
+    window._show_generation_failure_in_workspace = (
+        lambda selected, selected_feedback, **kwargs: MainWindow._show_generation_failure_in_workspace(
+            window,
+            selected,
+            selected_feedback,
+            **kwargs,
+        )
+    )
+    window._get_selected_leaf_headings = (
+        lambda: MainWindow._get_selected_leaf_headings(window)
+    )
+    window._refresh_workspace_from_selection = (
+        lambda: MainWindow._refresh_workspace_from_selection(window)
+    )
+    window._show_heading_preview_in_workspace = (
+        lambda selected: MainWindow._show_heading_preview_in_workspace(window, selected)
+    )
+
+    MainWindow.on_tree_select(window, None)
+    tree.selection_set("item-a")
+    MainWindow.on_tree_select(window, None)
+
+    assert messages[0][1] == "尚未生成正文"
+    assert messages[-1] == (
+        f"当前章节：{heading.full_path}",
+        feedback.workspace_meta_text,
+        partial_content + feedback.workspace_body_text,
+        {"generated_char_count": gui._count_text_characters(partial_content)},
+    )
+    assert heading.full_path in window._workspace_generation_failures
+    assert scroll_positions == [gui.tk.END]
+
+
+def test_explicit_outline_reload_clears_generation_failures():
+    refreshes = []
+    window = SimpleNamespace(
+        status_text=_FakeVar(),
+        _workspace_generation_failures={"根 > 质量控制": object()},
+        load_outline=lambda **_kwargs: True,
+        _refresh_workspace_from_selection=lambda: refreshes.append(True),
+    )
+
+    MainWindow.reload_outline(window)
+
+    assert window._workspace_generation_failures == {}
+    assert refreshes == [True]

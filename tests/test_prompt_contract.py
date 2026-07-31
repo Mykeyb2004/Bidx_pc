@@ -338,8 +338,12 @@ def test_system_prompt_fails_fast_when_global_gate_file_missing(monkeypatch, tmp
     monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: empty_resource_root)
     writer = _build_writer(monkeypatch, config)
 
-    with pytest.raises(FileNotFoundError, match="system_gate_rules.md"):
+    with pytest.raises(FileNotFoundError) as exc_info:
         writer.build_system_prompt()
+    error_text = str(exc_info.value)
+    assert "system_gate_rules.md" in error_text
+    assert "项目材料根目录" in error_text
+    assert "应用资源根目录" in error_text
 
 
 def test_system_prompt_ignores_legacy_gate_switches(monkeypatch, tmp_path):

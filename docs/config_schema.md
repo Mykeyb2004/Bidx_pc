@@ -15,7 +15,12 @@
 - `runtime`
   - stream、trace、debug、输出细节与合并行为
 
-模型连接、模型名和采样/超时/token 等运行参数统一放在应用根目录的 `.env.local` 或外部环境变量中，不再写入 YAML。源码运行时应用根目录为 repo 根目录，打包后为可执行文件所在目录。GUI 只在生成大纲、扩写章节等真正调用模型的动作前检查对应 API Key；缺失时会提示用户创建或打开 `.env.local`，并展示可直接填写的配置文本。
+模型连接、模型名和采样/超时/token 等运行参数统一放在应用资源根目录的 `.env.local` 或外部环境变量中，不再写入 YAML。源码运行时应用资源根目录为 repo 根目录，打包后为可执行文件所在目录。GUI 只在生成大纲、扩写章节等真正调用模型的动作前检查对应 API Key；缺失时会提示用户创建或打开 `.env.local`，并展示可直接填写的配置文本。
+
+这里固定区分两个根目录：
+
+- `项目材料根目录`：`project.root_dir`，用于项目自身的输入、输出与缓存默认路径
+- `应用资源根目录`：源码运行时为 repo 根目录，打包后为可执行文件所在目录，用于共享 `roles/`、`.env.local`、门禁规则等应用级资源
 
 ## 1.1 维护约定
 
@@ -152,7 +157,7 @@ JSON v1 格式：
 
 旧配置缺少该字段时按 `true` 处理，避免历史项目被强制带入新流程。
 
-`project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。GUI 新建配置时会隐藏 `outline_locked` 和 `outline_generation.role_file`，让用户先完成项目材料准备；编辑已有配置时仍可看到这些高级字段。
+`project.outline_generation.role_file` 是大纲生成专用角色提示词，默认 `./roles/标书架构师.md`。正文扩写仍使用 `writing.role_file`。这两类角色文件都采用“配置文件目录优先、应用资源根目录兜底”的查找顺序，不归入 `project.root_dir` 的项目材料路径体系。GUI 新建配置时会隐藏 `outline_locked` 和 `outline_generation.role_file`，让用户先完成项目材料准备；编辑已有配置时仍可看到这些高级字段。
 
 ### 3.1.4 新建配置导入招标文件
 
@@ -187,8 +192,8 @@ writing:
 
 说明：
 
-- `writing.role_file` 推荐放在仓库根目录的 `roles/` 下，便于按项目复用角色文件；读取时会先查配置文件同目录下的 `roles/`，再回退到应用根目录下的 `roles/`
-- `project.outline_generation.role_file` 与 `roles/system_gate_rules.md` 也遵循同样的“配置目录优先、应用根目录兜底”规则
+- `writing.role_file` 推荐放在仓库根目录的 `roles/` 下，便于按项目复用角色文件；读取时会先查配置文件同目录下的 `roles/`，再回退到应用资源根目录下的 `roles/`
+- `project.outline_generation.role_file` 与 `roles/system_gate_rules.md` 也遵循同样的“配置目录优先、应用资源根目录兜底”规则
 - `writing.target_words.default` 是运行时输入框的基准值，系统会自动推导目标区间并写入 prompt
 - `writing.target_words.upper_ratio` 用于控制区间上沿的自动放宽幅度，默认 `1.15`
 - `writing.extra_rules` 当前不会单独生成 `## 其他写作要求` 区块，而是直接追加到 `## 结构输出硬要求` 的末尾
@@ -348,8 +353,8 @@ BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 
 - `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
 - 新建配置向导不检测 `.env.local` 或模型连接状态；新建和保存 YAML 项目配置不会因为缺少模型连接参数而失败，实际调用生成、抽取、裁剪等模型能力时再按需检查对应 `BID_WRITER_*` 变量
-- `.env.local` 位于应用根目录，所有项目配置共享，不会记录到任何 `config_*.yaml` 中
-- 外部 shell 中已设置的环境变量优先级最高，其次是应用根目录下的 `.env.local`，再其次是同目录的 `.env`
+- `.env.local` 位于应用资源根目录，所有项目配置共享，不会记录到任何 `config_*.yaml` 中
+- 外部 shell 中已设置的环境变量优先级最高，其次是应用资源根目录下的 `.env.local`，再其次是同目录的 `.env`
 - 大纲生成参数读取优先级为 `BID_WRITER_OUTLINE_*`、对应的 `BID_WRITER_*`、代码默认值。
 - `BID_WRITER_REASONING_EFFORT` 控制正文章节生成的推理强度，支持 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`；未设置或填写无效值时不发送 `reasoning_effort`，由模型/代理使用自身默认值。
 - `BID_WRITER_OUTLINE_REASONING_EFFORT` 独立控制大纲生成；未设置或填写无效值时不发送该字段，不会继承正文的 `BID_WRITER_REASONING_EFFORT`。
