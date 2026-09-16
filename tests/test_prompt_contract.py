@@ -284,7 +284,7 @@ def test_system_gate_allows_required_mermaid_without_user_prompt_duplication(
     result = writer.build_prompt_result(heading, target_words=1200)
     system_prompt = writer.build_system_prompt()
 
-    assert "明确要求的 Mermaid 代码块及其必要语法除外" in system_prompt
+    assert "此限制不适用于明确要求的 Mermaid 代码块内部必要语法" in system_prompt
     assert "绝对禁止在正文中写入自解释、自评述、自引导的内容" not in result.prompt
 
 
@@ -324,8 +324,12 @@ def test_system_prompt_keeps_global_gate_rules(monkeypatch, tmp_path):
     assert system_prompt.startswith("你是一位专业的标书撰写专家。")
     assert "【最高优先级输出强约束】" in system_prompt
     assert "投标主体统一使用“测试投标主体”表述" in system_prompt
-    assert "严禁使用Markdown标题符号（#）。" in system_prompt
-    assert "默认使用正式层级序号组织正文" in system_prompt
+    assert "禁止在正文中使用 Markdown 标题标记" in system_prompt
+    assert "第一个正文层级标题必须重新从“一、”开始" in system_prompt
+    assert "正文编号为最高优先级输出格式硬约束" in system_prompt
+    assert "不占用正文内部编号层级" in system_prompt
+    assert "禁止一级标题的形式" not in system_prompt
+    assert "除非用户明确要求只写单段摘要" not in system_prompt
     assert "旧字段不应再进入 system prompt" not in system_prompt
 
 
@@ -352,7 +356,7 @@ def test_system_prompt_ignores_legacy_gate_switches(monkeypatch, tmp_path):
 
     system_prompt = writer.build_system_prompt()
 
-    assert "严禁使用Markdown标题符号（#）。" in system_prompt
+    assert "禁止在正文中使用 Markdown 标题标记" in system_prompt
     assert "禁止输出不必要的英文、英文缩写或中英对照。" in system_prompt
     assert "旧字段不应再进入 system prompt" not in system_prompt
 
@@ -367,7 +371,8 @@ def test_full_context_prompt_uses_short_system_reminder_instead_of_repeating_glo
     assert "请严格遵守 system 中全部硬门禁，直接输出当前章节投标正文。" in result.prompt
     assert "## 结构输出硬要求" not in result.prompt
     assert "本次正文默认采用显式层级结构" not in result.prompt
-    assert "严禁使用Markdown标题符号（#）。" not in result.prompt
+    assert "禁止在正文中使用 Markdown 标题标记" not in result.prompt
+    assert "第一个正文层级标题必须重新从“一、”开始" not in result.prompt
 
 
 def test_user_prompt_still_keeps_task_side_extra_rules(monkeypatch, tmp_path):
@@ -486,9 +491,9 @@ def test_finalize_generation_does_not_replace_bidder_alias_inside_technical_term
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.finalize_generation(heading, "项目分析应覆盖基本单位划分原则，并明确样本单位抽取范围。")
+    result = writer.finalize_generation(heading, "一、分析范围\n项目分析应覆盖基本单位划分原则，并明确样本单位抽取范围。")
 
-    assert result.content == "项目分析应覆盖基本单位划分原则，并明确样本单位抽取范围。"
+    assert result.content == "一、分析范围\n项目分析应覆盖基本单位划分原则，并明确样本单位抽取范围。"
     assert result.postprocess["bidder_reference_normalized"] is False
     assert result.postprocess["bidder_reference_replacements"] == 0
 
@@ -499,9 +504,9 @@ def test_finalize_generation_still_replaces_standalone_bidder_alias(monkeypatch,
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.finalize_generation(heading, "项目组织由本单位负责统筹实施与质量控制。")
+    result = writer.finalize_generation(heading, "一、组织安排\n项目组织由本单位负责统筹实施与质量控制。")
 
-    assert result.content == "项目组织由杭州菲尔德咨询负责统筹实施与质量控制。"
+    assert result.content == "一、组织安排\n项目组织由杭州菲尔德咨询负责统筹实施与质量控制。"
     assert result.postprocess["bidder_reference_normalized"] is True
     assert result.postprocess["bidder_reference_replacements"] == 1
 
@@ -513,8 +518,10 @@ def test_finalize_generation_ignores_deprecated_format_switches(monkeypatch, tmp
     writer = _build_writer(monkeypatch, config)
     heading = _select_leaf_heading(config, "质量保障措施")
 
-    result = writer.finalize_generation(heading, "## 标题\n\n一、总结\n正文内容。")
+    result = writer.finalize_generation(heading, "## 总结\n正文内容。")
 
+    assert result.content == "一、总结\n正文内容。"
+    assert result.postprocess["format_repair_applied"] is True
     assert "markdown_headings" not in result.postprocess["format_repair_issues"]
     assert "forbidden_summary" not in result.postprocess["format_repair_issues"]
 
@@ -648,6 +655,44 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     assert result.prompt.startswith("## 当前章节边界及招标/评分要求")
     assert result.prompt.index("## 章节任务卡") > result.prompt.index("### 评分要求")
     assert result.prompt.index("### 当前章节边界") < result.prompt.index("## 章节任务卡")
+
+
+@pytest.mark.parametrize("write_output", [True, False])
+@pytest.mark.parametrize("valid", [True, False])
+def test_numbering_trace_keeps_raw_and_audit_with_final_status(monkeypatch, tmp_path, write_output, valid):
+    from bid_writer.body_numbering import BodyNumberingError
+
+    config = _prepare_config_workspace(tmp_path, "current_prompt_config.yaml")
+    config._config.setdefault("runtime", {}).setdefault("trace", {})["write_output"] = write_output
+    writer = _build_writer(monkeypatch, config)
+    heading = _select_leaf_heading(config, "质量保障措施")
+    prepared = writer.prepare_generation(heading, target_words=1200, stream=False)
+    trace = prepared.trace_session
+    monkeypatch.setattr(writer, "_finalize_trace_session_async", lambda session, content, **kwargs: session.finalize(content, **kwargs))
+    raw = "（一）质量组织\n\n服务12人。\n\n1. 岗位职责" if valid else "没有标题的正文。"
+    if valid:
+        result = writer.finalize_generation(heading, raw, trace)
+        expected = result.content
+    else:
+        with pytest.raises(BodyNumberingError):
+            writer.finalize_generation(heading, raw, trace)
+        expected = raw
+
+    manifest = json.loads(trace.artifact_paths["manifest"].read_text())
+    assert manifest["status"] == ("completed" if valid else "failed")
+    if write_output:
+        assert trace.artifact_paths["raw_generation_output"].read_text() == raw
+        report = json.loads(trace.artifact_paths["numbering_repair"].read_text())
+        assert bool(report["issues_after"]) is not valid
+        assert report["method"] == ("local" if valid else "none")
+        assert expected in trace.artifact_paths["generation_output"].read_text()
+        assert manifest["artifacts"]["numbering_repair"] == "09_numbering_repair.json"
+    else:
+        assert "raw_generation_output" not in manifest["artifacts"]
+        assert "numbering_repair" not in manifest["artifacts"]
+        assert not (trace.trace_dir / "08_raw_generation_output.md").exists()
+        assert not (trace.trace_dir / "09_numbering_repair.json").exists()
+        assert not trace.artifact_paths["generation_output"].exists()
 
 
 def test_trace_context_payload_contains_prompt_contract_and_prompt_sections(monkeypatch, tmp_path):

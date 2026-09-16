@@ -28,6 +28,7 @@ from openai import (
 
 from .main import BidWriter
 from .ai_writer import GenerationCancelledError
+from .body_numbering import BodyNumberingError
 from .gui_adapter import GUIAdapter
 from .outline_parser import HeadingNode
 from .outline_prepare import set_outline_locked
@@ -446,6 +447,13 @@ def _classify_generation_error(exc: BaseException) -> tuple[str, str, list[str]]
     detail_lower = detail.lower()
     status_code = getattr(exc, "status_code", None)
 
+    if isinstance(exc, BodyNumberingError):
+        return (
+            "正文编号校验未通过",
+            "自动修复未能可靠完成，原始草稿已保留，本次结果未自动保存。",
+            ["查看提示中的标题行及层级，重新扩写该章节。", "已有正式章节文件不会被本次失败结果覆盖。"],
+        )
+
     if _matches_exception_type(
         exc,
         names=("APITimeoutError", "TimeoutError"),
@@ -597,7 +605,11 @@ def _build_generation_error_feedback(
     detail = _normalize_generation_error_detail(exc)
 
     if has_partial_output:
-        progress_hint = "当前章节已经返回部分正文，已返回内容会保留在工作区。"
+        progress_hint = (
+            "原始正文已保留在工作区，本次结果未自动保存。"
+            if isinstance(exc, BodyNumberingError)
+            else "当前章节已经返回部分正文，已返回内容会保留在工作区。"
+        )
         workspace_body = "\n".join(
             [
                 "",
@@ -5096,6 +5108,7 @@ class MainWindow(tk.Tk):
         ):
             """启动后台生成线程"""
             self.is_generating = True
+            self.finalize_result = None
 
             def _background_generate():
                 """后台线程执行生成"""
@@ -5155,9 +5168,21 @@ class MainWindow(tk.Tk):
                     if not stream_workspace_updates and not content_was_enqueued:
                         self.text_queue.put(("text", content))
                         content_was_enqueued = True
+                    _publish_status("检查正文编号", "模型内容接收完毕，正在检查正文编号...")
+                    finalized = ai_writer.finalize_generation(
+                        heading,
+                        content,
+                        trace_session=prepared.trace_session,
+                        cancel_event=self.cancel_event,
+                        status_callback=_publish_status,
+                    )
+                    self.finalize_result = finalized
+                    if finalized.content != content:
+                        self.text_queue.put(("replace", finalized.content))
+                    content = finalized.content
                     word_count = ai_writer.count_chinese_words(content)
 
-                    self.text_queue.put(("status", f"生成完成 - {word_count} 字"))
+                    self.text_queue.put(("status", f"正文校验通过，等待保存 - {word_count} 字"))
                     write_timing_log(
                         "generation_done_enqueued",
                         heading_title=heading.title,
@@ -5352,12 +5377,8 @@ class MainWindow(tk.Tk):
             self.status_text.set(f"已终止本章节生成: {heading.title}")
             return "stopped"
 
-        self.status_text.set(f"正在整理输出: {heading.title}")
-        finalize_result = self.bid_writer.ai_writer.finalize_generation(
-            heading,
-            raw_content,
-            trace_session=trace_session,
-        )
+        # GenerationSession only reports done after background repair/validation.
+        finalize_result = gen_window.finalize_result
         content = finalize_result.content
         word_count = self.bid_writer.ai_writer.count_chinese_words(content)
 
@@ -5373,14 +5394,15 @@ class MainWindow(tk.Tk):
             return "failed"
 
         getattr(self, "_workspace_generation_failures", {}).pop(heading.full_path, None)
+        save_label = "已修复正文编号并保存" if finalize_result.postprocess.get("format_repair_applied") else "已自动保存"
         self._show_generated_content_in_workspace(
             heading,
             content,
-            meta_text=f"已自动保存：{filepath.name} · {word_count} 字",
+            meta_text=f"{save_label}：{filepath.name} · {word_count} 字",
         )
         if auto_extract_facts and self.bid_writer.config.chapter_facts_enabled:
             self._trigger_async_fact_extraction(heading)
-        self.status_text.set(f"已自动保存: {filepath.name}")
+        self.status_text.set(f"{save_label}: {filepath.name}")
         return "success"
 
     def _trigger_async_fact_extraction(self, heading: HeadingNode) -> None:

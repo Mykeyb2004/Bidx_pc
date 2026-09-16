@@ -93,6 +93,15 @@ class GenerationTraceSession:
     def finished(self) -> bool:
         return self._finished
 
+    def record_numbering_repair(self, raw_content: str, report: dict[str, Any]) -> None:
+        """Preserve the model output and allowed heading edits before finalization."""
+        if self._finished or not self.config.generation_trace_write_output:
+            return
+        self.artifact_paths["raw_generation_output"] = self.trace_dir / "08_raw_generation_output.md"
+        self.artifact_paths["numbering_repair"] = self.trace_dir / "09_numbering_repair.json"
+        self._write_text(self.artifact_paths["raw_generation_output"], raw_content)
+        self._write_json(self.artifact_paths["numbering_repair"], report)
+
     def _build_trace_id(self) -> str:
         seed = "|".join(
             [

@@ -36,7 +36,7 @@ generation_trace:
 - `write_prompt`
   是否写出最终的 `system prompt` 和 `user prompt`。
 - `write_output`
-  是否写出模型最终返回的正文。
+  是否写出最终正文、编号修复前的原始正文及修复明细（06、08、09 文件）。
 - `write_context`
   是否写出上下文拼接详情。`full` 模式下建议保持开启。
 - `write_summary`
@@ -66,6 +66,8 @@ output/
       05_request_options.json
       06_generation_output.md
       07_summary.md
+      08_raw_generation_output.md
+      09_numbering_repair.json
 ```
 
 目录命名规则：
@@ -180,11 +182,12 @@ H2 背景的 `evidence_blocks` 是采购需求原文片段。默认 `content_mod
 
 ### `06_generation_output.md`
 
-记录模型最终输出正文，以及本次生成的状态：
+记录通过编号复核后的最终正文；修复失败时记录原始正文，以及本次生成的状态：
 
 - `completed`
 - `failed`
 - `interrupted`
+- `cancelled`
 
 如果流式输出过程中被中断，这里会保留已收到的部分内容。
 
@@ -209,13 +212,19 @@ H2 背景的 `evidence_blocks` 是采购需求原文片段。默认 `content_mod
 - 后处理动作摘要
 - trace 文件清单
 
+### `08_raw_generation_output.md` / `09_numbering_repair.json`
+
+08 文件保留模型原始正文（修复与主体称谓归一化之前）；09 文件记录 `method`（`none`、`local`、`model`，取消时为 `cancelled`）、`issues_before` / `issues_after`、逐行 `edits`（原行号、原文、接受后的文本），以及模型辅助是否调用、原始结构响应或错误。只记录已接受的编辑；失败时编辑列表为空，原始正文不被候选修改覆盖。
+
+manifest 的 `postprocess` 在成功时增加 `numbering_repair_method`、`numbering_issues_before`、`numbering_issues_after` 和 `numbering_model_attempted`。兼容字段 `format_repair_applied` 仅在实际接受编号修改时为 true；`format_repair_issues` 继续表示遗留文风检测结果。失败时记录 `format_repair_applied=false` 及未解决的编号问题，详情见 09 文件。关闭 `write_output` 时不写 08/09，也不会在 manifest 中添加对应产物链接。
+
 ## 记录时机
 
 trace 会在三个阶段落盘：
 
 1. 构造完上下文与 prompt 后
 2. 发起模型请求前
-3. 模型返回完成后，补齐最终输出和状态
+3. 模型返回后完成编号校验和修复，写出原始正文与修复明细，再补齐最终输出和状态。只有通过复核才标为 `completed`；无法修复为 `failed`，修复取消为 `cancelled`。`completed` 表示生成校验通过，不表示后续章节文件已保存成功。
 
 因此即使生成失败，也会保留：
 

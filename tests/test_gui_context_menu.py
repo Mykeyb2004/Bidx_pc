@@ -471,6 +471,7 @@ def test_non_streaming_string_result_is_enqueued_once(monkeypatch):
             trace_session=None,
         ),
         expand_raw=lambda *_args, **_kwargs: "完整正文",
+        finalize_generation=lambda _heading, content, **_kwargs: SimpleNamespace(content=content, postprocess={}),
         count_chinese_words=lambda content: len(content),
     )
     parent = SimpleNamespace(
@@ -777,6 +778,7 @@ def test_completed_generation_is_saved_when_stop_arrives_after_completion():
 
         def wait_completion(self):
             self.result_data = ("已完成正文", 5, None)
+            self.finalize_result = SimpleNamespace(content="已完成正文", postprocess={})
             return self.result_data
 
         def close(self):
@@ -827,6 +829,7 @@ def test_successful_retry_previews_saved_content_instead_of_old_failure(
 
         def wait_completion(self):
             self.result_data = ("重试生成的新正文", 8, None)
+            self.finalize_result = SimpleNamespace(content="重试生成的新正文", postprocess={})
             return self.result_data
 
         def close(self):
