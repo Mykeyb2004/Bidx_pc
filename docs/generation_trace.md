@@ -216,7 +216,7 @@ H2 背景的 `evidence_blocks` 是采购需求原文片段。默认 `content_mod
 
 08 文件保留模型原始正文（修复与主体称谓归一化之前）；09 文件记录 `method`（`none`、`local`、`model`，取消时为 `cancelled`）、`issues_before` / `issues_after`、`edits`，以及模型辅助是否调用、原始结构响应或错误。只记录已接受的编辑；失败时编辑列表为空，原始正文不被候选修改覆盖。
 
-`edits` 按 `stage` 区分坐标：`layout_local` 是相对原始正文的零起始字符 `offset`；`layout_model` 是相对本地断行结果的字符 `offset`；两者均仅插入 `after` 中的换行，`before` 为空，同一阶段按 offset 倒序回放。`numbering` 的 `line` 是完成断行后的一起始行号，`before` / `after` 为该行编号修改前后全文。历史未带 stage 的记录仍按逐行编号编辑理解。模型结构响应的行号对应本地断行后的正文；程序负责后续行号映射。Mermaid 及其粘连图名不生成修复编辑。
+`edits` 按 `stage` 区分坐标：`mermaid_layout` 是相对原始正文的零起始字符 `offset`；`layout_local` 是相对 Mermaid 换行恢复结果的字符 `offset`；`layout_model` 是相对本地标题及表格断行结果的字符 `offset`。依次回放这三个阶段，每个阶段仅插入 `after` 中的换行，`before` 为空，同一阶段按 offset 倒序回放。历史没有 `mermaid_layout` 阶段时，`layout_local` 仍相对原始正文。`numbering` 的 `line` 是完成断行后的一起始行号，`before` / `after` 为该行编号修改前后全文。历史未带 stage 的记录仍按逐行编号编辑理解。模型结构响应的行号对应本地断行后的正文；程序负责后续行号映射。Mermaid 仅记录围栏、图声明、图名前后边界及明确的连线语句拆行，不改节点、标签、连线关系。所有局部编辑仅在完整结构复核通过后接受；失败时保留原文，不应用 Mermaid 候选编辑。
 
 manifest 的 `postprocess` 在成功时增加 `numbering_repair_method`、`numbering_issues_before`、`numbering_issues_after` 和 `numbering_model_attempted`。兼容字段 `format_repair_applied` 仅在实际接受断行或编号修改时为 true；`format_repair_issues` 继续表示遗留文风检测结果。失败时记录 `format_repair_applied=false` 及未解决的结构/编号问题，详情见 09 文件。关闭 `write_output` 时不写 08/09，也不会在 manifest 中添加对应产物链接。
 

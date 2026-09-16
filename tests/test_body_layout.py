@@ -1,4 +1,4 @@
-"""Missing prose boundaries may be recovered; Mermaid must stay byte-for-byte."""
+"""Recover prose and graph boundaries without changing non-newline text."""
 
 import copy
 import json
@@ -30,20 +30,20 @@ def test_real_522_keeps_all_text_and_mermaid_and_is_idempotent(eol):
     source = SOURCE.replace("\n", eol)
     prepared = prepare_layout(source)
     assert len(prepared.candidates) == 25
-    assert len(prepared.edits) == 9
+    assert len(prepared.edits) == 12
     result = repair_layout(prepared, proposal=PROPOSAL)
     assert result.content == EXPECTED.replace("\n", eol)
     assert not result.issues_after
     assert [h.level for h in inspect_numbering(result.content).headings].count(1) == 7
     assert [h.level for h in inspect_numbering(result.content).headings].count(2) == 25
-    assert code_text(result.content) == code_text(source)
-    assert "mermaidflowchart TDA[" in result.content
+    assert code_text(result.content) == code_text(EXPECTED.replace("\n", eol))
+    assert f"```mermaid{eol}flowchart TD{eol}A[" in result.content
     assert "G --> FF --> I[" in result.content
     assert result.content.replace(eol, "") == source.replace(eol, "")
-    assert len(result.edits) == 34
+    assert len(result.edits) == 37
     # Replay actual edit coordinates, not just a whitespace-stripped comparison.
     replay = source
-    for stage in ("layout_local", "layout_model"):
+    for stage in ("mermaid_layout", "layout_local", "layout_model"):
         for edit in sorted((e for e in result.edits if e["stage"] == stage), key=lambda e: e["offset"], reverse=True):
             assert edit["before"] == ""
             replay = replay[:edit["offset"]] + edit["after"] + replay[edit["offset"]:]
@@ -77,7 +77,7 @@ def test_previous_522_recovers_short_colon_leadin_and_all_three_levels():
     assert result.content == expected
     assert len(calls) == 1
     assert len(inspect_numbering(result.content).headings) == 33
-    assert code_text(result.content) == code_text(source)
+    assert code_text(result.content) == code_text(expected)
     assert result.content.replace("\n", "") == source.replace("\n", "")
     assert "（二）摸排对象\n\n志愿服务力量摸排对象主要包括以下类别：" in result.content
 
@@ -105,7 +105,7 @@ def test_real_522_gui_saves_only_repaired_prose_and_keeps_mermaid(monkeypatch, t
     if valid:
         assert result == "success" and window.saves == [EXPECTED]
         assert path.read_text() == EXPECTED
-        assert code_text(path.read_text()) == code_text(SOURCE)
+        assert code_text(path.read_text()) == code_text(EXPECTED)
     else:
         assert result == "failed" and not window.saves and not window.facts
         assert path.read_text() == "原有正式正文"
@@ -206,7 +206,7 @@ def test_malformed_but_bounded_mermaid_is_skipped_and_bidder_names_stay_intact()
     writer, calls, _ = make_writer()
     writer.config.prompt_bidder_name = "菲尔德咨询"
     result = writer.finalize_generation(heading(), source)
-    assert graph in result.content
+    assert "摸排图\n\n```mermaid\nflowchart TD\nA[本公司]\nG --> FF --> I\n```" in result.content
     assert "菲尔德咨询负责登记。" in result.content
     assert "二、后续措施" in result.content
     assert not calls

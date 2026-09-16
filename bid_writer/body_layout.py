@@ -1,10 +1,12 @@
-"""Recover prose layout by inserting newlines; code blocks are immutable."""
+"""Recover prose layout and explicit Mermaid boundaries by inserting newlines."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from typing import Any
+
+from .mermaid_layout import repair_mermaid_layout
 
 from .body_numbering import (
     NumberingRepair, _CN, _FORMAL, _heading, _standalone_title, _valid_levels,
@@ -58,10 +60,12 @@ def _joined_title_breaks(line: str) -> list[int]:
         child = _heading(match[0] + "候选标题", 1)
         if not parent or parent.kind != "formal" or not child:
             continue
-        if len(parent.title.strip()) < 2 or re.search(r"[，,：:。；;！？!?]|[第按依见为]$", parent.title):
+        if len(parent.title.strip()) < 2 or re.search(r"[，,：:。；;！？!?]|(?:[第按依见为]|按照|依据|对应)$", parent.title):
             continue
         if (child.level == parent.level + 1 and child.number == 1) or (
             child.level == parent.level and child.number == parent.number + 1
+        ) or (
+            child.level < parent.level and child.number > 1
         ):
             positions.append(match.start())
             cursor = match.start()
@@ -87,6 +91,8 @@ def _table_caption_break(line: str, next_line: str) -> int | None:
 
 
 def prepare_layout(text: str, chapter_title: str = "") -> PreparedLayout:
+    original = text
+    text, mermaid_edits = repair_mermaid_layout(text)
     protected, _ = protected_code_lines(text)
     lines = text.splitlines(keepends=True)
     positions: dict[int, str] = {}
@@ -109,6 +115,7 @@ def prepare_layout(text: str, chapter_title: str = "") -> PreparedLayout:
                         positions[offset + bold.end()] = "分开加粗正式标题与正文"
         offset += len(line)
     content, edits = _insert_breaks(text, positions, "layout_local")
+    edits = mermaid_edits + edits
     protected, _ = protected_code_lines(content)
     inspection = inspect_numbering(content, chapter_title)
     known = {item.line: item for item in inspection.headings}
@@ -134,10 +141,10 @@ def prepare_layout(text: str, chapter_title: str = "") -> PreparedLayout:
         if match["one"] is None and match["two"] is None and punctuation[0] in "。！？!?；;":
             continue
         candidates.append({"line": number, "text": line, "standalone": existing is not None})
-    issues = [{"code": "joined_layout", "line": 0, "message": "正文存在粘连的标题或表格边界"}] if edits else []
+    issues = [{"code": "joined_layout", "line": 0, "message": "正文存在粘连的标题、表格或 Mermaid 边界"}] if edits else []
     issues.extend({"code": "joined_heading_body", "line": item["line"],
                    "message": f"第{item['line']}行疑似标题与正文粘连，需要确认断行位置"} for item in candidates)
-    return PreparedLayout(text, content, candidates, edits, issues)
+    return PreparedLayout(original, content, candidates, edits, issues)
 
 
 def repair_layout(layout: PreparedLayout, chapter_title: str = "", *, proposal: Any = None) -> NumberingRepair:
