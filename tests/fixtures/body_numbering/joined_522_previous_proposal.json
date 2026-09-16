@@ -1,0 +1,163 @@
+{
+  "headings": [
+    {
+      "line": 1,
+      "level": 1
+    },
+    {
+      "line": 3,
+      "level": 2,
+      "prefix": "（一）摸排目标"
+    },
+    {
+      "line": 7,
+      "level": 2,
+      "prefix": "（二）摸排对象"
+    },
+    {
+      "line": 9,
+      "level": 3,
+      "prefix": "1. 基层志愿服务队伍"
+    },
+    {
+      "line": 11,
+      "level": 3,
+      "prefix": "2. 骨干志愿者"
+    },
+    {
+      "line": 13,
+      "level": 3,
+      "prefix": "3. 专业志愿者"
+    },
+    {
+      "line": 15,
+      "level": 3,
+      "prefix": "4. 应急辅助类志愿力量"
+    },
+    {
+      "line": 17,
+      "level": 3,
+      "prefix": "5.线上志愿服务力量"
+    },
+    {
+      "line": 19,
+      "level": 1
+    },
+    {
+      "line": 21,
+      "level": 2,
+      "prefix": "（一）依托部门和基层组织获取基础线索"
+    },
+    {
+      "line": 23,
+      "level": 2,
+      "prefix": "（二）依托志愿服务平台和既有活动记录排查"
+    },
+    {
+      "line": 25,
+      "level": 2,
+      "prefix": "（三）依托社会救助服务场景补充发现"
+    },
+    {
+      "line": 27,
+      "level": 2,
+      "prefix": "（四）依托公开招募和定向推荐拓展来源"
+    },
+    {
+      "line": 39,
+      "level": 1
+    },
+    {
+      "line": 41,
+      "level": 2,
+      "prefix": "（一）建立摸排任务清单"
+    },
+    {
+      "line": 43,
+      "level": 2,
+      "prefix": "（二）开展信息采集"
+    },
+    {
+      "line": 45,
+      "level": 2,
+      "prefix": "（三）组织意愿确认"
+    },
+    {
+      "line": 47,
+      "level": 2,
+      "prefix": "（四）实施能力分级"
+    },
+    {
+      "line": 49,
+      "level": 2,
+      "prefix": "（五）形成资源底册"
+    },
+    {
+      "line": 59,
+      "level": 1
+    },
+    {
+      "line": 61,
+      "level": 2,
+      "prefix": "（一）按服务类型分类"
+    },
+    {
+      "line": 73,
+      "level": 2,
+      "prefix": "（二）按可调度程度分级"
+    },
+    {
+      "line": 89,
+      "level": 1
+    },
+    {
+      "line": 91,
+      "level": 2,
+      "prefix": "（一）身份与联系方式核验"
+    },
+    {
+      "line": 93,
+      "level": 2,
+      "prefix": "（二）服务边界核验"
+    },
+    {
+      "line": 95,
+      "level": 2,
+      "prefix": "（三）隐私保护和保密要求"
+    },
+    {
+      "line": 97,
+      "level": 2,
+      "prefix": "（四）安全风险识别"
+    },
+    {
+      "line": 99,
+      "level": 2,
+      "prefix": "（五）利益冲突识别"
+    },
+    {
+      "line": 101,
+      "level": 1
+    },
+    {
+      "line": 103,
+      "level": 2,
+      "prefix": "（一）定期更新"
+    },
+    {
+      "line": 105,
+      "level": 2,
+      "prefix": "（二）服务记录回填"
+    },
+    {
+      "line": 107,
+      "level": 2,
+      "prefix": "（三）异常信息处置"
+    },
+    {
+      "line": 109,
+      "level": 2,
+      "prefix": "（四）资料归档"
+    }
+  ]
+}

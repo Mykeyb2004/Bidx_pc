@@ -19,6 +19,7 @@ _EMPHASIS = re.compile(
     r"(?P<annotation>[ \t]*(?:（[^（）]*）|\([^()]*\)))?$"
 )
 _CIRCLED = re.compile(r"^(?P<number>[①-⑳])[ \t]*(?P<title>.*)$")
+_INLINE_MERMAID = re.compile(r"(?P<fence>`{3,}|~{3,})mermaid(?=\s|flowchart|graph|$)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -173,21 +174,44 @@ def _heading(line: str, line_number: int) -> BodyHeading | None:
     return None
 
 
-def _scan(text: str, chapter_title: str) -> tuple[list[BodyHeading], list[int], list[dict[str, Any]]]:
-    headings: list[BodyHeading] = []
-    duplicates: list[int] = []
-    issues: list[dict[str, Any]] = []
+def protected_code_lines(text: str) -> tuple[set[int], bool]:
+    """Recognize code boundaries without repairing or validating the code inside.
+
+    A Mermaid opener glued to a caption is still protected, including the caption.
+    Only a real closing fence ends protection; an absent close remains ambiguous.
+    """
+    protected: set[int] = set()
     fence_char = ""
     fence_length = 0
-    first_content = True
     for number, line in enumerate(text.splitlines(keepends=True), 1):
         fence = _FENCE.match(line.rstrip("\r\n"))
         if fence_char:
+            protected.add(number)
             if fence and fence[1][0] == fence_char and len(fence[1]) >= fence_length and not fence[2].strip():
                 fence_char = ""
             continue
         if fence:
             fence_char, fence_length = fence[1][0], len(fence[1])
+            protected.add(number)
+            continue
+        inline = _INLINE_MERMAID.search(line)
+        if inline and not line.lstrip().startswith((">", "|")):
+            prefix = line[:inline.start()]
+            # A short caption is allowed; inline quoted/code examples are not openers.
+            if len(prefix) <= 100 and not re.search(r"[`~。！？!?；;]", prefix):
+                fence_char, fence_length = inline["fence"][0], len(inline["fence"])
+                protected.add(number)
+    return protected, bool(fence_char)
+
+
+def _scan(text: str, chapter_title: str) -> tuple[list[BodyHeading], list[int], list[dict[str, Any]]]:
+    headings: list[BodyHeading] = []
+    duplicates: list[int] = []
+    issues: list[dict[str, Any]] = []
+    protected, unclosed = protected_code_lines(text)
+    first_content = True
+    for number, line in enumerate(text.splitlines(keepends=True), 1):
+        if number in protected:
             first_content = False
             continue
         stripped = line.strip()
@@ -210,7 +234,7 @@ def _scan(text: str, chapter_title: str) -> tuple[list[BodyHeading], list[int], 
                 issues.append(_issue("nonstandard_heading", number, f"第{number}行使用加粗或圈号标题，需确认层级并转换为正式序号"))
         if _MARKDOWN.match(stripped.removeprefix("**")):
             issues.append(_issue("markdown_heading", number, f"第{number}行使用了 Markdown 标题"))
-    if fence_char:
+    if unclosed:
         issues.append(_issue("unclosed_fence", 0, "正文存在未闭合的代码围栏，无法可靠判断后续标题"))
     return headings, duplicates, issues
 

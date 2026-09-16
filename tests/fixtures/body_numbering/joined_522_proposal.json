@@ -1,0 +1,157 @@
+{
+  "headings": [
+    {
+      "line": 1,
+      "level": 1
+    },
+    {
+      "line": 3,
+      "level": 2,
+      "prefix": "（一）摸排目标"
+    },
+    {
+      "line": 7,
+      "level": 2,
+      "prefix": "（二）适用范围"
+    },
+    {
+      "line": 11,
+      "level": 1
+    },
+    {
+      "line": 13,
+      "level": 2,
+      "prefix": "（一）依法合规原则"
+    },
+    {
+      "line": 15,
+      "level": 2,
+      "prefix": "（二）服务适配原则"
+    },
+    {
+      "line": 17,
+      "level": 2,
+      "prefix": "（三）分级分类原则"
+    },
+    {
+      "line": 29,
+      "level": 1
+    },
+    {
+      "line": 31,
+      "level": 2,
+      "prefix": "（一）依托基层组织摸排"
+    },
+    {
+      "line": 33,
+      "level": 2,
+      "prefix": "（二）依托志愿服务平台和群团组织摸排"
+    },
+    {
+      "line": 35,
+      "level": 2,
+      "prefix": "（三）依托项目服务场景动态发现"
+    },
+    {
+      "line": 37,
+      "level": 2,
+      "prefix": "（四）依托既有志愿服务队伍复核"
+    },
+    {
+      "line": 39,
+      "level": 1
+    },
+    {
+      "line": 41,
+      "level": 2,
+      "prefix": "（一）基础信息核验"
+    },
+    {
+      "line": 43,
+      "level": 2,
+      "prefix": "（二）能力信息核验"
+    },
+    {
+      "line": 45,
+      "level": 2,
+      "prefix": "（三）服务意愿核验"
+    },
+    {
+      "line": 47,
+      "level": 2,
+      "prefix": "（四）风险信息核验"
+    },
+    {
+      "line": 59,
+      "level": 1
+    },
+    {
+      "line": 61,
+      "level": 2,
+      "prefix": "（一）制定摸排清单"
+    },
+    {
+      "line": 63,
+      "level": 2,
+      "prefix": "（二）开展多源采集"
+    },
+    {
+      "line": 65,
+      "level": 2,
+      "prefix": "（三）进行分级入库"
+    },
+    {
+      "line": 67,
+      "level": 2,
+      "prefix": "（四）完成确认与授权"
+    },
+    {
+      "line": 69,
+      "level": 2,
+      "prefix": "（五）动态复核与更新"
+    },
+    {
+      "line": 82,
+      "level": 1
+    },
+    {
+      "line": 84,
+      "level": 2,
+      "prefix": "（一）建立一人一档基础台账"
+    },
+    {
+      "line": 86,
+      "level": 2,
+      "prefix": "（二）建立队伍画像台账"
+    },
+    {
+      "line": 88,
+      "level": 2,
+      "prefix": "（三）建立准入与退出记录"
+    },
+    {
+      "line": 90,
+      "level": 2,
+      "prefix": "（四）建立信息安全管理要求"
+    },
+    {
+      "line": 92,
+      "level": 1
+    },
+    {
+      "line": 94,
+      "level": 2,
+      "prefix": "（一）形成志愿服务资源清单"
+    },
+    {
+      "line": 96,
+      "level": 2,
+      "prefix": "（二）形成重点区域力量分布表"
+    },
+    {
+      "line": 98,
+      "level": 2,
+      "prefix": "（三）限定摸排成果使用边界"
+    }
+  ]
+}
