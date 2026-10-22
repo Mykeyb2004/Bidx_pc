@@ -122,7 +122,7 @@ def test_missing_architect_role_file_blocks_generation(monkeypatch, tmp_path: Pa
     (tmp_path / "roles" / "标书架构师.md").unlink()
     empty_resource_root = tmp_path / "empty-app-root"
     empty_resource_root.mkdir()
-    monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: empty_resource_root)
+    monkeypatch.setattr("bid_writer.config.get_resource_root_dir", lambda: empty_resource_root)
     config = Config(str(config_path))
 
     with pytest.raises(OutlineGenerationError, match="大纲生成角色文件不存在"):

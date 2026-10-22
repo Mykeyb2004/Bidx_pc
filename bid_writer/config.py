@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 import yaml
 
-from .gui_state import get_application_root_dir
+from .gui_state import get_cache_root_dir, get_log_dir, get_resource_root_dir, get_shared_config_dir, is_compiled
 
 _EXTERNAL_ENV_KEYS = set(os.environ)
 _REASONING_EFFORT_VALUES = frozenset({"none", "minimal", "low", "medium", "high", "xhigh"})
@@ -91,8 +91,8 @@ class Config:
             self._local_env[key] = value
 
     def _load_local_env(self) -> None:
-        """从应用资源根目录加载共享的 `.env` / `.env.local`。"""
-        env_dir = get_application_root_dir()
+        """从共享配置目录加载 `.env` / `.env.local`。"""
+        env_dir = get_shared_config_dir()
         self._local_env = {}
         for name in (".env", ".env.local"):
             self._load_dotenv_file(env_dir / name, _EXTERNAL_ENV_KEYS)
@@ -229,6 +229,8 @@ class Config:
 
     def _execution_file_dir(self) -> Path:
         """返回当前执行入口所在目录，用于放置跨项目运行缓存。"""
+        if is_compiled():
+            return get_cache_root_dir()
         argv0 = sys.argv[0] if sys.argv else ""
         if argv0:
             return Path(argv0).expanduser().resolve().parent
@@ -248,7 +250,7 @@ class Config:
     @property
     def resource_root_path(self) -> Path:
         """应用级共享资源根目录。"""
-        return get_application_root_dir().resolve()
+        return get_resource_root_dir().resolve()
 
     def _resolve_resource_path(self, path_value: str) -> Path:
         """将相对路径解析为相对于应用级共享资源根目录的路径。"""
@@ -1518,7 +1520,7 @@ class Config:
         legacy_value = self._get_first_defined(('generation_trace', 'directory'), default='')
         if isinstance(legacy_value, str) and legacy_value.strip():
             return str(self._resolve_path(legacy_value.strip()))
-        return str((Path(__file__).resolve().parent.parent / 'log' / 'generation_traces'))
+        return str(get_log_dir() / 'generation_traces')
 
     @property
     def generation_trace_write_prompt(self) -> bool:

@@ -29,6 +29,11 @@ build-backend = "hatchling.build"
 packages = ["bid_writer"]
 
 [dependency-groups]
+build = [
+    "nuitka[app,icon-conversion]>=4.2.1,<5",
+    "ordered-set>=4.1",
+    "zstandard>=0.23",
+]
 dev = [
     "pytest>=8.3",
 ]

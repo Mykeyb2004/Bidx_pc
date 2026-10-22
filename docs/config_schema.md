@@ -15,12 +15,13 @@
 - `runtime`
   - stream、trace、debug、输出细节与合并行为
 
-模型连接、模型名和采样/超时/token 等运行参数统一放在应用资源根目录的 `.env.local` 或外部环境变量中，不再写入 YAML。源码运行时应用资源根目录为 repo 根目录，打包后为可执行文件所在目录。GUI 只在生成大纲、扩写章节等真正调用模型的动作前检查对应 API Key；缺失时会提示用户创建或打开 `.env.local`，并展示可直接填写的配置文本。
+模型连接、模型名和采样/超时/token 等运行参数统一放在应用数据目录的 `.env.local` 或外部环境变量中，不再写入 YAML。源码运行时为 repo 根目录；Nuitka 成品在 macOS 使用 `~/.bid-writer/`（配置、状态、日志、缓存分别位于 `config/`、`state/`、`logs/`、`cache/`），Windows 使用 EXE 同目录，Linux 使用 `${XDG_DATA_HOME:-~/.local/share}/bid-writer/`。GUI 只在生成大纲、扩写章节等真正调用模型的动作前检查对应 API Key；缺失时会提示用户创建或打开 `.env.local`，并展示可直接填写的配置文本。
 
 这里固定区分两个根目录：
 
 - `项目材料根目录`：`project.root_dir`，用于项目自身的输入、输出与缓存默认路径
-- `应用资源根目录`：源码运行时为 repo 根目录，打包后为可执行文件所在目录，用于共享 `roles/`、`.env.local`、门禁规则等应用级资源
+- `应用资源根目录`：源码运行时为 repo 根目录，Nuitka 成品为内置资源目录，用于读取 `roles/`、门禁规则和配置模板；不用于写入配置或日志
+- `应用数据目录`：用于共享 `.env.local`、GUI 状态、默认时序日志与跨项目缓存；平台路径见上文，与用户项目材料目录独立
 
 ## 1.1 维护约定
 
@@ -353,13 +354,13 @@ BID_WRITER_EMBEDDING_REBUILD_ON_SOURCE_CHANGE=true
 
 - `.env.local` 与外部环境变量是模型参数的唯一推荐入口；YAML 中的旧 `models.*` / `api.*` / `context_pruning.api.*` 字段不再参与模型参数读取
 - 新建配置向导不检测 `.env.local` 或模型连接状态；新建和保存 YAML 项目配置不会因为缺少模型连接参数而失败，实际调用生成、抽取、裁剪等模型能力时再按需检查对应 `BID_WRITER_*` 变量
-- `.env.local` 位于应用资源根目录，所有项目配置共享，不会记录到任何 `config_*.yaml` 中
-- 外部 shell 中已设置的环境变量优先级最高，其次是应用资源根目录下的 `.env.local`，再其次是同目录的 `.env`
+- `.env.local` 位于应用数据目录，所有项目配置共享，不会记录到任何 `config_*.yaml` 中
+- 外部 shell 中已设置的环境变量优先级最高，其次是应用数据目录下的 `.env.local`，再其次是同目录的 `.env`
 - 大纲生成参数读取优先级为 `BID_WRITER_OUTLINE_*`、对应的 `BID_WRITER_*`、代码默认值。
 - `BID_WRITER_REASONING_EFFORT` 控制正文章节生成的推理强度，支持 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`；未设置或填写无效值时不发送 `reasoning_effort`，由模型/代理使用自身默认值。
 - `BID_WRITER_OUTLINE_REASONING_EFFORT` 独立控制大纲生成；未设置或填写无效值时不发送该字段，不会继承正文的 `BID_WRITER_REASONING_EFFORT`。
 - 该参数只作用于正文扩写和大纲生成的主模型请求；章节裁剪、项目背景摘要、章节写作计划等辅助模型调用保持原有配置。
-- `embedding_cache` 默认创建在执行入口文件同级目录，不再通过 YAML 配置
+- `embedding_cache` 默认创建在执行入口文件同级目录；Nuitka macOS 成品改为 `~/.bid-writer/cache/embedding_cache`，不再通过 YAML 配置
 
 ### 3.6 `runtime`
 

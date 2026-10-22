@@ -764,7 +764,7 @@ processing:
 """.strip(),
         encoding="utf-8",
     )
-    monkeypatch.setattr("bid_writer.config_editor.get_application_root_dir", lambda: resource_root)
+    monkeypatch.setattr("bid_writer.config_editor.get_resource_root_dir", lambda: resource_root)
 
     document = load_config_editor_document(config_path)
     messages = document.validate(document.model, config_path=config_path, check_model_environment=False)
@@ -800,7 +800,7 @@ processing:
 """.strip(),
         encoding="utf-8",
     )
-    monkeypatch.setattr("bid_writer.config_editor.get_application_root_dir", lambda: empty_resource_root)
+    monkeypatch.setattr("bid_writer.config_editor.get_resource_root_dir", lambda: empty_resource_root)
 
     document = load_config_editor_document(config_path)
     messages = document.validate(document.model, config_path=config_path, check_model_environment=False)

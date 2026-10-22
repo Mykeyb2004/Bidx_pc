@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from .gui_state import get_application_root_dir
+from .gui_state import get_shared_config_dir, get_resource_root_dir
 from .path_purposes import PathPurpose, require_supported_suffix
 from .writing_plan_store import WritingPlanStore, WritingPlanStoreError
 
@@ -865,7 +865,7 @@ def validate_editor_model(
                 ValidationMessage(
                     "warning",
                     "role_file 当前不存在："
-                    f"{role_path}（项目材料根目录：{root_dir}；应用资源根目录：{get_application_root_dir()}；"
+                    f"{role_path}（项目材料根目录：{root_dir}；应用资源根目录：{get_resource_root_dir()}；"
                     "查找顺序：配置文件目录优先、应用资源根目录兜底）",
                 )
             )
@@ -879,7 +879,7 @@ def validate_editor_model(
             ValidationMessage(
                 "warning",
                 "大纲生成角色文件当前不存在："
-                f"{outline_role_path}（项目材料根目录：{root_dir}；应用资源根目录：{get_application_root_dir()}；"
+                f"{outline_role_path}（项目材料根目录：{root_dir}；应用资源根目录：{get_resource_root_dir()}；"
                 "查找顺序：配置文件目录优先、应用资源根目录兜底）",
             )
         )
@@ -994,7 +994,7 @@ def summarize_model(model: dict[str, Any], env_status: dict[str, ConnectionStatu
 
 def detect_connection_status(config_path: Path, raw_config: dict[str, Any]) -> dict[str, ConnectionStatus]:
     del config_path, raw_config
-    file_env = _read_env_files(get_application_root_dir())
+    file_env = _read_env_files(get_shared_config_dir())
 
     def detect(env_keys: list[str]) -> ConnectionStatus:
         if any(bool(os.environ.get(key, "").strip()) for key in env_keys):
@@ -1160,7 +1160,7 @@ def _resolve_config_or_resource_path(path_value: str, config_dir: Path) -> Path:
     config_candidate = _resolve_path(path_value, config_dir)
     if config_candidate.exists():
         return config_candidate
-    return _resolve_path(path_value, get_application_root_dir())
+    return _resolve_path(path_value, get_resource_root_dir())
 
 
 def _read_env_files(base_dir: Path) -> dict[str, str]:

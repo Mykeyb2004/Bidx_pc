@@ -6,6 +6,7 @@ GUI 状态持久化
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -32,23 +33,58 @@ def _base_dir(base_dir: Optional[Path] = None) -> Path:
 
 def get_default_base_dir() -> Path:
     """返回 GUI 启动时默认读写配置和状态文件的目录。"""
-    if getattr(sys, "frozen", False):
-        executable = getattr(sys, "executable", "")
-        if executable:
-            return Path(executable).expanduser().resolve().parent
+    if is_compiled():
+        return get_shared_config_dir()
     return Path.cwd().resolve()
 
 
+def is_compiled() -> bool:
+    """Nuitka 为编译后的模块提供 __compiled__，源码运行时不存在。"""
+    return "__compiled__" in globals()
+
+
 def get_application_root_dir() -> Path:
-    """返回应用级共享文件所在目录。"""
-    if getattr(sys, "frozen", False):
-        return get_default_base_dir()
+    """返回共享环境配置、状态和日志的可写目录。"""
+    if is_compiled():
+        if sys.platform == "darwin":
+            return Path.home() / ".bid-writer"
+        if sys.platform == "win32":
+            # Windows 使用可移动的独立目录，配置保留在程序旁边。
+            return Path(__compiled__.containing_dir).resolve()
+        data_home = os.environ.get("XDG_DATA_HOME")
+        return (Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share") / "bid-writer"
+    return get_resource_root_dir()
+
+
+def get_shared_config_dir() -> Path:
+    """共享模型连接及默认配置的目录。"""
+    root = get_application_root_dir()
+    return root / "config" if is_compiled() and sys.platform == "darwin" else root
+
+
+def get_log_dir() -> Path:
+    """未指定项目日志位置时的默认日志目录。"""
+    name = "logs" if is_compiled() and sys.platform == "darwin" else "log"
+    return get_application_root_dir() / name
+
+
+def get_cache_root_dir() -> Path:
+    """编译成品的跨项目缓存根目录。"""
+    root = get_application_root_dir()
+    return root / "cache" if is_compiled() and sys.platform == "darwin" else root
+
+
+def get_resource_root_dir() -> Path:
+    """内置只读资源目录；Nuitka 将资源放在编译模块的相对位置。"""
     return Path(__file__).resolve().parents[1]
 
 
 def get_state_file(base_dir: Optional[Path] = None) -> Path:
     """获取 GUI 状态文件路径"""
-    return _base_dir(base_dir) / STATE_FILENAME
+    base = _base_dir(base_dir)
+    if is_compiled() and sys.platform == "darwin" and base == get_default_base_dir():
+        return get_application_root_dir() / "state" / STATE_FILENAME
+    return base / STATE_FILENAME
 
 
 def _serialize_path(path: Path, base_dir: Path) -> str:
@@ -113,6 +149,7 @@ def save_gui_state(state: GUIState, base_dir: Optional[Path] = None) -> None:
     """保存 GUI 状态"""
     state_file = get_state_file(base_dir)
     payload = asdict(state)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8"

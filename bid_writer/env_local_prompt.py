@@ -12,7 +12,7 @@ from tkinter import messagebox
 from typing import Callable, Literal
 
 from .config import Config
-from .gui_state import get_application_root_dir, get_default_base_dir
+from .gui_state import get_shared_config_dir, get_default_base_dir
 
 EnvPromptPurpose = Literal["startup", "outline", "chapter"]
 
@@ -46,9 +46,9 @@ class EnvLocalPromptResult:
 
 
 def get_env_local_path_for_config(config_path: Path) -> Path:
-    """返回应用根目录下的本地模型环境文件路径。"""
+    """返回共享配置目录下的本地模型环境文件路径。"""
     del config_path
-    return get_application_root_dir() / ".env.local"
+    return get_shared_config_dir() / ".env.local"
 
 
 def build_default_env_local_content(config_dir: Path) -> str:

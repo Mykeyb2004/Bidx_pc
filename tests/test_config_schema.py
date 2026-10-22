@@ -903,7 +903,7 @@ writing:
 """.strip(),
         encoding="utf-8",
     )
-    monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: resource_root)
+    monkeypatch.setattr("bid_writer.config.get_resource_root_dir", lambda: resource_root)
 
     config = Config(str(config_path))
 

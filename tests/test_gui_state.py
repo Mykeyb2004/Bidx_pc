@@ -1,6 +1,9 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+from bid_writer import gui_state
 
 from bid_writer.gui import _resolve_generation_dialog_defaults
 from bid_writer.gui_state import (
@@ -18,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_application_root_uses_repo_root_outside_frozen_build(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delattr(gui_state, "__compiled__", raising=False)
 
     assert get_application_root_dir() == REPO_ROOT
 
@@ -56,8 +59,8 @@ def test_load_gui_state_ignores_invalid_generation_values(tmp_path):
 def test_default_base_dir_prefers_frozen_executable(monkeypatch, tmp_path):
     exe_path = tmp_path / "bid-writer.exe"
     exe_path.write_text("", encoding="utf-8")
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", str(exe_path))
+    monkeypatch.setattr(gui_state, "__compiled__", SimpleNamespace(containing_dir=str(tmp_path)), raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
 
     assert get_default_base_dir() == tmp_path.resolve()
 
@@ -70,8 +73,8 @@ def test_startup_candidates_use_exe_dir_when_frozen(monkeypatch, tmp_path):
     (exe_dir / "config.yaml").write_text("project: {}\n", encoding="utf-8")
     (cwd / "config.yaml").write_text("project: {}\n", encoding="utf-8")
     monkeypatch.chdir(cwd)
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", str(exe_dir / "bid-writer.exe"))
+    monkeypatch.setattr(gui_state, "__compiled__", SimpleNamespace(containing_dir=str(exe_dir)), raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
 
     candidates = get_startup_config_candidates()
 

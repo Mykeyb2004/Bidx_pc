@@ -339,7 +339,7 @@ def test_system_prompt_fails_fast_when_global_gate_file_missing(monkeypatch, tmp
     gate_file.unlink()
     empty_resource_root = tmp_path / "empty-app-root"
     empty_resource_root.mkdir()
-    monkeypatch.setattr("bid_writer.config.get_application_root_dir", lambda: empty_resource_root)
+    monkeypatch.setattr("bid_writer.config.get_resource_root_dir", lambda: empty_resource_root)
     writer = _build_writer(monkeypatch, config)
 
     with pytest.raises(FileNotFoundError) as exc_info:

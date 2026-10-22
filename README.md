@@ -91,30 +91,28 @@ uv run bid-writer
 uv run python run.py --config config_公共服务满意度_auto.yaml
 ```
 
-## 构建 Windows EXE
+## 构建独立桌面应用
 
-仓库已提供 GitHub Actions workflow：[`build-windows-exe.yml`](./.github/workflows/build-windows-exe.yml)。
+使用 [Nuitka 构建脚本](./scripts/build_nuitka.py)，入口为 `run.py`。macOS 默认生成 `.app`，Windows/Linux 默认生成 standalone 目录；成品无需安装 Python 或 uv。
 
-使用方式：
+```bash
+# 日常构建，保留编译缓存
+uv run --group build python scripts/build_nuitka.py
 
-1. 将代码推送到 `main` 分支，或手动在 GitHub 的 `Actions -> Build Windows EXE -> Run workflow` 触发。
-2. Workflow 会在 `windows-latest` 上安装依赖，并使用 `PyInstaller` 将 [`run.py`](./run.py) 打包为单文件 `bid-writer.exe`。
-3. 构建完成后，可在该次 workflow 的 `Artifacts` 中下载 `bid-writer-windows-exe`，其中包含：
-   - `bid-writer.exe`
-   - `config.example.yaml`
-   - `.env.example`
-   - `README.md`
-4. 如果推送的是形如 `v1.0.0` 的标签，workflow 还会自动创建 GitHub Release，并上传 `bid-writer-v1.0.0-windows.zip` 这样的发布包。
+# 清理旧产物，并验证成品的资源、文档导入和 GUI（不调用模型）
+uv run --group build python scripts/build_nuitka.py --clean --smoke-test
 
-说明：
+# 彻底重建：清理并禁用本项目的 Nuitka 缓存
+uv run --group build python scripts/build_nuitka.py --no-cache --smoke-test
+```
 
-- 该 workflow 产出的是 Windows 可执行文件，需要在 Windows 环境运行。
-- 首次启动时，仍需要准备模型相关环境变量；如果同级目录没有上次成功配置或 `config.yaml`，软件会提示新建配置或浏览/选择已有配置。
-- 常见发版命令示例：`git tag v1.0.0 && git push origin v1.0.0`
+产物位于 `dist/nuitka/<系统>-<架构>-<模式>/`。macOS 分发完整 `bid-writer.app`；Windows 分发完整 `bid-writer.dist`，双击其中的 `bid-writer.exe`。为避免启动解包开销，脚本不提供 onefile 模式。请在目标操作系统和架构上构建，详见 [构建说明](./docs/build_nuitka.md)。
+
+首次启动可新建或选择项目配置。macOS 成品的共享配置、GUI 状态、日志和缓存位于 `~/.bid-writer/` 下的 `config/`、`state/`、`logs/`、`cache/`；Windows 位于 EXE 同目录。内置角色和图标由应用提供，项目文件和生成结果仍保存在所选项目目录。构建只收集明确列出的公共资源，不复制本地密钥、真实项目配置或历史生成结果。
 
 ## 使用流程
 
-1. 启动后，程序会按“显式参数 -> 上次成功配置 -> `config.yaml`”的顺序自动加载配置；打包后的 EXE 默认以 `bid-writer.exe` 所在目录为同目录。若这些配置不可用，会弹出配置选择窗口，可新建配置，也可选择或浏览已有 YAML 配置。
+1. 启动后，程序会按“显式参数 -> 上次成功配置 -> `config.yaml`”的顺序自动加载配置；Windows 成品默认在 EXE 同目录查找，macOS 成品在上述应用数据目录查找。若这些配置不可用，会弹出配置选择窗口，可新建配置，也可选择或浏览已有 YAML 配置。
 2. 新建配置保存并应用后，若 `project.outline_locked: false`，系统会先进入“大纲准备”窗口。
 3. 点击“确认大纲并进入扩写”后，大纲会自动格式化并固定，配置会更新为 `project.outline_locked: true`。
 4. 加载大纲后，在左侧树中搜索、筛选并选择要生成的叶子章节。
@@ -217,8 +215,8 @@ runtime:
 - 单章节输出文件名会清理非法字符，并附加基于章节完整路径生成的稳定 ID，例如 `质量保障措施__1a2b3c4d5e6f.md`
 - `runtime.output.overwrite_existing=true` 时会覆盖标准输出文件；否则会自动追加编号后缀
 - “整合标书”会按大纲顺序拼接已生成章节，跳过缺失章节，并生成新的 Markdown 文件
-- 若启用 `runtime.trace.enabled=true`，默认会在 `log/generation_traces` 下落盘 trace
-- GUI 会在工作区根目录保存 `.bid_writer_gui_state.json`，仅用于记住上次使用的配置文件
+- 若启用 `runtime.trace.enabled=true`，默认 trace 会写入应用默认日志目录下的 `generation_traces/`；显式配置目录优先
+- Nuitka macOS 成品会在 `~/.bid-writer/state/.bid_writer_gui_state.json` 保存 GUI 状态，仅用于记住上次使用的配置文件；源码运行仍按当前工作目录保存
 
 相关文档：
 
