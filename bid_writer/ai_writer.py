@@ -75,8 +75,8 @@ class AIWriter:
 
     _PROMPT_CONTRACT_BLOCKS: tuple[tuple[str, str, str], ...] = (
         ("system_constraints", "System Constraints", "system"),
-        ("chapter_context", "Chapter Context", "user"),
         ("output_constraints", "Output Constraints", "user"),
+        ("chapter_context", "Chapter Context", "user"),
         ("fact_card_context", "Fact Card Context", "user"),
         ("node_writing_plan", "Node Writing Plan", "user"),
         ("chapter_task", "Chapter Task", "user"),
@@ -334,6 +334,9 @@ class AIWriter:
             "max_tokens": self.config.max_tokens,
             "stream": stream
         }
+        if stream and self.config.report_usage:
+            # 流式默认不回传 usage，需显式开启才能拿到 cached_tokens
+            options["stream_options"] = {"include_usage": True}
         if self.config.api_top_p is not None:
             options["top_p"] = self.config.api_top_p
         if self.config.api_seed is not None:
@@ -674,6 +677,44 @@ class AIWriter:
                 pass
 
         threading.Thread(target=worker, daemon=True).start()
+
+    @staticmethod
+    def _extract_cache_usage(usage: Any) -> dict[str, int]:
+        """从 usage 对象提取 prompt/cached token，兼容不同服务字段。"""
+        if usage is None:
+            return {}
+        prompt = getattr(usage, "prompt_tokens", 0) or 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = 0
+        if details is not None:
+            cached = getattr(details, "cached_tokens", 0) or 0
+        # DeepSeek 风格字段兼容
+        cached = cached or getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+        hit_rate = round(cached / prompt, 4) if prompt else 0.0
+        return {
+            "prompt_tokens": int(prompt),
+            "cached_tokens": int(cached),
+            "cache_hit_rate": hit_rate,
+        }
+
+    def _log_cache_usage(
+        self,
+        usage: Any,
+        *,
+        heading_title: str,
+        heading_full_path: str,
+        trace_id: str,
+    ) -> None:
+        stats = self._extract_cache_usage(usage)
+        if not stats:
+            return
+        write_timing_log(
+            "prompt_cache_usage",
+            heading_title=heading_title,
+            heading_full_path=heading_full_path,
+            trace_id=trace_id,
+            **stats,
+        )
 
     @staticmethod
     def _iter_text_chunks(text: str, chunk_size: int = 1200) -> Generator[str, None, None]:
@@ -1051,6 +1092,14 @@ class AIWriter:
         project_background = (
             self._build_project_background_section(background) if background else ""
         )
+        # 缓存前缀优化：全局稳定的输出硬约束提醒前置，使其进入可复用前缀；
+        # 每章变化的章节边界/评分紧随其后，变化点尽量后移。
+        self._append_prompt_section(
+            prompt_parts,
+            prompt_sections,
+            "output_constraint_reminder",
+            self._build_output_constraint_reminder_section(),
+        )
         self._append_prompt_section(
             prompt_parts,
             prompt_sections,
@@ -1061,12 +1110,6 @@ class AIWriter:
                 project_background=project_background,
                 scoring_section=scoring_section,
             ),
-        )
-        self._append_prompt_section(
-            prompt_parts,
-            prompt_sections,
-            "output_constraint_reminder",
-            self._build_output_constraint_reminder_section(),
         )
         if fact_card_context:
             self._append_prompt_section(
@@ -1331,6 +1374,7 @@ class AIWriter:
         response = None
         finish_reason = ""
         last_token_at = ""
+        usage_holder: list[Any] = []
         idle_timeout_seconds = max(3, self.config.generation_stream_idle_timeout_seconds)
         close_requested = threading.Event()
         event_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -1347,11 +1391,16 @@ class AIWriter:
                     pass
 
         def _reader() -> None:
+            finish_reason_local = ""
             try:
                 assert response is not None
                 for chunk in response:
                     if close_requested.is_set() or _is_cancelled():
                         return
+                    # include_usage 时 usage 随最后一个 chunk 返回，choices 常为空，
+                    # 且位于 finish_reason chunk 之后，因此见到 finish 不能立即退出。
+                    if getattr(chunk, "usage", None):
+                        usage_holder.append(chunk.usage)
                     if not chunk.choices:
                         continue
 
@@ -1360,14 +1409,20 @@ class AIWriter:
                     if token:
                         event_queue.put(("token", token))
 
-                    if choice.finish_reason:
-                        event_queue.put(("finish", str(choice.finish_reason)))
-                        return
+                    if choice.finish_reason and not finish_reason_local:
+                        finish_reason_local = str(choice.finish_reason)
+                        # 继续读取以捕获尾随 usage chunk，不提前返回
 
-                event_queue.put(("end", "iterator_exhausted"))
+                if finish_reason_local:
+                    event_queue.put(("finish", finish_reason_local))
+                else:
+                    event_queue.put(("end", "iterator_exhausted"))
             except Exception as exc:
                 if close_requested.is_set():
                     event_queue.put(("end", "closed_after_idle_timeout"))
+                elif finish_reason_local:
+                    # 已拿到 finish，尾随 usage 读取出错不影响正文
+                    event_queue.put(("finish", finish_reason_local))
                 else:
                     event_queue.put(("error", exc))
 
@@ -1490,6 +1545,13 @@ class AIWriter:
                 last_token_at=last_token_at,
                 finish_reason=finish_reason,
             )
+            if usage_holder:
+                self._log_cache_usage(
+                    usage_holder[-1],
+                    heading_title=heading_title,
+                    heading_full_path=heading_full_path,
+                    trace_id=trace_id or (trace_session.trace_id if trace_session is not None else ""),
+                )
             close_requested.set()
             _close_response()
 
@@ -1507,6 +1569,12 @@ class AIWriter:
             if cancel_event is not None and cancel_event.is_set():
                 raise GenerationCancelledError("用户已终止当前章节生成")
             content = response.choices[0].message.content or ""
+            self._log_cache_usage(
+                getattr(response, "usage", None),
+                heading_title=trace_session.heading.title if trace_session is not None else "",
+                heading_full_path=trace_session.heading.full_path if trace_session is not None else "",
+                trace_id=trace_session.trace_id if trace_session is not None else "",
+            )
         except GenerationCancelledError as exc:
             if trace_session is not None:
                 trace_session.finalize("", status="cancelled", error=str(exc))

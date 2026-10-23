@@ -110,8 +110,8 @@ def test_full_context_fact_card_context_follows_task_and_scope(monkeypatch, tmp_
 
     section_order = [section["name"] for section in result.prompt_sections]
     assert section_order == [
-        "chapter_context",
         "output_constraint_reminder",
+        "chapter_context",
         "fact_card_context",
         "task_card",
     ]

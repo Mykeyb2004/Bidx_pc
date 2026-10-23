@@ -367,6 +367,26 @@ class FileSaver:
 
         return filepath
 
+    def save_placeholder(self, heading: HeadingNode, *, overwrite: bool = False) -> Path:
+        """创建仅含章节标题的占位文件；覆盖已有章节必须显式授权。"""
+        existing = self.find_existing_filepath(heading)
+        if existing is not None and not overwrite:
+            raise FileExistsError(f"章节文件已存在：{existing}")
+
+        filepath = existing or self.build_heading_filepath(heading)
+        metadata = {
+            "heading_id": self.build_heading_id(heading),
+            "title": heading.title,
+            "full_path": heading.full_path,
+            "placeholder": True,
+        }
+        content = self._build_file_content(heading.title, "", True, metadata)
+        # 新建时使用独占模式，防止扫描后出现的文件被静默覆盖。
+        mode = "w" if overwrite else "x"
+        with filepath.open(mode, encoding="utf-8") as handle:
+            handle.write(content)
+        return filepath
+
     def save_with_metadata(
         self,
         title: str,

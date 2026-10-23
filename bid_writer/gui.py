@@ -2743,6 +2743,10 @@ class MainWindow(tk.Tk):
             icon_name="fact_card",
             owner=self,
         )
+        self.outline_context_menu.add_command(
+            label="创建所选章节占位文件",
+            command=self.create_selected_placeholders,
+        )
         self._context_menu_heading: Optional[HeadingNode] = None
 
     def _list_extracted_fact_cards_for_heading(self, heading: HeadingNode) -> list[Any]:
@@ -3935,6 +3939,75 @@ class MainWindow(tk.Tk):
             self._set_single_heading_selection(heading)
 
         self.batch_generate()
+        return "break"
+
+    def create_selected_placeholders(self):
+        """为选中的叶子章节创建占位文件，并在写入前统一确认冲突。"""
+        if self.is_generating or getattr(self, "is_modal_workflow_active", False):
+            return "break"
+
+        headings = self._get_selected_leaf_headings()
+        if not headings:
+            heading = self._get_context_menu_heading()
+            if heading is None:
+                messagebox.showwarning("提示", "请先选择要创建占位文件的叶子章节。", parent=self)
+                return "break"
+            headings = [heading]
+            self._set_single_heading_selection(heading)
+
+        file_saver = self.bid_writer.file_saver
+        existing_paths = {
+            heading.full_path: filepath
+            for heading in headings
+            if (filepath := file_saver.find_existing_filepath(heading)) is not None
+        }
+        overwrite = False
+        if existing_paths:
+            details = "\n".join(list(existing_paths)[:5])
+            if len(existing_paths) > 5:
+                details += f"\n……另有 {len(existing_paths) - 5} 个章节"
+            skip_existing = messagebox.askyesnocancel(
+                "已有章节文件，是否跳过？",
+                f"所选章节中有 {len(existing_paths)} 个已有文件：\n{details}\n\n"
+                "是：跳过已有文件，仅创建缺失章节的占位文件。\n"
+                "否：将已有文件覆盖为空白占位文件，原正文将被清空。\n"
+                "取消：不创建任何文件。",
+                parent=self,
+                default=messagebox.YES,
+            )
+            if skip_existing is None:
+                self.status_text.set("已取消创建占位文件")
+                return "break"
+            overwrite = not skip_existing
+
+        saved = 0
+        skipped = 0
+        errors = []
+        for heading in headings:
+            if heading.full_path in existing_paths and not overwrite:
+                skipped += 1
+                continue
+            try:
+                # 只覆盖已经在提示中列出的章节；新出现的冲突仍然跳过。
+                file_saver.save_placeholder(
+                    heading,
+                    overwrite=overwrite and heading.full_path in existing_paths,
+                )
+            except FileExistsError:
+                skipped += 1
+            except OSError as exc:
+                errors.append(f"{heading.full_path}：{exc}")
+            else:
+                saved += 1
+                getattr(self, "_workspace_generation_failures", {}).pop(heading.full_path, None)
+
+        if saved:
+            self._sync_loaded_outline()
+        summary = f"已创建 {saved} 个占位文件，跳过 {skipped} 个已有文件"
+        if errors:
+            summary += f"，失败 {len(errors)} 个"
+            messagebox.showerror("占位文件创建失败", summary + "\n\n" + "\n".join(errors[:5]), parent=self)
+        self.status_text.set(summary)
         return "break"
 
     def extract_context_menu_facts(self):

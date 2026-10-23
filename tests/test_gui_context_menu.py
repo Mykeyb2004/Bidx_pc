@@ -114,6 +114,7 @@ def test_outline_context_menu_includes_generate_selected(monkeypatch):
     window = SimpleNamespace(
         generate_context_menu_selection=lambda: None,
         extract_context_menu_facts=lambda: None,
+        create_selected_placeholders=lambda: None,
     )
 
     MainWindow.create_outline_context_menu(window)
@@ -121,7 +122,9 @@ def test_outline_context_menu_includes_generate_selected(monkeypatch):
     assert [entry["label"] for entry in window.outline_context_menu.entries] == [
         "生成所选",
         "提炼事实卡片",
+        "创建所选章节占位文件",
     ]
+    assert window.outline_context_menu.entries[2]["command"] is window.create_selected_placeholders
 
 
 def test_tree_context_menu_preserves_multi_selection_when_clicking_selected_leaf():

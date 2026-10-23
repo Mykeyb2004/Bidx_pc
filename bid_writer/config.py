@@ -608,6 +608,12 @@ class Config:
         return self._get_env_reasoning_effort('BID_WRITER_REASONING_EFFORT')
 
     @property
+    def report_usage(self) -> bool:
+        """是否请求并记录 prompt 缓存命中用量，默认开启。"""
+        value = self._get_env_bool('BID_WRITER_REPORT_USAGE')
+        return True if value is None else value
+
+    @property
     def role(self) -> str:
         """角色设定"""
         role_file = self._get_first_defined(('writing', 'role_file'), 'role_file', default='')

@@ -15,16 +15,16 @@ from bid_writer.outline_parser import parse_outline
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXPECTED_BLOCK_IDS = [
     "system_constraints",
-    "chapter_context",
     "output_constraints",
+    "chapter_context",
     "fact_card_context",
     "node_writing_plan",
     "chapter_task",
 ]
 EXPECTED_BLOCK_SPECS = [
     ("system_constraints", "System Constraints", "system"),
-    ("chapter_context", "Chapter Context", "user"),
     ("output_constraints", "Output Constraints", "user"),
+    ("chapter_context", "Chapter Context", "user"),
     ("fact_card_context", "Fact Card Context", "user"),
     ("node_writing_plan", "Node Writing Plan", "user"),
     ("chapter_task", "Chapter Task", "user"),
@@ -164,8 +164,9 @@ def test_node_writing_plan_is_between_context_and_final_task_card(monkeypatch, t
     )
     assert "## 用户附加要求" not in prompt
     assert node_plan_section == "## 节点撰写计划\n先写责任分工，再写闭环台账。\n必须对应评分点。"
-    assert prompt.index("## 当前章节边界及招标/评分要求") < prompt.index("## 输出硬约束提醒")
-    assert prompt.index("## 输出硬约束提醒") < prompt.index("## 节点撰写计划")
+    # 缓存前缀优化：全局稳定的输出硬约束提醒前置于每章变化的章节边界之前
+    assert prompt.index("## 输出硬约束提醒") < prompt.index("## 当前章节边界及招标/评分要求")
+    assert prompt.index("## 当前章节边界及招标/评分要求") < prompt.index("## 节点撰写计划")
     assert prompt.index("## 节点撰写计划") < prompt.index("## 章节任务卡")
     assert prompt.rstrip().endswith("最终执行说明：直接输出当前章节投标正文。")
 
@@ -190,8 +191,8 @@ def test_auto_prompt_uses_the_same_business_order(monkeypatch, tmp_path):
 
     names = [section["name"] for section in result.prompt_sections]
     assert names == [
-        "chapter_context",
         "output_constraint_reminder",
+        "chapter_context",
         "node_writing_plan",
         "task_card",
     ]
@@ -401,7 +402,8 @@ def test_full_context_prompt_includes_current_heading_full_path(monkeypatch, tmp
     ) in result.prompt
     assert "### 当前章节边界" in result.prompt
     assert "## 完整总大纲参考" not in result.prompt
-    assert result.prompt.index("### 招标需求参考") < result.prompt.index("## 输出硬约束提醒")
+    # 缓存前缀优化：全局稳定块（输出硬约束 + 招标需求/评分全文）都在变化内容之前
+    assert result.prompt.index("## 输出硬约束提醒") < result.prompt.index("### 招标需求参考")
     assert "## 投标方知识库" not in result.prompt
     assert result.prompt.index("### 评分要求") < result.prompt.index("### 当前章节边界")
     assert result.prompt.index("### 当前章节边界") < result.prompt.index("## 章节任务卡")
@@ -652,7 +654,9 @@ def test_full_context_chapter_writing_plan_uses_shared_prefix_layout(monkeypatch
     assert config.scoring_criteria.strip() in captured["shared_prompt_prefix"]
     assert "## 章节边界参考" not in captured["shared_prompt_prefix"]
     assert captured["scope_reference"].startswith("- 上级标题：")
-    assert result.prompt.startswith("## 当前章节边界及招标/评分要求")
+    # 缓存前缀优化：输出硬约束提醒前置于用户消息最前
+    assert result.prompt.startswith("## 输出硬约束提醒")
+    assert result.prompt.index("## 当前章节边界及招标/评分要求") < result.prompt.index("## 章节任务卡")
     assert result.prompt.index("## 章节任务卡") > result.prompt.index("### 评分要求")
     assert result.prompt.index("### 当前章节边界") < result.prompt.index("## 章节任务卡")
 
@@ -842,8 +846,12 @@ def test_auto_prompt_uses_h2_project_background(monkeypatch, tmp_path):
     assert "以下为当前 H2 相关项目背景材料，供理解整体目标和范围，不直接作为正文内容：" not in result.prompt
     assert "H2专属背景摘要。" in result.prompt
     section_order = [section["name"] for section in result.prompt_sections]
-    assert section_order == ["chapter_context", "output_constraint_reminder", "task_card"]
-    chapter_context = result.prompt_sections[0]["content"]
+    assert section_order == ["output_constraint_reminder", "chapter_context", "task_card"]
+    chapter_context = next(
+        section["content"]
+        for section in result.prompt_sections
+        if section["name"] == "chapter_context"
+    )
     assert chapter_context.index("### 项目背景参考") < chapter_context.index("### 评分要求")
     assert chapter_context.index("### 评分要求") < chapter_context.index("### 当前章节边界")
     assert "\n## 项目背景" not in chapter_context

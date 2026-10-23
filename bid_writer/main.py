@@ -336,7 +336,7 @@ class BidWriter:
         return "整合标书"
 
     def merge_generated_sections(self, output_title: Optional[str] = None) -> MergedBidResult:
-        """按大纲顺序整合所有已生成章节正文。"""
+        """按大纲顺序整合已有章节正文，并保留显式占位章节的标题。"""
         if self.parser is None:
             raise RuntimeError("请先加载大纲后再整合标书")
         output_title = (output_title or "").strip() or self.get_default_merge_output_title()
@@ -357,7 +357,8 @@ class BidWriter:
                 continue
 
             section_body = self.file_saver.load_section_body(filepath, heading.title)
-            if not section_body.strip():
+            is_placeholder = self.file_saver.read_metadata(filepath).get("placeholder") is True
+            if not section_body.strip() and not is_placeholder:
                 missing_sections += 1
                 continue
             heading_chain = self._get_heading_chain(heading)
@@ -372,8 +373,9 @@ class BidWriter:
                 merged_parts.append(f"{'#' * heading_level} {chain_heading.title}")
                 merged_parts.append("")
 
-            merged_parts.append(section_body.strip())
-            merged_parts.append("")
+            if section_body.strip():
+                merged_parts.append(section_body.strip())
+                merged_parts.append("")
             previous_chain = heading_chain
             merged_sections += 1
 
